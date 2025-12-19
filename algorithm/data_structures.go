@@ -1,0 +1,338 @@
+// Package algos 提供高性能数据结构和算法
+package algorithm
+
+import (
+	"sync"
+
+	"github.com/shopspring/decimal"
+)
+
+// ===== 撮合引擎相关数据结构 =====
+
+// OrderBookSnapshot 订单簿快照
+type OrderBookSnapshot struct {
+	Symbol    string
+	Bids      []*PriceLevel
+	Asks      []*PriceLevel
+	Timestamp int64
+}
+
+// PriceLevel 价格层级
+type PriceLevel struct {
+	Price    decimal.Decimal
+	Quantity decimal.Decimal
+	Count    int64 // 订单数量
+}
+
+// ===== 风险管理相关数据结构 =====
+
+// RiskMetricsSnapshot 风险指标快照
+type RiskMetricsSnapshot struct {
+	UserID         string
+	VaR95          decimal.Decimal
+	VaR99          decimal.Decimal
+	MaxDrawdown    decimal.Decimal
+	SharpeRatio    decimal.Decimal
+	Correlation    decimal.Decimal
+	PortfolioValue decimal.Decimal
+	DailyLoss      decimal.Decimal
+	Leverage       decimal.Decimal
+	Timestamp      int64
+}
+
+// ===== 持仓管理相关数据结构 =====
+
+// PositionSnapshot 持仓快照
+type PositionSnapshot struct {
+	UserID        string
+	Symbol        string
+	Side          string
+	Quantity      decimal.Decimal
+	EntryPrice    decimal.Decimal
+	CurrentPrice  decimal.Decimal
+	UnrealizedPnL decimal.Decimal
+	RealizedPnL   decimal.Decimal
+	Leverage      decimal.Decimal
+	Timestamp     int64
+}
+
+// PortfolioSnapshot 投资组合快照
+type PortfolioSnapshot struct {
+	UserID             string
+	TotalValue         decimal.Decimal
+	CashBalance        decimal.Decimal
+	TotalUnrealizedPnL decimal.Decimal
+	TotalRealizedPnL   decimal.Decimal
+	Positions          []*PositionSnapshot
+	Timestamp          int64
+}
+
+// ===== 清算相关数据结构 =====
+
+// SettlementBatch 清算批次
+type SettlementBatch struct {
+	BatchID     string
+	Trades      []*TradeSettlement
+	Status      string
+	CreatedAt   int64
+	CompletedAt *int64
+}
+
+// TradeSettlement 交易清算记录
+type TradeSettlement struct {
+	TradeID    string
+	BuyUserID  string
+	SellUserID string
+	Symbol     string
+	Quantity   decimal.Decimal
+	Price      decimal.Decimal
+	Status     string
+	SettledAt  int64
+}
+
+// ===== 定价相关数据结构 =====
+
+// OptionPricingModel 期权定价模型
+type OptionPricingModel struct {
+	OptionType      string // CALL or PUT
+	UnderlyingPrice decimal.Decimal
+	StrikePrice     decimal.Decimal
+	TimeToExpiry    decimal.Decimal // 年份
+	RiskFreeRate    decimal.Decimal
+	Volatility      decimal.Decimal
+	DividendYield   decimal.Decimal
+}
+
+// OptionPricingResult 期权定价结果
+type OptionPricingResult struct {
+	OptionPrice    decimal.Decimal
+	IntrinsicValue decimal.Decimal
+	TimeValue      decimal.Decimal
+	Delta          decimal.Decimal
+	Gamma          decimal.Decimal
+	Vega           decimal.Decimal
+	Theta          decimal.Decimal
+	Rho            decimal.Decimal
+}
+
+// ===== 做市相关数据结构 =====
+
+// MarketMakingQuote 做市报价
+type MarketMakingQuote struct {
+	Symbol      string
+	BidPrice    decimal.Decimal
+	AskPrice    decimal.Decimal
+	BidQuantity decimal.Decimal
+	AskQuantity decimal.Decimal
+	Spread      decimal.Decimal
+	Timestamp   int64
+}
+
+// MarketMakingMetrics 做市指标
+type MarketMakingMetrics struct {
+	MarketMakerID string
+	Symbol        string
+	TotalPnL      decimal.Decimal
+	DailyPnL      decimal.Decimal
+	SpreadEarned  decimal.Decimal
+	TradesCount   int64
+	WinRate       decimal.Decimal
+	AverageSpread decimal.Decimal
+	Timestamp     int64
+}
+
+// ===== 量化相关数据结构 =====
+
+// StrategySignal 策略信号
+type StrategySignal struct {
+	StrategyID  string
+	Symbol      string
+	Signal      string // BUY, SELL, HOLD
+	Confidence  decimal.Decimal
+	TargetPrice decimal.Decimal
+	StopLoss    decimal.Decimal
+	TakeProfit  decimal.Decimal
+	Timestamp   int64
+}
+
+// BacktestMetrics 回测指标
+type BacktestMetrics struct {
+	TotalReturn   decimal.Decimal
+	AnnualReturn  decimal.Decimal
+	SharpeRatio   decimal.Decimal
+	MaxDrawdown   decimal.Decimal
+	WinRate       decimal.Decimal
+	ProfitFactor  decimal.Decimal
+	TradesCount   int64
+	WinningTrades int64
+	LosingTrades  int64
+}
+
+// ===== 市场模拟相关数据结构 =====
+
+// PriceBar K线数据
+type PriceBar struct {
+	Timestamp int64
+	Open      decimal.Decimal
+	High      decimal.Decimal
+	Low       decimal.Decimal
+	Close     decimal.Decimal
+	Volume    decimal.Decimal
+}
+
+// SimulationState 模拟状态
+type SimulationState struct {
+	CurrentPrice decimal.Decimal
+	MinPrice     decimal.Decimal
+	MaxPrice     decimal.Decimal
+	Volume       decimal.Decimal
+	Volatility   decimal.Decimal
+	Timestamp    int64
+}
+
+// ===== 监控分析相关数据结构 =====
+
+// SystemMetricsData 系统指标数据
+type SystemMetricsData struct {
+	Timestamp         int64
+	CPUUsage          decimal.Decimal
+	MemoryUsage       decimal.Decimal
+	DiskUsage         decimal.Decimal
+	NetworkThroughput decimal.Decimal
+	ActiveConnections int64
+	RequestsPerSecond int64
+	AverageLatency    decimal.Decimal
+	ErrorRate         decimal.Decimal
+}
+
+// TradeStatisticsData 交易统计数据
+type TradeStatisticsData struct {
+	Symbol       string
+	TotalTrades  int64
+	TotalVolume  decimal.Decimal
+	TotalValue   decimal.Decimal
+	AveragePrice decimal.Decimal
+	HighPrice    decimal.Decimal
+	LowPrice     decimal.Decimal
+	OpenPrice    decimal.Decimal
+	ClosePrice   decimal.Decimal
+	Timestamp    int64
+}
+
+// UserAnalyticsData 用户分析数据
+type UserAnalyticsData struct {
+	UserID           string
+	TotalTrades      int64
+	TotalPnL         decimal.Decimal
+	WinRate          decimal.Decimal
+	AverageTradeSize decimal.Decimal
+	MaxDrawdown      decimal.Decimal
+	SharpeRatio      decimal.Decimal
+	ProfitFactor     decimal.Decimal
+	Timestamp        int64
+}
+
+// ===== 参考数据相关数据结构 =====
+
+// SymbolInfo 交易对信息
+type SymbolInfo struct {
+	Symbol      string
+	BaseAsset   string
+	QuoteAsset  string
+	Status      string
+	MinPrice    decimal.Decimal
+	MaxPrice    decimal.Decimal
+	MinQuantity decimal.Decimal
+	MaxQuantity decimal.Decimal
+	TickSize    decimal.Decimal
+	StepSize    decimal.Decimal
+	MakerFee    decimal.Decimal
+	TakerFee    decimal.Decimal
+	UpdatedAt   int64
+}
+
+// ExchangeInfo 交易所信息
+type ExchangeInfo struct {
+	Name             string
+	Timezone         string
+	TradingStartTime int64
+	TradingEndTime   int64
+	TradingDays      []string
+	UpdatedAt        int64
+}
+
+// AssetInfo 资产信息
+type AssetInfo struct {
+	Asset           string
+	Name            string
+	Decimals        int32
+	MinWithdrawal   decimal.Decimal
+	WithdrawalFee   decimal.Decimal
+	DepositEnabled  bool
+	WithdrawEnabled bool
+	UpdatedAt       int64
+}
+
+// ===== 通知相关数据结构 =====
+
+// NotificationMessage 通知消息
+type NotificationMessage struct {
+	NotificationID string
+	UserID         string
+	Type           string // ORDER, TRADE, RISK, SYSTEM
+	Title          string
+	Content        string
+	Metadata       map[string]string
+	IsRead         bool
+	CreatedAt      int64
+	ReadAt         *int64
+}
+
+// ===== 线程安全的缓存结构 =====
+
+// ConcurrentCache 并发安全的缓存
+type ConcurrentCache struct {
+	mu   sync.RWMutex
+	data map[string]interface{}
+	ttl  map[string]int64
+}
+
+// NewConcurrentCache 创建并发缓存
+func NewConcurrentCache() *ConcurrentCache {
+	return &ConcurrentCache{
+		data: make(map[string]interface{}),
+		ttl:  make(map[string]int64),
+	}
+}
+
+// Set 设置缓存值
+func (cc *ConcurrentCache) Set(key string, value interface{}, ttl int64) {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	cc.data[key] = value
+	cc.ttl[key] = ttl
+}
+
+// Get 获取缓存值
+func (cc *ConcurrentCache) Get(key string) (interface{}, bool) {
+	cc.mu.RLock()
+	defer cc.mu.RUnlock()
+	val, ok := cc.data[key]
+	return val, ok
+}
+
+// Delete 删除缓存值
+func (cc *ConcurrentCache) Delete(key string) {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	delete(cc.data, key)
+	delete(cc.ttl, key)
+}
+
+// Clear 清空缓存
+func (cc *ConcurrentCache) Clear() {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	cc.data = make(map[string]interface{})
+	cc.ttl = make(map[string]int64)
+}
