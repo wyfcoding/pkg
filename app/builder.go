@@ -170,7 +170,7 @@ func (b *Builder) Build() *App {
 				}
 			}))
 			logger.Logger.Info("Tracer initialized", "endpoint", cfg.Tracing.OTLPEndpoint)
-			
+
 			// 自动添加 Gin 追踪中间件
 			// 注意：这会将追踪中间件放在最前面，确保覆盖整个请求生命周期
 			b.ginMiddleware = append([]gin.HandlerFunc{middleware.TracingMiddleware(b.serviceName)}, b.ginMiddleware...)

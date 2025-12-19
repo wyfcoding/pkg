@@ -23,7 +23,7 @@ type GRPCServer struct {
 // 它还会默认启用 OpenTelemetry StatsHandler 进行全链路追踪。
 func NewGRPCServer(addr string, logger *slog.Logger, register func(*grpc.Server), interceptors ...grpc.UnaryServerInterceptor) *GRPCServer {
 	var opts []grpc.ServerOption
-	
+
 	// 默认启用 OpenTelemetry StatsHandler
 	opts = append(opts, grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
