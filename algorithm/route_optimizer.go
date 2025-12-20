@@ -85,7 +85,7 @@ func (ro *RouteOptimizer) OptimizeBatchRoutes(start Location, destinations []Loc
 		vehicles = 1
 	}
 	if len(destinations) <= vehicles {
-		// Trivial case: each vehicle takes one or few
+		// 简单情况：每辆车分配一个或少数几个目的地
 		routes := make([]Route, 0)
 		for _, dest := range destinations {
 			dist := haversineDistance(start.Lat, start.Lon, dest.Lat, start.Lon)
@@ -97,8 +97,8 @@ func (ro *RouteOptimizer) OptimizeBatchRoutes(start Location, destinations []Loc
 		return routes
 	}
 
-	// 1. Cluster destinations based on angle from start (Sweep algorithm simplified)
-	// Calculate angle for each destination
+	// 1. 基于与起点的角度对目的地进行聚类 (简化的扫描算法)
+	// 计算每个目的地的角度
 	type destWithAngle struct {
 		Location
 		angle float64
@@ -109,12 +109,12 @@ func (ro *RouteOptimizer) OptimizeBatchRoutes(start Location, destinations []Loc
 		dests[i] = destWithAngle{d, angle}
 	}
 
-	// Sort by angle
+	// 按角度排序
 	sort.Slice(dests, func(i, j int) bool {
 		return dests[i].angle < dests[j].angle
 	})
 
-	// Split into chunks
+	// 分块
 	chunkSize := (len(dests) + vehicles - 1) / vehicles
 	routes := make([]Route, 0)
 
@@ -129,7 +129,7 @@ func (ro *RouteOptimizer) OptimizeBatchRoutes(start Location, destinations []Loc
 			chunk[j] = dests[i+j].Location
 		}
 
-		// Optimize route for this chunk
+		// 优化该分块的路径
 		routes = append(routes, ro.OptimizeRoute(start, chunk))
 	}
 

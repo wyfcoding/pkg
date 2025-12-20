@@ -6,8 +6,8 @@ import (
 )
 
 // GrpcTracingServerOption returns a gRPC ServerOption that enables OpenTelemetry tracing
-// using the stats handler mechanism.
-// Note: otelgrpc v0.64.0+ prefers StatsHandler over Interceptors for better accuracy and metric support.
+// 使用 stats handler 机制。
+// 注意：otelgrpc v0.64.0+ 更倾向于使用 StatsHandler 而不是 Interceptors，以获得更好的精度和指标支持。
 func GrpcTracingServerOption(opts ...otelgrpc.Option) grpc.ServerOption {
 	return grpc.StatsHandler(otelgrpc.NewServerHandler(opts...))
 }

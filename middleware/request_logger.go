@@ -39,17 +39,17 @@ func Logger(logger *slog.Logger) gin.HandlerFunc {
 	}
 }
 
-// GRPCLoggingInterceptor returns a new unary server interceptor for logging.
+// GRPCLoggingInterceptor 返回一个新的用于日志记录的一元服务器拦截器。
 func GRPCLoggingInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		start := time.Now()
-		// Call the handler
+		// 调用处理程序
 		resp, err := handler(ctx, req)
 		cost := time.Since(start)
 
 		// Log request
-		// Assuming we use the default logger for gRPC middleware or we could pass one.
-		// For now, use slog.Default() which we set in InitLogger.
+		// 假设我们为 gRPC 中间件使用默认 logger，或者我们可以传递一个。
+		// 目前使用我们在 InitLogger 中设置的 slog.Default()。
 		log := slog.Default()
 
 		if err != nil {

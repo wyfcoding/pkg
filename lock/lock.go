@@ -22,7 +22,7 @@ type DistributedLock interface {
 	// ctx: 上下文，用于控制操作的生命周期。
 	// key: 锁的唯一标识符。
 	// ttl: 锁的过期时间，防止死锁。
-	// 返回值：一个唯一的令牌（token），用于释放锁；如果failed to fetch则返回错误。
+	// 返回值：一个唯一的令牌（token），用于释放锁；如果获取失败则返回错误。
 	Lock(ctx context.Context, key string, ttl time.Duration) (string, error)
 	// Unlock 尝试释放一个指定键的分布式锁。
 	// ctx: 上下文。

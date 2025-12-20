@@ -257,7 +257,7 @@ func (re *RecommendationEngine) SimilarItems(itemID uint64, topN int) []uint64 {
 	return re.topNItems(similarities, topN)
 }
 
-// AlsoBought (又称Item-to-Item Collaborative Filtering) 推荐。
+// AlsoBought (又称 Item-to-Item 协同过滤) 推荐。
 // 找出与给定物品经常一起被购买的其他物品。
 // itemID: 目标物品ID。
 // topN: 返回的推荐物品数量。

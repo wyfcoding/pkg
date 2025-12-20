@@ -40,7 +40,7 @@ func NewConcurrentMap[K comparable, V any](shardCount int) *ConcurrentMap[K, V] 
 	return m
 }
 
-// --- Specialized Concurrent Map for String Keys ---
+// --- 针对字符串键优化的并发 Map ---
 
 // ConcurrentStringMap 是一个针对字符串键优化的并发安全map。
 // 它内部使用了分片技术来提高并发性能。

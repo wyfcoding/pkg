@@ -64,7 +64,7 @@ func NewClient(cfg config.ClickHouseConfig) (driver.Conn, error) {
 	return &MeasuredConn{Conn: conn, db: cfg.Database}, nil
 }
 
-// MeasuredConn wraps driver.Conn to add metrics.
+// MeasuredConn 包装 driver.Conn 以添加指标。
 type MeasuredConn struct {
 	driver.Conn
 	db string

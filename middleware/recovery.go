@@ -39,12 +39,12 @@ func Recovery(logger *slog.Logger) gin.HandlerFunc {
 	}
 }
 
-// GRPCRecoveryInterceptor returns a new unary server interceptor for panic recovery.
+// GRPCRecoveryInterceptor 返回一个新的用于恐慌恢复的一元服务器拦截器。
 func GRPCRecoveryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				// Log the panic
+				// 记录恐慌日志
 				slog.Error("GRPC Panic recovered",
 					"method", info.FullMethod,
 					"error", r,
