@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// TestPricingEngine 函数。
 func TestPricingEngine(t *testing.T) {
 	basePrice := int64(10000) // 100.00
 	minPrice := int64(8000)   // 80.00
@@ -31,6 +32,7 @@ func TestPricingEngine(t *testing.T) {
 	}
 }
 
+// TestCouponOptimizer 函数。
 func TestCouponOptimizer(t *testing.T) {
 	optimizer := NewCouponOptimizer()
 
@@ -53,6 +55,7 @@ func TestCouponOptimizer(t *testing.T) {
 	}
 }
 
+// TestAntiBotDetector 函数。
 func TestAntiBotDetector(t *testing.T) {
 	detector := NewAntiBotDetector()
 
