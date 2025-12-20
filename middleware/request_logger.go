@@ -47,7 +47,7 @@ func GRPCLoggingInterceptor() grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 		cost := time.Since(start)
 
-		// Log request
+		// 记录请求
 		// 假设我们为 gRPC 中间件使用默认 logger，或者我们可以传递一个。
 		// 目前使用我们在 InitLogger 中设置的 slog.Default()。
 		log := slog.Default()

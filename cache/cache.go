@@ -129,7 +129,7 @@ func (c *RedisCache) Get(ctx context.Context, key string, value interface{}) err
 		if err != nil {
 			if err == redis.Nil {
 				cacheMisses.WithLabelValues(c.prefix).Inc()
-				return nil, fmt.Errorf("缓存未命中: %s", key)
+				return nil, fmt.Errorf("cache miss: %s", key)
 			}
 			return nil, err
 		}
@@ -212,7 +212,7 @@ func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 
 // Close 关闭 Redis 客户端。
 func (c *RedisCache) Close() error {
-	slog.Info("正在关闭 Redis 缓存连接...")
+	slog.Info("closing redis cache connection...")
 	if c.cleanup != nil {
 		c.cleanup()
 	}

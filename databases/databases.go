@@ -48,7 +48,7 @@ func NewDB(cfg config.DatabaseConfig, logger *logging.Logger) (*gorm.DB, error) 
 	case "clickhouse":
 		dialector = clickhouse.Open(cfg.DSN)
 	default:
-		return nil, fmt.Errorf("不支持的数据库驱动: %s", cfg.Driver)
+		return nil, fmt.Errorf("unsupported database driver: %s", cfg.Driver)
 	}
 
 	// 尝试打开数据库连接。
@@ -60,7 +60,7 @@ func NewDB(cfg config.DatabaseConfig, logger *logging.Logger) (*gorm.DB, error) 
 	// 启用OpenTelemetry链路追踪插件。
 	// 这将在每次数据库操作时自动创建Span，并记录SQL语句、耗时等信息。
 	if err := db.Use(tracing.NewPlugin()); err != nil {
-		return nil, fmt.Errorf("启用链路追踪插件失败: %w", err)
+		return nil, fmt.Errorf("failed to use tracing plugin: %w", err)
 	}
 
 	// 获取底层的sql.DB实例，用于配置连接池。

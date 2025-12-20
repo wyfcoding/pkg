@@ -92,35 +92,35 @@ func (b *Builder) WithGinMiddleware(middleware ...gin.HandlerFunc) *Builder {
 // Build 构建最终的 App 实例。
 // 它负责加载配置、初始化日志、Metrics、服务实例，并创建和注册gRPC和Gin服务器。
 func (b *Builder) Build() *App {
-	// 1. 加载配置。
+	// 1. 加载配置：优先从命令行参数 -conf 获取，默认为相对路径下的 config.toml。
 	configPath := fmt.Sprintf("./configs/%s/config.toml", b.serviceName)
 	var flagConfigPath string
-	flag.StringVar(&flagConfigPath, "conf", configPath, "配置文件路径")
+	flag.StringVar(&flagConfigPath, "conf", configPath, "path to config file")
 	flag.Parse()
 
 	if err := config.Load(flagConfigPath, b.configInstance); err != nil {
-		panic(fmt.Sprintf("加载配置失败: %v", err))
+		panic(fmt.Sprintf("failed to load config: %v", err))
 	}
 
-	// 提取 config.Config
+	// 提取 config.Config 核心配置信息。
+	// 为了保持 Builder 的通用性，我们支持直接传入 config.Config 指针或者包含 Config 字段的结构体。
 	var cfg config.Config
 	// 尝试直接断言
 	if c, ok := b.configInstance.(*config.Config); ok {
 		cfg = *c
 	} else {
-		// 使用反射从配置实例中获取 `config.Config` 结构。
+		// 使用反射从自定义配置结构体中提取嵌入的 Config 结构。
 		val := reflect.ValueOf(b.configInstance).Elem()
 		// 检查是否是结构体
 		if val.Kind() != reflect.Struct {
-			panic("配置实例必须是指向结构体的指针")
+			panic("config instance must be a pointer to a struct")
 		}
 		// 查找名为 "Config" 的字段
 		cfgField := val.FieldByName("Config")
 		if cfgField.IsValid() && cfgField.Type() == reflect.TypeOf(config.Config{}) {
 			cfg = cfgField.Interface().(config.Config)
 		} else {
-			// 如果找不到名为 Config 的字段，或者类型不对，尝试查找是否嵌入了 config.Config
-			// 简单的查找嵌入字段（匿名主要字段）
+			// 如果找不到名为 Config 的字段，或者类型不对，尝试查找是否嵌入了 config.Config（匿名主要字段）。
 			found := false
 			for i := 0; i < val.NumField(); i++ {
 				field := val.Type().Field(i)
@@ -131,14 +131,12 @@ func (b *Builder) Build() *App {
 				}
 			}
 			if !found {
-				// 最后尝试强制转换整个结构体（如果它就是 config.Config 的别名，虽然后者不太可能）
-				panic("配置实例必须是 *config.Config，或者包含一个名为 'Config' 的 config.Config 类型字段/嵌入字段")
+				panic("config instance must be *config.Config, or contain a field/embedded field of type config.Config named 'Config'")
 			}
 		}
 	}
 
-	// 2. 初始化日志。
-	// 将配置中的 LogConfig 映射到 logging.Config
+	// 2. 初始化日志：根据配置决定输出到控制台还是文件，并配置日志切割策略。
 	logConfig := logging.Config{
 		Service:    b.serviceName,
 		Module:     "app",
@@ -149,21 +147,22 @@ func (b *Builder) Build() *App {
 		MaxAge:     cfg.Log.MaxAge,
 		Compress:   cfg.Log.Compress,
 	}
-	// 如果配置指定 Output 为文件但没有提供路径，或者 Output 不是 "file"，则清空 File 字段以确保输出到 stdout
+	// 如果配置指定 Output 为文件但没有提供路径，或者 Output 不是 "file"，则确保不输出到文件。
 	if cfg.Log.Output != "file" {
 		logConfig.File = ""
 	}
 
 	logger := logging.NewFromConfig(logConfig)
-	// 设置为全局默认 Logger，使得 slog.Info 等可以直接使用配置好的 Logger
+	// 设置为全局默认 Logger，使得 slog.Info 等可以直接使用配置好的 Logger。
 	slog.SetDefault(logger.Logger)
 
-	// 3. 初始化分布式追踪 (OpenTelemetry)
+	// 3. 初始化分布式追踪 (OpenTelemetry)：如果启用，则配置 OTLP 导出器并注册清理函数。
 	if cfg.Tracing.Enabled {
 		shutdown, err := tracing.InitTracer(cfg.Tracing)
 		if err != nil {
 			logger.Logger.Error("Failed to initialize tracer", "error", err)
 		} else {
+			// 注册追踪系统的关闭回调，确保缓冲区数据在应用退出前冲刷。
 			b.appOpts = append(b.appOpts, WithCleanup(func() {
 				if err := shutdown(context.Background()); err != nil {
 					logger.Logger.Error("Failed to shutdown tracer", "error", err)
@@ -171,15 +170,13 @@ func (b *Builder) Build() *App {
 			}))
 			logger.Logger.Info("Tracer initialized", "endpoint", cfg.Tracing.OTLPEndpoint)
 
-			// 自动添加 Gin 追踪中间件
-			// 注意：这会将追踪中间件放在最前面，确保覆盖整个请求生命周期
+			// 自动添加 Gin 追踪中间件，确保每个入站 HTTP 请求都有 trace_id。
 			b.ginMiddleware = append([]gin.HandlerFunc{middleware.TracingMiddleware(b.serviceName)}, b.ginMiddleware...)
 		}
 	}
 
-	// 4. (可选) 初始化 Metrics。
+	// 4. 初始化指标收集 (Prometheus)：在指定端口开启 HTTP 服务供 Prometheus 抓取数据。
 	var metricsInstance *metrics.Metrics
-	// 如果未通过 WithMetrics 指定端口，尝试从配置中读取
 	metricsPort := b.metricsPort
 	if metricsPort == "" && cfg.Metrics.Enabled {
 		metricsPort = cfg.Metrics.Port
@@ -191,18 +188,18 @@ func (b *Builder) Build() *App {
 		b.appOpts = append(b.appOpts, WithCleanup(metricsCleanup))
 	}
 
-	// 5. 依赖注入：初始化核心服务。
-	// 使用类型断言调用注册的服务初始化函数。
+	// 5. 依赖注入与核心业务初始化。
+	// 调用用户注册的 initService 函数，创建具体的 Repository、Service 和 Facade。
 	serviceInstance, cleanup, err := b.initService.(func(interface{}, *metrics.Metrics) (interface{}, func(), error))(b.configInstance, metricsInstance)
 	if err != nil {
-		logger.Logger.Error("初始化服务失败", "error", err)
+		logger.Logger.Error("failed to initialize service", "error", err)
 		panic(err)
 	}
 	b.appOpts = append(b.appOpts, WithCleanup(cleanup))
 
-	// 6. 创建服务器。
+	// 6. 协议层服务创建与注册。
 	var servers []server.Server
-	// 如果注册了gRPC服务，则创建gRPC服务器。
+	// 创建 gRPC 服务器并注册业务 Handler。
 	if b.registerGRPC != nil {
 		grpcAddr := fmt.Sprintf("%s:%d", cfg.Server.GRPC.Addr, cfg.Server.GRPC.Port)
 		grpcSrv := server.NewGRPCServer(grpcAddr, logger.Logger, func(s *grpc.Server) {
@@ -210,7 +207,7 @@ func (b *Builder) Build() *App {
 		}, b.grpcInterceptors...)
 		servers = append(servers, grpcSrv)
 	}
-	// 如果注册了Gin服务，则创建Gin HTTP服务器。
+	// 创建 Gin HTTP 服务器并注册路由。
 	if b.registerGin != nil {
 		httpAddr := fmt.Sprintf("%s:%d", cfg.Server.HTTP.Addr, cfg.Server.HTTP.Port)
 		ginEngine := server.NewDefaultGinEngine(logger.Logger, b.ginMiddleware...)
@@ -218,8 +215,9 @@ func (b *Builder) Build() *App {
 		ginSrv := server.NewGinServer(ginEngine, httpAddr, logger.Logger)
 		servers = append(servers, ginSrv)
 	}
+	// 将创建好的服务器实例添加到 App 的生命周期管理中。
 	b.appOpts = append(b.appOpts, WithServer(servers...))
 
-	// 7. 创建应用实例。
+	// 7. 返回配置完成的应用实例。
 	return New(b.serviceName, logger.Logger, b.appOpts...)
 }

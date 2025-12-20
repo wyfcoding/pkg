@@ -50,7 +50,7 @@ func GRPCRecoveryInterceptor() grpc.UnaryServerInterceptor {
 					"error", r,
 					"stack", string(debug.Stack()),
 				)
-				// Return Internal error
+				// 返回内部服务器错误
 				err = status.Errorf(codes.Internal, "Internal server error: %v", r)
 			}
 		}()

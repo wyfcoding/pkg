@@ -52,7 +52,7 @@ func (c *MultiLevelCache) Get(ctx context.Context, key string, value interface{}
 
 	// L1和L2都未命中，返回缓存未命中错误。
 	span.SetAttributes(attribute.String("cache.hit", "miss"))
-	return fmt.Errorf("缓存未命中: %s", key)
+	return fmt.Errorf("cache miss: %s", key)
 }
 
 // Set 将一个键值对设置到多级缓存中。
@@ -67,7 +67,7 @@ func (c *MultiLevelCache) Set(ctx context.Context, key string, value interface{}
 	if err := c.l2.Set(ctx, key, value, expiration); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to set L2")
-		return fmt.Errorf("设置 L2 失败: %w", err)
+		return fmt.Errorf("failed to set L2: %w", err)
 	}
 
 	// 2. 接着设置一级缓存 (L1)。即使L1设置失败，也不影响整个Set操作的成功。
@@ -94,11 +94,11 @@ func (c *MultiLevelCache) Delete(ctx context.Context, keys ...string) error {
 
 	if err1 != nil {
 		span.RecordError(err1)
-		return fmt.Errorf("删除 L1 失败: %w", err1)
+		return fmt.Errorf("failed to delete L1: %w", err1)
 	}
 	if err2 != nil {
 		span.RecordError(err2)
-		return fmt.Errorf("删除 L2 失败: %w", err2)
+		return fmt.Errorf("failed to delete L2: %w", err2)
 	}
 	return nil
 }

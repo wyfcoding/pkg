@@ -58,10 +58,11 @@ type Producer struct {
 
 // NewProducer 创建一个新的 Producer 实例。
 func NewProducer(cfg config.KafkaConfig, logger *logging.Logger) *Producer {
+	// 初始化 Kafka 写入器，配置地址、主题、平衡策略及超时时间。
 	w := &kafka.Writer{
 		Addr:         kafka.TCP(cfg.Brokers...),
 		Topic:        cfg.Topic,
-		Balancer:     &kafka.LeastBytes{},
+		Balancer:     &kafka.LeastBytes{}, // 优先发送到数据量最小的分区。
 		WriteTimeout: cfg.WriteTimeout,
 		ReadTimeout:  cfg.ReadTimeout,
 		BatchSize:    cfg.MaxBytes,
@@ -70,6 +71,7 @@ func NewProducer(cfg config.KafkaConfig, logger *logging.Logger) *Producer {
 		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
 	}
 
+	// 初始化死信队列（DLQ）写入器，用于处理发送失败的消息。
 	dlqWriter := &kafka.Writer{
 		Addr:         kafka.TCP(cfg.Brokers...),
 		Topic:        cfg.Topic + "-dlq",
@@ -154,6 +156,7 @@ type Consumer struct {
 
 // NewConsumer 创建一个新的 Consumer 实例。
 func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger) *Consumer {
+	// 初始化 Kafka 读取器，配置消费组、消费方式及偏移量起始点。
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:         cfg.Brokers,
 		GroupID:         cfg.GroupID,
@@ -162,8 +165,8 @@ func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger) *Consumer {
 		MaxBytes:        cfg.MaxBytes,
 		MaxWait:         cfg.MaxWait,
 		ReadLagInterval: -1,
-		CommitInterval:  0, // 手动提交
-		StartOffset:     kafka.LastOffset,
+		CommitInterval:  0, // 设置为0以启用手动提交 Offset。
+		StartOffset:     kafka.LastOffset, // 默认从最后一条消息之后开始消费。
 	})
 
 	return &Consumer{

@@ -255,30 +255,30 @@ func Load(path string, conf interface{}) error {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	if err := v.ReadInConfig(); err != nil {
-		return fmt.Errorf("读取配置文件失败: %w", err)
+		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	if err := v.Unmarshal(conf); err != nil {
-		return fmt.Errorf("解析配置失败: %w", err)
+		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	// 校验配置
 	validate := validator.New()
 	if err := validate.Struct(conf); err != nil {
-		return fmt.Errorf("配置校验失败: %w", err)
+		return fmt.Errorf("config validation failed: %w", err)
 	}
 
 	// 监听文件变更（热加载）
 	v.WatchConfig()
 	v.OnConfigChange(func(e fsnotify.Event) {
-		slog.Info("配置文件已变更", "file", e.Name)
+		slog.Info("config file changed", "file", e.Name)
 		if err := v.Unmarshal(conf); err != nil {
-			slog.Error("变更后解析配置失败", "error", err)
+			slog.Error("failed to unmarshal config after change", "error", err)
 			return
 		}
 		// 变更后重新校验
 		if err := validate.Struct(conf); err != nil {
-			slog.Error("变更后配置校验失败", "error", err)
+			slog.Error("config validation failed after change", "error", err)
 		}
 	})
 

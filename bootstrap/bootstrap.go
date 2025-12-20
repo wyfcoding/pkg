@@ -23,7 +23,7 @@ type Bootstrapper struct {
 	Logger      *logging.Logger
 }
 
-// New creates a new Bootstrapper
+// New 创建一个新的引导器实例
 func New(serviceName, version string) *Bootstrapper {
 	return &Bootstrapper{
 		ServiceName: serviceName,
@@ -31,28 +31,27 @@ func New(serviceName, version string) *Bootstrapper {
 	}
 }
 
-// Initialize 解析标志、加载配置并设置日志和追踪
-// 它返回加载的配置对象（应该是指向结构体的指针）
+// Initialize 解析命令行标志、加载配置文件，并初步初始化日志系统。
+// 它接收一个 cfg 指针，用于将加载的配置反序列化到该结构体中。
 func (b *Bootstrapper) Initialize(cfg interface{}) error {
 	var configPath string
 	flag.StringVar(&configPath, "config", "configs/config.toml", "path to config file")
 	flag.Parse()
 
-	// 1. 临时初始化 Logger（用于记录配置加载错误）
+	// 1. 临时初始化 Logger（用于记录配置加载过程中的潜在错误）。
 	logging.InitLogger(b.ServiceName, "bootstrap")
 	b.Logger = logging.Default()
 
-	// 2. Load Configuration
+	// 2. 加载配置文件：读取 TOML 文件并映射到传入的 cfg 结构体中。
 	if err := config.Load(configPath, cfg); err != nil {
 		b.Logger.Error("failed to load config", "error", err)
 		return err
 	}
 
-	// 3. 使用配置重新初始化 Logger（如果配置包含日志设置）
-	// 目前我们假设使用标准设置，但在实际场景中，我们会读取 cfg.Log
-	// Since cfg is an interface{}, we might need reflection or a specific interface to extract LogConfig
-	// 为了保持简单和通用，我们依赖初始 logger 或假设用户会在需要时重新初始化。
-	// 但是，如果我们假设配置中存在标准的 TracingConfig 结构，我们可以初始化追踪。
+	// 3. 使用配置重新初始化 Logger（如果配置包含特定的日志设置）。
+	// 目前我们假设使用标准设置，但在复杂场景下，可以根据 cfg.Log 的内容进行二次初始化。
+	// 由于 cfg 是 interface{} 类型，可能需要使用反射或特定的接口来提取 LogConfig。
+	// 为了保持引导器的简单和通用性，我们目前依赖默认初始化的 logger。
 
 	return nil
 }

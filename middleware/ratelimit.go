@@ -39,7 +39,7 @@ func RateLimitMiddleware(l limiter.Limiter) gin.HandlerFunc {
 	}
 }
 
-// RateLimitWithLimiter is a compatibility alias for RateLimitMiddleware
+// RateLimitWithLimiter 是 RateLimitMiddleware 的兼容性别名。
 func RateLimitWithLimiter(l limiter.Limiter) gin.HandlerFunc {
 	return RateLimitMiddleware(l)
 }

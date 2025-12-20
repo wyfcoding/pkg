@@ -54,7 +54,7 @@ func NewMongoClient(conf *Config) (*mongo.Client, func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), conf.ConnectTimeout)
 	defer cancel() // 确保上下文在函数退出时被取消。
 
-	// Configure metrics monitor
+	// 配置指标监控
 	monitor := &event.CommandMonitor{
 		Succeeded: func(ctx context.Context, evt *event.CommandSucceededEvent) {
 			mongoOps.WithLabelValues(evt.CommandName, "success").Inc()

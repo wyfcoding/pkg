@@ -34,7 +34,7 @@ func init() {
 	prometheus.MustRegister(chOps, chDuration)
 }
 
-// NewClient creates a new native ClickHouse client.
+// NewClient 创建一个新的原生 ClickHouse 客户端。
 func NewClient(cfg config.ClickHouseConfig) (driver.Conn, error) {
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{cfg.Addr},

@@ -27,7 +27,7 @@ func NewBigCache(ttl time.Duration, maxMB int) (*BigCache, error) {
 
 	cache, err := bigcache.New(context.Background(), config) // 初始化BigCache
 	if err != nil {
-		return nil, fmt.Errorf("初始化 bigcache 失败: %w", err)
+		return nil, fmt.Errorf("failed to initialize bigcache: %w", err)
 	}
 
 	return &BigCache{cache: cache}, nil
@@ -39,7 +39,7 @@ func (c *BigCache) Get(ctx context.Context, key string, value interface{}) error
 	data, err := c.cache.Get(key) // 从底层BigCache获取原始字节数据
 	if err != nil {
 		if err == bigcache.ErrEntryNotFound {
-			return fmt.Errorf("缓存未命中: %s", key) // 如果未找到，返回缓存未命中错误
+			return fmt.Errorf("cache miss: %s", key) // 如果未找到，返回缓存未命中错误
 		}
 		return err // 其他错误直接返回
 	}
@@ -77,7 +77,7 @@ func (c *BigCache) Delete(ctx context.Context, keys ...string) error {
 func (c *BigCache) Exists(ctx context.Context, key string) (bool, error) {
 	_, err := c.cache.Get(key) // 尝试获取键
 	if err == nil {
-		return true, nil // 如果fetched successfully，表示存在
+		return true, nil // 如果成功获取，表示存在
 	}
 	if err == bigcache.ErrEntryNotFound {
 		return false, nil // 如果返回未找到错误，表示不存在

@@ -16,7 +16,7 @@ import (
 func InitServiceClients(services map[string]config.ServiceAddr, targetClients interface{}) (func(), error) {
 	val := reflect.ValueOf(targetClients)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-		return nil, fmt.Errorf("targetClients 必须是指向结构体的指针")
+		return nil, fmt.Errorf("targetClients must be a pointer to a struct")
 	}
 
 	elem := val.Elem()
@@ -49,12 +49,12 @@ func InitServiceClients(services map[string]config.ServiceAddr, targetClients in
 		if !ok {
 			// 警告但不失败，也许它是可选的或在其他地方配置？
 			// 目前我们只记录信息并跳过。
-			slog.Info("未找到字段的服务配置，跳过自动注入", "field", fieldType.Name, "service", serviceName)
+			slog.Info("service config not found for field, skipping auto-wiring", "field", fieldType.Name, "service", serviceName)
 			continue
 		}
 
 		if addrConfig.GRPCAddr == "" {
-			slog.Warn("服务 gRPC 地址为空", "service", serviceName)
+			slog.Warn("service gRPC address is empty", "service", serviceName)
 			continue
 		}
 
@@ -65,12 +65,12 @@ func InitServiceClients(services map[string]config.ServiceAddr, targetClients in
 			for _, c := range conns {
 				c.Close()
 			}
-			return nil, fmt.Errorf("连接到服务 %s 失败 (地址: %s): %w", serviceName, addrConfig.GRPCAddr, err)
+			return nil, fmt.Errorf("failed to connect to service %s at %s: %w", serviceName, addrConfig.GRPCAddr, err)
 		}
 
 		conns = append(conns, conn)
 		field.Set(reflect.ValueOf(conn))
-		slog.Info("已连接到服务", "service", serviceName, "addr", addrConfig.GRPCAddr)
+		slog.Info("connected to service", "service", serviceName, "addr", addrConfig.GRPCAddr)
 	}
 
 	cleanup := func() {
