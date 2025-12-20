@@ -11,13 +11,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// InitServiceClients initializes gRPC clients based on the ServiceClients struct fields
-// and the Services configuration map.
-// It returns a cleanup function that closes all established connections.
+// InitServiceClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端。
+// 它返回一个清理函数，用于关闭所有建立的连接。
 func InitServiceClients(services map[string]config.ServiceAddr, targetClients interface{}) (func(), error) {
 	val := reflect.ValueOf(targetClients)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-		return nil, fmt.Errorf("targetClients must be a pointer to a struct")
+		return nil, fmt.Errorf("targetClients 必须是指向结构体的指针")
 	}
 
 	elem := val.Elem()
@@ -29,49 +28,49 @@ func InitServiceClients(services map[string]config.ServiceAddr, targetClients in
 		field := elem.Field(i)
 		fieldType := typ.Field(i)
 
-		// Skip unexported fields
+		// 跳过未导出的字段
 		if !field.CanSet() {
 			continue
 		}
 
-		// Only process fields of type *grpc.ClientConn
+		// 仅处理 *grpc.ClientConn 类型的字段
 		if field.Type() != reflect.TypeOf((*grpc.ClientConn)(nil)) {
 			continue
 		}
 
-		// Determine service name from tag or field name
+		// 从 tag 或字段名确定服务名称
 		serviceName := fieldType.Tag.Get("service")
 		if serviceName == "" {
 			serviceName = strings.ToLower(fieldType.Name)
 		}
 
-		// Look up service address in config
+		// 在配置中查找服务地址
 		addrConfig, ok := services[serviceName]
 		if !ok {
-			// Warn but don't fail, maybe it's optional or configured elsewhere?
-			// Actually, for now let's just log info and skip.
-			slog.Info("Service config not found for field, skipping auto-wiring", "field", fieldType.Name, "service", serviceName)
+			// 警告但不失败，也许它是可选的或在其他地方配置？
+			// 目前我们只记录信息并跳过。
+			slog.Info("未找到字段的服务配置，跳过自动注入", "field", fieldType.Name, "service", serviceName)
 			continue
 		}
 
 		if addrConfig.GRPCAddr == "" {
-			slog.Warn("Service gRPC address is empty", "service", serviceName)
+			slog.Warn("服务 gRPC 地址为空", "service", serviceName)
 			continue
 		}
 
-		// Dial
+		// 拨号连接
 		conn, err := grpc.NewClient(addrConfig.GRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			// Close already opened connections
+			// 关闭已打开的连接
 			for _, c := range conns {
 				c.Close()
 			}
-			return nil, fmt.Errorf("failed to connect to service %s at %s: %w", serviceName, addrConfig.GRPCAddr, err)
+			return nil, fmt.Errorf("连接到服务 %s 失败 (地址: %s): %w", serviceName, addrConfig.GRPCAddr, err)
 		}
 
 		conns = append(conns, conn)
 		field.Set(reflect.ValueOf(conn))
-		slog.Info("Connected to service", "service", serviceName, "addr", addrConfig.GRPCAddr)
+		slog.Info("已连接到服务", "service", serviceName, "addr", addrConfig.GRPCAddr)
 	}
 
 	cleanup := func() {

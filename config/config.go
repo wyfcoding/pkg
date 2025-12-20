@@ -36,7 +36,7 @@ type Config struct {
 	Services       ServicesConfig       `mapstructure:"services" toml:"services"`
 }
 
-// ServerConfig defines server configuration.
+// ServerConfig 定义服务器配置。
 type ServerConfig struct {
 	Name        string `mapstructure:"name" toml:"name" validate:"required"`
 	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
@@ -58,7 +58,7 @@ type ServerConfig struct {
 	} `mapstructure:"grpc" toml:"grpc"`
 }
 
-// DataConfig defines data related configuration.
+// DataConfig 定义数据相关的配置。
 type DataConfig struct {
 	Database      DatabaseConfig      `mapstructure:"database" toml:"database"`
 	Shards        []DatabaseConfig    `mapstructure:"shards" toml:"shards"`
@@ -70,7 +70,7 @@ type DataConfig struct {
 	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch" toml:"elasticsearch"`
 }
 
-// DatabaseConfig defines MySQL configuration.
+// DatabaseConfig 定义数据库（MySQL）配置。
 type DatabaseConfig struct {
 	Driver          string          `mapstructure:"driver" toml:"driver" validate:"required"`
 	DSN             string          `mapstructure:"dsn" toml:"dsn" validate:"required"`
@@ -81,7 +81,7 @@ type DatabaseConfig struct {
 	SlowThreshold   time.Duration   `mapstructure:"slow_threshold" toml:"slow_threshold"`
 }
 
-// RedisConfig defines Redis configuration.
+// RedisConfig 定义 Redis 配置。
 type RedisConfig struct {
 	Addr         string        `mapstructure:"addr" toml:"addr" validate:"required"`
 	Password     string        `mapstructure:"password" toml:"password"`
@@ -92,6 +92,7 @@ type RedisConfig struct {
 	MinIdleConns int           `mapstructure:"min_idle_conns" toml:"min_idle_conns"`
 }
 
+// LogConfig 定义日志配置。
 type LogConfig struct {
 	Level      string `mapstructure:"level" toml:"level"`
 	Format     string `mapstructure:"format" toml:"format"`
@@ -103,21 +104,25 @@ type LogConfig struct {
 	Compress   bool   `mapstructure:"compress" toml:"compress"`
 }
 
+// JWTConfig 定义 JWT 认证配置。
 type JWTConfig struct {
 	Secret         string        `mapstructure:"secret" toml:"secret"`
 	Issuer         string        `mapstructure:"issuer" toml:"issuer"`
 	ExpireDuration time.Duration `mapstructure:"expire_duration" toml:"expire_duration"`
 }
 
+// SnowflakeConfig 定义雪花算法配置。
 type SnowflakeConfig struct {
 	StartTime string `mapstructure:"start_time" toml:"start_time"`
 	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"`
 }
 
+// MessageQueueConfig 定义消息队列配置。
 type MessageQueueConfig struct {
 	Kafka KafkaConfig `mapstructure:"kafka" toml:"kafka"`
 }
 
+// KafkaConfig 定义 Kafka 配置。
 type KafkaConfig struct {
 	Brokers        []string      `mapstructure:"brokers" toml:"brokers"`
 	Topic          string        `mapstructure:"topic" toml:"topic"`
@@ -134,7 +139,7 @@ type KafkaConfig struct {
 	Async          bool          `mapstructure:"async" toml:"async"`
 }
 
-// MinioConfig defines MinIO configuration.
+// MinioConfig 定义 MinIO 对象存储配置。
 type MinioConfig struct {
 	Endpoint        string `mapstructure:"endpoint" toml:"endpoint"`
 	AccessKeyID     string `mapstructure:"access_key_id" toml:"access_key_id"`
@@ -143,27 +148,28 @@ type MinioConfig struct {
 	BucketName      string `mapstructure:"bucket_name" toml:"bucket_name"`
 }
 
+// TracingConfig 定义链路追踪配置。
 type TracingConfig struct {
 	Enabled      bool   `mapstructure:"enabled" toml:"enabled"`
 	ServiceName  string `mapstructure:"service_name" toml:"service_name"`
 	OTLPEndpoint string `mapstructure:"otlp_endpoint" toml:"otlp_endpoint"`
 }
 
-// MetricsConfig defines metrics configuration.
+// MetricsConfig 定义监控指标配置。
 type MetricsConfig struct {
 	Enabled bool   `mapstructure:"enabled" toml:"enabled"`
 	Port    string `mapstructure:"port" toml:"port"`
 	Path    string `mapstructure:"path" toml:"path"`
 }
 
-// RateLimitConfig defines rate limiting configuration.
+// RateLimitConfig 定义限流配置。
 type RateLimitConfig struct {
 	Enabled bool `mapstructure:"enabled" toml:"enabled"`
 	Rate    int  `mapstructure:"rate" toml:"rate"`
 	Burst   int  `mapstructure:"burst" toml:"burst"`
 }
 
-// CircuitBreakerConfig defines circuit breaker configuration.
+// CircuitBreakerConfig 定义熔断器配置。
 type CircuitBreakerConfig struct {
 	Enabled     bool          `mapstructure:"enabled" toml:"enabled"`
 	MaxRequests uint32        `mapstructure:"max_requests" toml:"max_requests"`
@@ -171,14 +177,14 @@ type CircuitBreakerConfig struct {
 	Timeout     time.Duration `mapstructure:"timeout" toml:"timeout"`
 }
 
-// CacheConfig defines cache configuration.
+// CacheConfig 定义缓存配置。
 type CacheConfig struct {
 	Prefix            string        `mapstructure:"prefix" toml:"prefix"`
 	DefaultExpiration time.Duration `mapstructure:"default_expiration" toml:"default_expiration"`
 	CleanupInterval   time.Duration `mapstructure:"cleanup_interval" toml:"cleanup_interval"`
 }
 
-// LockConfig defines distributed lock configuration.
+// LockConfig 定义分布式锁配置。
 type LockConfig struct {
 	Prefix            string        `mapstructure:"prefix" toml:"prefix"`
 	DefaultExpiration time.Duration `mapstructure:"default_expiration" toml:"default_expiration"`
@@ -186,22 +192,21 @@ type LockConfig struct {
 	RetryDelay        time.Duration `mapstructure:"retry_delay" toml:"retry_delay"`
 }
 
-// ServicesConfig defines service addresses.
-// ServicesConfig defines service addresses.
+// ServicesConfig 定义服务地址映射。
 type ServicesConfig map[string]ServiceAddr
 
-// ServiceAddr defines a single service address.
+// ServiceAddr 定义单个服务的地址信息。
 type ServiceAddr struct {
 	GRPCAddr string `mapstructure:"grpc_addr" toml:"grpc_addr"`
 	HTTPAddr string `mapstructure:"http_addr" toml:"http_addr"`
 }
 
-// HadoopConfig defines Hadoop configuration.
+// HadoopConfig 定义 Hadoop 配置。
 type HadoopConfig struct {
 	NameNode string `mapstructure:"name_node" toml:"name_node"`
 }
 
-// BigCacheConfig defines BigCache configuration.
+// BigCacheConfig 定义 BigCache 配置。
 type BigCacheConfig struct {
 	Shards             int           `mapstructure:"shards" toml:"shards"`
 	LifeWindow         time.Duration `mapstructure:"life_window" toml:"life_window"`
@@ -212,13 +217,13 @@ type BigCacheConfig struct {
 	OnRemoveWithReason bool          `mapstructure:"on_remove_with_reason" toml:"on_remove_with_reason"`
 }
 
-// MongoDBConfig defines MongoDB configuration.
+// MongoDBConfig 定义 MongoDB 配置。
 type MongoDBConfig struct {
 	URI      string `mapstructure:"uri" toml:"uri"`
 	Database string `mapstructure:"database" toml:"database"`
 }
 
-// ClickHouseConfig defines ClickHouse configuration.
+// ClickHouseConfig 定义 ClickHouse 配置。
 type ClickHouseConfig struct {
 	Addr     string `mapstructure:"addr" toml:"addr"`
 	Database string `mapstructure:"database" toml:"database"`
@@ -226,21 +231,21 @@ type ClickHouseConfig struct {
 	Password string `mapstructure:"password" toml:"password"`
 }
 
-// Neo4jConfig defines Neo4j configuration.
+// Neo4jConfig 定义 Neo4j 配置。
 type Neo4jConfig struct {
 	URI      string `mapstructure:"uri" toml:"uri"`
 	Username string `mapstructure:"username" toml:"username"`
 	Password string `mapstructure:"password" toml:"password"`
 }
 
-// ElasticsearchConfig defines Elasticsearch configuration.
+// ElasticsearchConfig 定义 Elasticsearch 配置。
 type ElasticsearchConfig struct {
 	Addresses []string `mapstructure:"addresses" toml:"addresses"`
 	Username  string   `mapstructure:"username" toml:"username"`
 	Password  string   `mapstructure:"password" toml:"password"`
 }
 
-// Load 从指定路径加载配置
+// Load 从指定路径加载配置。
 func Load(path string, conf interface{}) error {
 	v := viper.New()
 	v.SetConfigFile(path)
@@ -250,30 +255,30 @@ func Load(path string, conf interface{}) error {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	if err := v.ReadInConfig(); err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
+		return fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
 	if err := v.Unmarshal(conf); err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
+		return fmt.Errorf("解析配置失败: %w", err)
 	}
 
-	// Validate configuration
+	// 校验配置
 	validate := validator.New()
 	if err := validate.Struct(conf); err != nil {
-		return fmt.Errorf("config validation failed: %w", err)
+		return fmt.Errorf("配置校验失败: %w", err)
 	}
 
-	// Watch for changes
+	// 监听文件变更（热加载）
 	v.WatchConfig()
 	v.OnConfigChange(func(e fsnotify.Event) {
-		slog.Info("config file changed", "file", e.Name)
+		slog.Info("配置文件已变更", "file", e.Name)
 		if err := v.Unmarshal(conf); err != nil {
-			slog.Error("failed to unmarshal config after change", "error", err)
+			slog.Error("变更后解析配置失败", "error", err)
 			return
 		}
-		// Re-validate on change
+		// 变更后重新校验
 		if err := validate.Struct(conf); err != nil {
-			slog.Error("config validation failed after change", "error", err)
+			slog.Error("变更后配置校验失败", "error", err)
 		}
 	})
 

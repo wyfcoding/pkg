@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	// cacheHits is a Prometheus counter for cache hits
+	// cacheHits 是缓存命中的Prometheus计数器
 	cacheHits = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "cache_hits_total",
@@ -25,7 +25,7 @@ var (
 		},
 		[]string{"prefix"},
 	)
-	// cacheMisses is a Prometheus counter for cache misses
+	// cacheMisses 是缓存未命中的Prometheus计数器
 	cacheMisses = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "cache_misses_total",
@@ -33,7 +33,7 @@ var (
 		},
 		[]string{"prefix"},
 	)
-	// cacheDuration is a Prometheus histogram for cache operation duration
+	// cacheDuration 是缓存操作耗时的Prometheus直方图
 	cacheDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "cache_operation_duration_seconds",
@@ -44,12 +44,12 @@ var (
 	)
 )
 
-// init registers Prometheus metrics
+// init 注册Prometheus监控指标
 func init() {
 	prometheus.MustRegister(cacheHits, cacheMisses, cacheDuration)
 }
 
-// Cache defines the cache interface
+// Cache 定义缓存接口
 type Cache interface {
 	Get(ctx context.Context, key string, value interface{}) error
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error
@@ -58,23 +58,23 @@ type Cache interface {
 	Close() error
 }
 
-// RedisCache implements Cache using Redis
+// RedisCache 使用Redis实现的Cache接口
 type RedisCache struct {
-	client  *redis.Client             // Redis client instance
-	cleanup func()                    // Cleanup function to close the client
-	prefix  string                    // Cache key prefix
-	cb      *gobreaker.CircuitBreaker // Circuit breaker instance
+	client  *redis.Client             // Redis客户端实例
+	cleanup func()                    // 清理函数，用于关闭客户端
+	prefix  string                    // 缓存键前缀
+	cb      *gobreaker.CircuitBreaker // 熔断器实例
 }
 
-// NewRedisCache creates a new RedisCache instance
+// NewRedisCache 创建一个新的RedisCache实例
 func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
-	// Use shared Redis client factory
+	// 使用共享的Redis客户端工厂
 	client, cleanup, err := redis_pkg.NewClient(&cfg, logging.Default())
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize circuit breaker
+	// 初始化熔断器
 	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
 		Name:        "redis-cache",
 		MaxRequests: 0,
@@ -89,17 +89,17 @@ func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
 	return &RedisCache{
 		client:  client,
 		cleanup: cleanup,
-		prefix:  "", // Default no prefix
+		prefix:  "", // 默认无前缀
 		cb:      cb,
 	}, nil
 }
 
-// WithPrefix returns a new RedisCache with a key prefix
-// The underlying client is shared
+// WithPrefix 返回一个带有键前缀的新RedisCache实例
+// 底层客户端是共享的
 func (c *RedisCache) WithPrefix(prefix string) *RedisCache {
 	return &RedisCache{
 		client:  c.client,
-		cleanup: c.cleanup, // Share cleanup? Careful here. Usually cleanup belongs to the owner.
+		cleanup: c.cleanup, // 共享清理函数？需小心，通常清理归属于所有者
 		prefix:  prefix,
 		cb:      c.cb,
 	}

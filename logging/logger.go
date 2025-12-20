@@ -122,7 +122,7 @@ func NewFromConfig(cfg Config) *Logger {
 	}
 }
 
-// NewLogger is a compatibility alias for creating a logger with simple parameters.
+// NewLogger 是创建一个带有简单参数的 logger 的兼容别名。
 func NewLogger(service, module string, level ...string) *Logger {
 	lvl := "info"
 	if len(level) > 0 {
@@ -213,7 +213,7 @@ func DebugContext(ctx context.Context, msg string, args ...any) {
 func LogDuration(ctx context.Context, operation string, args ...any) func() {
 	start := time.Now()
 	return func() {
-		// Append duration to args
+		// 将耗时附加到日志参数中
 		logArgs := append(args, "duration", time.Since(start))
 		Info(ctx, fmt.Sprintf("%s finished", operation), logArgs...)
 	}
