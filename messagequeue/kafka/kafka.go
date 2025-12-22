@@ -165,7 +165,7 @@ func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger) *Consumer {
 		MaxBytes:        cfg.MaxBytes,
 		MaxWait:         cfg.MaxWait,
 		ReadLagInterval: -1,
-		CommitInterval:  0, // 设置为0以启用手动提交 Offset。
+		CommitInterval:  0,                // 设置为0以启用手动提交 Offset。
 		StartOffset:     kafka.LastOffset, // 默认从最后一条消息之后开始消费。
 	})
 
