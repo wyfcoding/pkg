@@ -30,7 +30,7 @@ func NewMultiLevelCache(l1, l2 Cache) *MultiLevelCache {
 
 // Get 从多级缓存中获取一个键对应的值。
 // 首先尝试从L1缓存获取，如果L1未命中，则尝试从L2获取，并将L2中的数据回填到L1。
-func (c *MultiLevelCache) Get(ctx context.Context, key string, value interface{}) error {
+func (c *MultiLevelCache) Get(ctx context.Context, key string, value any) error {
 	ctx, span := c.tracer.Start(ctx, "MultiLevelCache.Get", trace.WithAttributes(
 		attribute.String("cache.key", key),
 	))
@@ -57,7 +57,7 @@ func (c *MultiLevelCache) Get(ctx context.Context, key string, value interface{}
 
 // Set 将一个键值对设置到多级缓存中。
 // 数据会同时写入L1和L2缓存。
-func (c *MultiLevelCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+func (c *MultiLevelCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	ctx, span := c.tracer.Start(ctx, "MultiLevelCache.Set", trace.WithAttributes(
 		attribute.String("cache.key", key),
 	))

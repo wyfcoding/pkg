@@ -42,12 +42,12 @@ func (svm *SVM) Train(points []*SVMPoint, labels []int, learningRate float64, it
 
 	dim := len(points[0].Data) // 输入特征的维度。
 
-	for iter := 0; iter < iterations; iter++ {
+	for range iterations {
 		for i, p := range points {
 			// 计算当前数据点的预测值。
 			// 预测值 = 权重向量与特征向量的点积 + 偏置项。
 			pred := svm.bias
-			for j := 0; j < dim; j++ {
+			for j := range dim {
 				pred += svm.weights[j] * p.Data[j]
 			}
 
@@ -62,7 +62,7 @@ func (svm *SVM) Train(points []*SVMPoint, labels []int, learningRate float64, it
 
 			// 更新权重。
 			// 权重更新 = 学习率 * 误差 * 特征值。
-			for j := 0; j < dim; j++ {
+			for j := range dim {
 				svm.weights[j] += learningRate * error * p.Data[j]
 			}
 

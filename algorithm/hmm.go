@@ -84,7 +84,7 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	// path 数组 (psi) 用于存储在回溯时，达到当前状态 j 的前一个最可能状态的索引。
 	path := make([][]int, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		dp[i] = make([]float64, m)
 		path[i] = make([]int, m)
 	}
@@ -125,7 +125,7 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	maxIdx := 0                 // 最后一个时间步中导致最大对数概率的状态索引。
 
 	// 找到最后一个观测的最可能隐藏状态。
-	for j := 0; j < m; j++ {
+	for j := range m {
 		if dp[n-1][j] > maxProb {
 			maxProb = dp[n-1][j]
 			maxIdx = j

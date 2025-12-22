@@ -45,11 +45,11 @@ const (
 
 // Error 是项目内统一的错误接口实现。
 type Error struct {
-	Type    ErrorType              // 错误类别
-	Code    int                    // 业务错误码 (可选，0表示无特定业务码)
-	Message string                 // 对外展示的错误信息 (User Message)
-	Cause   error                  // 根本原因 (Root Cause)，通常是底层库返回的 error
-	Context map[string]interface{} // 错误上下文，用于记录额外信息（如 UserID, OrderID）
+	Type    ErrorType      // 错误类别
+	Code    int            // 业务错误码 (可选，0表示无特定业务码)
+	Message string         // 对外展示的错误信息 (User Message)
+	Cause   error          // 根本原因 (Root Cause)，通常是底层库返回的 error
+	Context map[string]any // 错误上下文，用于记录额外信息（如 UserID, OrderID）
 }
 
 // Error 实现 error 接口。
@@ -98,7 +98,7 @@ func New(errType ErrorType, msg string, cause error) *Error {
 		Type:    errType,
 		Message: msg,
 		Cause:   cause,
-		Context: make(map[string]interface{}),
+		Context: make(map[string]any),
 	}
 }
 
@@ -109,7 +109,7 @@ func (e *Error) WithCode(code int) *Error {
 }
 
 // WithContext 为错误附加上下文信息。
-func (e *Error) WithContext(key string, value interface{}) *Error {
+func (e *Error) WithContext(key string, value any) *Error {
 	e.Context[key] = value
 	return e
 }
@@ -117,32 +117,32 @@ func (e *Error) WithContext(key string, value interface{}) *Error {
 // 常用错误构造函数
 
 // NewNotFound 创建一个 ErrNotFound 错误。
-func NewNotFound(format string, args ...interface{}) error {
+func NewNotFound(format string, args ...any) error {
 	return New(ErrNotFound, fmt.Sprintf(format, args...), nil)
 }
 
 // NewInvalidArg 创建一个 ErrInvalidArg 错误。
-func NewInvalidArg(format string, args ...interface{}) error {
+func NewInvalidArg(format string, args ...any) error {
 	return New(ErrInvalidArg, fmt.Sprintf(format, args...), nil)
 }
 
 // NewInternal 创建一个 ErrInternal 错误。
-func NewInternal(cause error, format string, args ...interface{}) error {
+func NewInternal(cause error, format string, args ...any) error {
 	return New(ErrInternal, fmt.Sprintf(format, args...), cause)
 }
 
 // NewAlreadyExists 创建一个 ErrAlreadyExists 错误。
-func NewAlreadyExists(format string, args ...interface{}) error {
+func NewAlreadyExists(format string, args ...any) error {
 	return New(ErrAlreadyExists, fmt.Sprintf(format, args...), nil)
 }
 
 // NewPermissionDenied 创建一个 ErrPermissionDenied 错误。
-func NewPermissionDenied(format string, args ...interface{}) error {
+func NewPermissionDenied(format string, args ...any) error {
 	return New(ErrPermissionDenied, fmt.Sprintf(format, args...), nil)
 }
 
 // NewUnauthenticated 创建一个 ErrUnauthenticated 错误。
-func NewUnauthenticated(format string, args ...interface{}) error {
+func NewUnauthenticated(format string, args ...any) error {
 	return New(ErrUnauthenticated, fmt.Sprintf(format, args...), nil)
 }
 

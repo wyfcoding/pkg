@@ -79,7 +79,7 @@ func (co *CouponOptimizer) OptimalCombination(
 		combination := make([]Coupon, 0)
 
 		// 根据mask的位来构建当前组合。
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if mask&(1<<i) != 0 { // 如果第i位是1，则选中第i个优惠券。
 				combination = append(combination, available[i])
 			}
@@ -362,11 +362,10 @@ func (co *CouponOptimizer) DynamicProgramming(
 
 	// 回溯找出被选择的优惠券。
 	selected := make([]uint64, 0)
-	minPrice := dp[n][0] // 最终的最低价格。
-	// 考虑最后一步选择或不选择第n个优惠券。
-	if dp[n][1] < minPrice {
-		minPrice = dp[n][1]
-	}
+	minPrice := min(
+		// 最终的最低价格。
+		// 考虑最后一步选择或不选择第n个优惠券。
+		dp[n][1], dp[n][0])
 
 	// 从后往前遍历DP表，根据 choice 数组和最终价格回溯路径。
 	for i := n; i > 0; i-- {

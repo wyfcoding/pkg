@@ -87,14 +87,14 @@ func (km *KMeans) Fit(points []*KMeansPoint) {
 		for j := 0; j < km.k; j++ { // 遍历每个簇。
 			count := 0 // 统计当前簇的数据点数量。
 			// 将当前质心坐标清零，准备重新计算平均值。
-			for d := 0; d < dim; d++ {
+			for d := range dim {
 				km.centroids[j][d] = 0
 			}
 
 			// 累加当前簇内所有数据点的特征向量。
 			for _, p := range km.points {
 				if p.Label == j {
-					for d := 0; d < dim; d++ {
+					for d := range dim {
 						km.centroids[j][d] += p.Data[d]
 					}
 					count++
@@ -103,7 +103,7 @@ func (km *KMeans) Fit(points []*KMeansPoint) {
 
 			// 如果簇不为空，则计算新的质心（平均值）。
 			if count > 0 {
-				for d := 0; d < dim; d++ {
+				for d := range dim {
 					km.centroids[j][d] /= float64(count)
 				}
 			}

@@ -42,7 +42,7 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 		bootstrapPoints := make([]*DTPoint, len(points))
 		bootstrapLabels := make([]int, len(labels))
 
-		for j := 0; j < len(points); j++ {
+		for j := range points {
 			// 随机选择一个索引。
 			idx := int(math.Floor(rand.Float64() * float64(len(points))))
 			bootstrapPoints[j] = points[idx]

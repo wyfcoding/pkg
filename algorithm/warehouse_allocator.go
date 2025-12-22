@@ -140,10 +140,11 @@ func (wa *WarehouseAllocator) AllocateOptimal(
 		for skuID, needQty := range remainingItems {
 			// 如果该仓库有此SKU的库存。
 			if info, exists := skuMap[skuID]; exists && info.Stock > 0 {
-				allocQty := needQty // 默认分配所需数量。
-				if info.Stock < needQty {
-					allocQty = info.Stock // 如果仓库库存不足，则分配所有可用库存。
-				}
+				allocQty := min(
+					// 默认分配所需数量。
+					info.Stock,
+					// 如果仓库库存不足，则分配所有可用库存。
+					needQty)
 
 				// 记录分配给当前仓库的商品。
 				allocatedItems = append(allocatedItems, OrderItem{
@@ -235,10 +236,7 @@ func (wa *WarehouseAllocator) AllocateByDistance(
 
 		for skuID, needQty := range remainingItems {
 			if info, exists := skuMap[skuID]; exists && info.Stock > 0 {
-				allocQty := needQty
-				if info.Stock < needQty {
-					allocQty = info.Stock
-				}
+				allocQty := min(info.Stock, needQty)
 
 				allocatedItems = append(allocatedItems, OrderItem{
 					SkuID:    skuID,

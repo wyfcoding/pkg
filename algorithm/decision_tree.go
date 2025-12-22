@@ -93,7 +93,7 @@ func (dt *DecisionTree) buildTree(points []*DTPoint, labels []int, depth int) *T
 	bestThreshold := 0.0 // 记录最佳分裂阈值。
 
 	dim := len(points[0].Data) // 数据特征的维度。
-	for feature := 0; feature < dim; feature++ {
+	for feature := range dim {
 		// 获取当前特征的所有值，并排序。
 		values := make([]float64, len(points))
 		for i, p := range points {

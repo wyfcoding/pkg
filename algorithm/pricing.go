@@ -204,7 +204,7 @@ func (bsc *BlackScholesCalculator) CalculateImpliedVolatility(optionType string,
 	tolerance := 0.0001
 	maxIterations := 100
 
-	for i := 0; i < maxIterations; i++ {
+	for range maxIterations {
 		// 计算当前价格和 vega
 		d1 := (math.Log(sFloat/kFloat) + (rFloat-qFloat+0.5*sigma*sigma)*tFloat) / (sigma * math.Sqrt(tFloat))
 		d2 := d1 - sigma*math.Sqrt(tFloat)

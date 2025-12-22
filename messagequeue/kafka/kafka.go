@@ -118,7 +118,7 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 
 	// 简单的重试逻辑
 	var err error
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		err = p.writer.WriteMessages(ctx, msg)
 		if err == nil {
 			mqProduced.WithLabelValues(p.writer.Topic, "success").Inc()

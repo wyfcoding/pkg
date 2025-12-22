@@ -119,10 +119,7 @@ func (ro *RouteOptimizer) OptimizeBatchRoutes(start Location, destinations []Loc
 	routes := make([]Route, 0)
 
 	for i := 0; i < len(dests); i += chunkSize {
-		end := i + chunkSize
-		if end > len(dests) {
-			end = len(dests)
-		}
+		end := min(i+chunkSize, len(dests))
 
 		chunk := make([]Location, end-i)
 		for j := range chunk {

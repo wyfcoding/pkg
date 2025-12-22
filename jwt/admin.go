@@ -49,7 +49,7 @@ func GenerateAdminToken(adminID uint64, username, email, secret, issuer string, 
 // secretKey: 用于验证JWT签名的密钥。
 // 返回值：解析出的AdminClaims指针和可能发生的错误。
 func ParseAdminToken(tokenString string, secretKey string) (*AdminClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (any, error) {
 		return []byte(secretKey), nil
 	})
 

@@ -100,10 +100,7 @@ func (pe *PricingEngine) CalculatePrice(factors PricingFactors) int64 {
 	price *= (1.0 + (factors.SeasonFactor-0.5)*0.2)
 
 	// 将计算出的浮点价格转换为整数分，并限制在最小和最高价格之间。
-	finalPrice := int64(price)
-	if finalPrice < pe.minPrice {
-		finalPrice = pe.minPrice
-	}
+	finalPrice := max(int64(price), pe.minPrice)
 	if finalPrice > pe.maxPrice {
 		finalPrice = pe.maxPrice
 	}
@@ -148,12 +145,9 @@ func (pe *PricingEngine) OptimalPrice(cost int64, baseDemand int64) int64 {
 		return pe.basePrice // 避免除以零，返回基础价格。
 	}
 
-	optimalPrice := int64(numerator / denominator)
-
-	// 限制最优价格在最小和最高价格之间。
-	if optimalPrice < pe.minPrice {
-		optimalPrice = pe.minPrice
-	}
+	optimalPrice := max(
+		// 限制最优价格在最小和最高价格之间。
+		int64(numerator/denominator), pe.minPrice)
 	if optimalPrice > pe.maxPrice {
 		optimalPrice = pe.maxPrice
 	}
@@ -180,12 +174,9 @@ func (pe *PricingEngine) SurgePrice(demandSupplyRatio float64) int64 {
 		multiplier = 2.4 // 最大涨价140%。
 	}
 
-	price := int64(float64(pe.basePrice) * multiplier)
-
-	// 限制价格范围。
-	if price < pe.minPrice {
-		price = pe.minPrice
-	}
+	price := max(
+		// 限制价格范围。
+		int64(float64(pe.basePrice)*multiplier), pe.minPrice)
 	if price > pe.maxPrice {
 		price = pe.maxPrice
 	}
@@ -223,12 +214,9 @@ func (pe *PricingEngine) TimeBasedPrice(startTime, endTime, currentTime time.Tim
 		multiplier = 0.7
 	}
 
-	price := int64(float64(pe.basePrice) * multiplier)
-
-	// 限制价格范围。
-	if price < pe.minPrice {
-		price = pe.minPrice
-	}
+	price := max(
+		// 限制价格范围。
+		int64(float64(pe.basePrice)*multiplier), pe.minPrice)
 	if price > pe.maxPrice {
 		price = pe.maxPrice
 	}
@@ -270,11 +258,9 @@ func (pe *PricingEngine) PersonalizedPrice(userProfile UserProfile) int64 {
 		price *= 0.93 // 高客单价用户，给予折扣。
 	}
 
-	finalPrice := int64(price)
-	// 限制价格范围。
-	if finalPrice < pe.minPrice {
-		finalPrice = pe.minPrice
-	}
+	finalPrice := max(
+		// 限制价格范围。
+		int64(price), pe.minPrice)
 	if finalPrice > pe.maxPrice {
 		finalPrice = pe.maxPrice
 	}

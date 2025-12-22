@@ -10,7 +10,7 @@ import (
 // HTTP状态码为 200 OK，业务码为 0，消息为 "success"。
 // c: Gin上下文。
 // data: 响应数据，可以是任何可JSON序列化的类型。
-func Success(c *gin.Context, data interface{}) {
+func Success(c *gin.Context, data any) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,         // 业务成功码。
 		"msg":  "success", // 成功消息。
@@ -23,7 +23,7 @@ func Success(c *gin.Context, data interface{}) {
 // status: HTTP状态码（例如：http.StatusOK, http.StatusCreated）。
 // msg: 响应消息。
 // data: 响应数据。
-func SuccessWithStatus(c *gin.Context, status int, msg string, data interface{}) {
+func SuccessWithStatus(c *gin.Context, status int, msg string, data any) {
 	c.JSON(status, gin.H{
 		"code": 0,    // 业务成功码。
 		"msg":  msg,  // 自定义成功消息。
@@ -36,7 +36,7 @@ func SuccessWithStatus(c *gin.Context, status int, msg string, data interface{})
 // c: Gin上下文。
 // msg: 响应消息。
 // data: 响应数据。
-func SuccessWithMessage(c *gin.Context, msg string, data interface{}) {
+func SuccessWithMessage(c *gin.Context, msg string, data any) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,    // 业务成功码。
 		"msg":  msg,  // 自定义成功消息。
@@ -87,7 +87,7 @@ func ErrorWithCode(c *gin.Context, code int, msg string) {
 // total: 总记录数。
 // page: 当前页码。
 // size: 每页数量。
-func SuccessWithPagination(c *gin.Context, data interface{}, total int64, page, size int32) {
+func SuccessWithPagination(c *gin.Context, data any, total int64, page, size int32) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":  0,         // 业务成功码。
 		"msg":   "success", // 成功消息。

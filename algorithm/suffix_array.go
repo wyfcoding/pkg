@@ -33,7 +33,7 @@ func (sa *SuffixArray) build() {
 	n := len(sa.text)
 	// 初始化：sa[i] = i，rank[i] = text[i] 的ASCII值。
 	// 此时，sa 存储的是所有后缀的起始索引，rank 存储的是长度为1的后缀的排名。
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sa.sa[i] = i
 		sa.rank[i] = int(sa.text[i])
 	}

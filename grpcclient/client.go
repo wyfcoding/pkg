@@ -136,7 +136,7 @@ func (f *ClientFactory) NewClient(ctx context.Context, target string, opts ...gr
 
 // metricsInterceptor 返回一个一元客户端拦截器，用于收集gRPC客户端请求的Prometheus指标。
 func (f *ClientFactory) metricsInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		start := time.Now()
 		// 调用下一个拦截器或实际的RPC方法。
 		err := invoker(ctx, method, req, reply, cc, opts...)
@@ -159,9 +159,9 @@ func (f *ClientFactory) metricsInterceptor() grpc.UnaryClientInterceptor {
 // circuitBreakerInterceptor 返回一个一元客户端拦截器，用于在gRPC客户端侧应用熔断机制。
 // 它使用gobreaker库来包装RPC调用。
 func (f *ClientFactory) circuitBreakerInterceptor(cb *gobreaker.CircuitBreaker) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		// 使用熔断器的Execute方法来执行实际的RPC调用。
-		_, err := cb.Execute(func() (interface{}, error) {
+		_, err := cb.Execute(func() (any, error) {
 			// 在熔断器内部调用实际的gRPC方法。
 			return nil, invoker(ctx, method, req, reply, cc, opts...)
 		})
@@ -173,7 +173,7 @@ func (f *ClientFactory) circuitBreakerInterceptor(cb *gobreaker.CircuitBreaker) 
 // rateLimitInterceptor 返回一个一元客户端拦截器，用于在gRPC客户端侧实现请求限流。
 // 它使用golang.org/x/time/rate库的令牌桶算法。
 func (f *ClientFactory) rateLimitInterceptor(limiter *rate.Limiter) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		// Wait方法会阻塞直到令牌可用，或者上下文被取消。
 		if err := limiter.Wait(ctx); err != nil {
 			// 如果限流器等待失败（例如，上下文超时），则返回ResourceExhausted错误码。
@@ -187,9 +187,9 @@ func (f *ClientFactory) rateLimitInterceptor(limiter *rate.Limiter) grpc.UnaryCl
 // retryInterceptor 返回一个一元客户端拦截器，用于对gRPC调用进行重试。
 // 它只在特定的瞬时错误（如 Unavailable, DeadlineExceeded）时进行重试，并采用指数退避策略。
 func (f *ClientFactory) retryInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		var err error
-		for i := 0; i < 3; i++ { // 最多重试3次
+		for i := range 3 { // 最多重试3次
 			err = invoker(ctx, method, req, reply, cc, opts...)
 			if err == nil {
 				return nil // RPC调用成功，返回nil。
@@ -211,7 +211,7 @@ func (f *ClientFactory) retryInterceptor() grpc.UnaryClientInterceptor {
 // loggingInterceptor 返回一个一元客户端拦截器，用于记录gRPC客户端调用的日志。
 // 它会记录RPC方法、目标服务、耗时以及错误信息。
 func (f *ClientFactory) loggingInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		start := time.Now()
 		// 调用下一个拦截器或实际的RPC方法。
 		err := invoker(ctx, method, req, reply, cc, opts...)

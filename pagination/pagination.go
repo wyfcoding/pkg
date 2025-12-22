@@ -37,17 +37,17 @@ func (p *Page) Limit() int {
 // PageResult 结构体定义了分页查询的返回结果。
 // 它包含了查询到的总记录数、当前页码、每页数量以及实际的数据列表。
 type PageResult struct {
-	Total    int64       `json:"total"`     // 符合查询条件的总记录数。
-	PageNum  int         `json:"page_num"`  // 当前页码。
-	PageSize int         `json:"page_size"` // 每页数量。
-	Data     interface{} `json:"data"`      // 当前页的数据列表（可以是任意类型）。
+	Total    int64 `json:"total"`     // 符合查询条件的总记录数。
+	PageNum  int   `json:"page_num"`  // 当前页码。
+	PageSize int   `json:"page_size"` // 每页数量。
+	Data     any   `json:"data"`      // 当前页的数据列表（可以是任意类型）。
 }
 
 // NewPageResult 创建并返回一个新的 PageResult 实例。
 // total: 符合查询条件的总记录数。
 // page: 包含当前页码和每页数量的 Page 结构体。
 // data: 当前页的数据列表。
-func NewPageResult(total int64, page *Page, data interface{}) *PageResult {
+func NewPageResult(total int64, page *Page, data any) *PageResult {
 	return &PageResult{
 		Total:    total,
 		PageNum:  page.PageNum,

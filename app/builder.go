@@ -20,13 +20,13 @@ import (
 
 // Builder 提供了构建 App 的灵活方式。
 type Builder struct {
-	serviceName    string      // 服务名称
-	configInstance interface{} // 配置实例
-	appOpts        []Option    // 应用程序选项
+	serviceName    string   // 服务名称
+	configInstance any      // 配置实例
+	appOpts        []Option // 应用程序选项
 
-	initService  interface{} // 服务初始化函数
-	registerGRPC interface{} // gRPC 注册函数
-	registerGin  interface{} // Gin 注册函数
+	initService  any // 服务初始化函数
+	registerGRPC any // gRPC 注册函数
+	registerGin  any // Gin 注册函数
 
 	metricsPort string // Metrics 端口
 
@@ -43,28 +43,28 @@ func NewBuilder(serviceName string) *Builder {
 
 // WithConfig 设置配置实例。
 // conf 应该是一个结构体的指针，用于加载配置。
-func (b *Builder) WithConfig(conf interface{}) *Builder {
+func (b *Builder) WithConfig(conf any) *Builder {
 	b.configInstance = conf
 	return b
 }
 
 // WithGRPC 注册 gRPC 服务器的创建逻辑。
 // register 函数负责将具体的gRPC服务注册到 `*grpc.Server` 实例中。
-func (b *Builder) WithGRPC(register func(*grpc.Server, interface{})) *Builder {
+func (b *Builder) WithGRPC(register func(*grpc.Server, any)) *Builder {
 	b.registerGRPC = register
 	return b
 }
 
 // WithGin 注册 Gin 服务器的创建逻辑。
 // register 函数负责将HTTP路由注册到 `*gin.Engine` 实例中。
-func (b *Builder) WithGin(register func(*gin.Engine, interface{})) *Builder {
+func (b *Builder) WithGin(register func(*gin.Engine, any)) *Builder {
 	b.registerGin = register
 	return b
 }
 
 // WithService 注册服务的初始化逻辑。
 // init 函数接收配置和Metrics实例，并返回服务实例、清理函数和错误。
-func (b *Builder) WithService(init func(interface{}, *metrics.Metrics) (interface{}, func(), error)) *Builder {
+func (b *Builder) WithService(init func(any, *metrics.Metrics) (any, func(), error)) *Builder {
 	b.initService = init
 	return b
 }
@@ -117,14 +117,14 @@ func (b *Builder) Build() *App {
 		}
 		// 查找名为 "Config" 的字段
 		cfgField := val.FieldByName("Config")
-		if cfgField.IsValid() && cfgField.Type() == reflect.TypeOf(config.Config{}) {
+		if cfgField.IsValid() && cfgField.Type() == reflect.TypeFor[config.Config]() {
 			cfg = cfgField.Interface().(config.Config)
 		} else {
 			// 如果找不到名为 Config 的字段，或者类型不对，尝试查找是否嵌入了 config.Config（匿名主要字段）。
 			found := false
 			for i := 0; i < val.NumField(); i++ {
 				field := val.Type().Field(i)
-				if field.Anonymous && field.Type == reflect.TypeOf(config.Config{}) {
+				if field.Anonymous && field.Type == reflect.TypeFor[config.Config]() {
 					cfg = val.Field(i).Interface().(config.Config)
 					found = true
 					break
@@ -190,7 +190,7 @@ func (b *Builder) Build() *App {
 
 	// 5. 依赖注入与核心业务初始化。
 	// 调用用户注册的 initService 函数，创建具体的 Repository、Service 和 Facade。
-	serviceInstance, cleanup, err := b.initService.(func(interface{}, *metrics.Metrics) (interface{}, func(), error))(b.configInstance, metricsInstance)
+	serviceInstance, cleanup, err := b.initService.(func(any, *metrics.Metrics) (any, func(), error))(b.configInstance, metricsInstance)
 	if err != nil {
 		logger.Logger.Error("failed to initialize service", "error", err)
 		panic(err)
@@ -203,7 +203,7 @@ func (b *Builder) Build() *App {
 	if b.registerGRPC != nil {
 		grpcAddr := fmt.Sprintf("%s:%d", cfg.Server.GRPC.Addr, cfg.Server.GRPC.Port)
 		grpcSrv := server.NewGRPCServer(grpcAddr, logger.Logger, func(s *grpc.Server) {
-			b.registerGRPC.(func(*grpc.Server, interface{}))(s, serviceInstance)
+			b.registerGRPC.(func(*grpc.Server, any))(s, serviceInstance)
 		}, b.grpcInterceptors...)
 		servers = append(servers, grpcSrv)
 	}
@@ -211,7 +211,7 @@ func (b *Builder) Build() *App {
 	if b.registerGin != nil {
 		httpAddr := fmt.Sprintf("%s:%d", cfg.Server.HTTP.Addr, cfg.Server.HTTP.Port)
 		ginEngine := server.NewDefaultGinEngine(logger.Logger, b.ginMiddleware...)
-		b.registerGin.(func(*gin.Engine, interface{}))(ginEngine, serviceInstance)
+		b.registerGin.(func(*gin.Engine, any))(ginEngine, serviceInstance)
 		ginSrv := server.NewGinServer(ginEngine, httpAddr, logger.Logger)
 		servers = append(servers, ginSrv)
 	}

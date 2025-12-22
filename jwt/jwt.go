@@ -69,7 +69,7 @@ func ParseToken(tokenString string, secretKey string) (*MyCustomClaims, error) {
 	// 使用jwt.ParseWithClaims解析token字符串。
 	// 第一个参数是token字符串，第二个参数是用于解析Claims的结构体实例，
 	// 第三个参数是一个回调函数，用于提供验证签名的密钥。
-	token, err := jwt.ParseWithClaims(tokenString, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &MyCustomClaims{}, func(token *jwt.Token) (any, error) {
 		// 返回用于验证签名的密钥。
 		return []byte(secretKey), nil
 	})

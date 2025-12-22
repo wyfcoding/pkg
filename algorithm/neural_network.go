@@ -103,7 +103,7 @@ func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate flo
 	nn.mu.Lock()         // 训练过程需要加写锁。
 	defer nn.mu.Unlock() // 确保函数退出时解锁。
 
-	for iter := 0; iter < iterations; iter++ {
+	for range iterations {
 		for i, p := range points {
 			// 前向传播：计算当前输入的网络输出。
 			output := nn.Forward(p.Data)

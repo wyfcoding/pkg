@@ -35,7 +35,7 @@ func NewBigCache(ttl time.Duration, maxMB int) (*BigCache, error) {
 
 // Get 从BigCache中获取指定键的值。
 // value 参数必须是一个指针，缓存的数据会反序列化到其中。
-func (c *BigCache) Get(ctx context.Context, key string, value interface{}) error {
+func (c *BigCache) Get(ctx context.Context, key string, value any) error {
 	data, err := c.cache.Get(key) // 从底层BigCache获取原始字节数据
 	if err != nil {
 		if err == bigcache.ErrEntryNotFound {
@@ -50,7 +50,7 @@ func (c *BigCache) Get(ctx context.Context, key string, value interface{}) error
 // value 会被JSON序列化后存储。
 // 注意：BigCache不支持为每个单独的键设置过期时间，它使用 `NewBigCache` 中定义的全局TTL。
 // 因此，这里的 `expiration` 参数将被忽略。
-func (c *BigCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+func (c *BigCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	// 将值序列化为JSON字节数据
 	data, err := json.Marshal(value)
 	if err != nil {

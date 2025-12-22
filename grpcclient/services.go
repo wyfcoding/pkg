@@ -13,7 +13,7 @@ import (
 
 // InitServiceClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端。
 // 它返回一个清理函数，用于关闭所有建立的连接。
-func InitServiceClients(services map[string]config.ServiceAddr, targetClients interface{}) (func(), error) {
+func InitServiceClients(services map[string]config.ServiceAddr, targetClients any) (func(), error) {
 	val := reflect.ValueOf(targetClients)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
 		return nil, fmt.Errorf("targetClients must be a pointer to a struct")
@@ -34,7 +34,7 @@ func InitServiceClients(services map[string]config.ServiceAddr, targetClients in
 		}
 
 		// 仅处理 *grpc.ClientConn 类型的字段
-		if field.Type() != reflect.TypeOf((*grpc.ClientConn)(nil)) {
+		if field.Type() != reflect.TypeFor[*grpc.ClientConn]() {
 			continue
 		}
 

@@ -11,25 +11,25 @@ import (
 // 时间复杂度：入队 O(1)，出队 O(1)
 type ConcurrentQueue struct {
 	mu    sync.Mutex
-	items []interface{}
+	items []any
 }
 
 // NewConcurrentQueue 创建并发队列
 func NewConcurrentQueue() *ConcurrentQueue {
 	return &ConcurrentQueue{
-		items: make([]interface{}, 0),
+		items: make([]any, 0),
 	}
 }
 
 // Enqueue 入队
-func (cq *ConcurrentQueue) Enqueue(item interface{}) {
+func (cq *ConcurrentQueue) Enqueue(item any) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 	cq.items = append(cq.items, item)
 }
 
 // Dequeue 出队
-func (cq *ConcurrentQueue) Dequeue() (interface{}, error) {
+func (cq *ConcurrentQueue) Dequeue() (any, error) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 
@@ -43,7 +43,7 @@ func (cq *ConcurrentQueue) Dequeue() (interface{}, error) {
 }
 
 // Peek 查看队首元素
-func (cq *ConcurrentQueue) Peek() (interface{}, error) {
+func (cq *ConcurrentQueue) Peek() (any, error) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 
@@ -72,31 +72,31 @@ func (cq *ConcurrentQueue) IsEmpty() bool {
 func (cq *ConcurrentQueue) Clear() {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
-	cq.items = make([]interface{}, 0)
+	cq.items = make([]any, 0)
 }
 
 // ConcurrentStack 并发安全的栈
 type ConcurrentStack struct {
 	mu    sync.Mutex
-	items []interface{}
+	items []any
 }
 
 // NewConcurrentStack 创建并发栈
 func NewConcurrentStack() *ConcurrentStack {
 	return &ConcurrentStack{
-		items: make([]interface{}, 0),
+		items: make([]any, 0),
 	}
 }
 
 // Push 入栈
-func (cs *ConcurrentStack) Push(item interface{}) {
+func (cs *ConcurrentStack) Push(item any) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.items = append(cs.items, item)
 }
 
 // Pop 出栈
-func (cs *ConcurrentStack) Pop() (interface{}, error) {
+func (cs *ConcurrentStack) Pop() (any, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
@@ -110,7 +110,7 @@ func (cs *ConcurrentStack) Pop() (interface{}, error) {
 }
 
 // Peek 查看栈顶元素
-func (cs *ConcurrentStack) Peek() (interface{}, error) {
+func (cs *ConcurrentStack) Peek() (any, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
@@ -139,14 +139,14 @@ func (cs *ConcurrentStack) IsEmpty() bool {
 func (cs *ConcurrentStack) Clear() {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	cs.items = make([]interface{}, 0)
+	cs.items = make([]any, 0)
 }
 
 // ConcurrentRingBuffer 并发安全的环形缓冲区
 // 用于高性能的固定大小缓冲
 type ConcurrentRingBuffer struct {
 	mu       sync.Mutex
-	buffer   []interface{}
+	buffer   []any
 	capacity int
 	head     int
 	tail     int
@@ -156,7 +156,7 @@ type ConcurrentRingBuffer struct {
 // NewConcurrentRingBuffer 创建并发环形缓冲区
 func NewConcurrentRingBuffer(capacity int) *ConcurrentRingBuffer {
 	return &ConcurrentRingBuffer{
-		buffer:   make([]interface{}, capacity),
+		buffer:   make([]any, capacity),
 		capacity: capacity,
 		head:     0,
 		tail:     0,
@@ -165,7 +165,7 @@ func NewConcurrentRingBuffer(capacity int) *ConcurrentRingBuffer {
 }
 
 // Write 写入数据
-func (crb *ConcurrentRingBuffer) Write(item interface{}) error {
+func (crb *ConcurrentRingBuffer) Write(item any) error {
 	crb.mu.Lock()
 	defer crb.mu.Unlock()
 
@@ -181,7 +181,7 @@ func (crb *ConcurrentRingBuffer) Write(item interface{}) error {
 }
 
 // Read 读取数据
-func (crb *ConcurrentRingBuffer) Read() (interface{}, error) {
+func (crb *ConcurrentRingBuffer) Read() (any, error) {
 	crb.mu.Lock()
 	defer crb.mu.Unlock()
 

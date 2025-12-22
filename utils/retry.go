@@ -90,12 +90,9 @@ func Retry(ctx context.Context, fn RetryFunc, cfg RetryConfig) error {
 			nextBackoff += jitterValue
 		}
 
-		backoff = time.Duration(nextBackoff)
-
-		// 确保退避时间不超过设定的最大值
-		if backoff > cfg.MaxBackoff {
-			backoff = cfg.MaxBackoff
-		}
+		backoff = min(
+			// 确保退避时间不超过设定的最大值
+			time.Duration(nextBackoff), cfg.MaxBackoff)
 	}
 
 	// 返回最后一次尝试的错误

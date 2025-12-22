@@ -70,14 +70,14 @@ type MeasuredConn struct {
 	db string
 }
 
-func (c *MeasuredConn) Query(ctx context.Context, query string, args ...interface{}) (driver.Rows, error) {
+func (c *MeasuredConn) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
 	start := time.Now()
 	rows, err := c.Conn.Query(ctx, query, args...)
 	c.recordMetrics(start, err)
 	return rows, err
 }
 
-func (c *MeasuredConn) Exec(ctx context.Context, query string, args ...interface{}) error {
+func (c *MeasuredConn) Exec(ctx context.Context, query string, args ...any) error {
 	start := time.Now()
 	err := c.Conn.Exec(ctx, query, args...)
 	c.recordMetrics(start, err)

@@ -9,7 +9,7 @@ import (
 type TrieNode struct {
 	children map[rune]*TrieNode // 指向子节点的map，键是字符（rune），值是对应的子节点。
 	isEnd    bool               // 标记是否是某个单词的结尾。
-	value    interface{}        // 如果是单词结尾，可以存储与该单词相关联的值。
+	value    any                // 如果是单词结尾，可以存储与该单词相关联的值。
 }
 
 // Trie 结构体实现了字典树（前缀树）数据结构。
@@ -31,7 +31,7 @@ func NewTrie() *Trie {
 // Insert 将一个单词及其关联的值插入到字典树中。
 // word: 要插入的单词。
 // value: 与该单词关联的值。
-func (t *Trie) Insert(word string, value interface{}) {
+func (t *Trie) Insert(word string, value any) {
 	t.mu.Lock()         // 加写锁，以确保插入操作的线程安全。
 	defer t.mu.Unlock() // 确保函数退出时解锁。
 
@@ -54,7 +54,7 @@ func (t *Trie) Insert(word string, value interface{}) {
 // 返回值：
 //   - interface{}: 如果找到单词，返回其关联的值；否则返回 nil。
 //   - bool: 如果找到单词且 `isEnd` 为 true，则返回 true；否则返回 false。
-func (t *Trie) Search(word string) (interface{}, bool) {
+func (t *Trie) Search(word string) (any, bool) {
 	t.mu.RLock()         // 搜索操作只需要读锁。
 	defer t.mu.RUnlock() // 确保函数退出时解锁。
 
@@ -72,7 +72,7 @@ func (t *Trie) Search(word string) (interface{}, bool) {
 // 应用场景：商品名称自动完成、搜索建议、敏感词过滤等。
 // prefix: 要搜索的前缀字符串。
 // 返回所有匹配前缀的单词所关联的值的切片。
-func (t *Trie) StartsWith(prefix string) []interface{} {
+func (t *Trie) StartsWith(prefix string) []any {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -84,7 +84,7 @@ func (t *Trie) StartsWith(prefix string) []interface{} {
 		node = node.children[ch] // 移动到前缀的最后一个字符对应的节点。
 	}
 
-	results := make([]interface{}, 0)
+	results := make([]any, 0)
 	t.dfs(node, &results) // 从前缀的最后一个字符节点开始，进行深度优先搜索，收集所有以该前缀开头的单词。
 	return results
 }
@@ -92,7 +92,7 @@ func (t *Trie) StartsWith(prefix string) []interface{} {
 // dfs (深度优先搜索) 辅助函数，用于从给定的TrieNode开始，递归地收集所有以该节点为前缀的单词的值。
 // node: 当前遍历到的TrieNode。
 // results: 用于存储收集到的值的切片指针。
-func (t *Trie) dfs(node *TrieNode, results *[]interface{}) {
+func (t *Trie) dfs(node *TrieNode, results *[]any) {
 	if node.isEnd {
 		*results = append(*results, node.value) // 如果当前节点是单词结尾，则将其值添加到结果中。
 	}

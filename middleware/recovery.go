@@ -41,7 +41,7 @@ func Recovery(logger *slog.Logger) gin.HandlerFunc {
 
 // GRPCRecoveryInterceptor 返回一个新的用于恐慌恢复的一元服务器拦截器。
 func GRPCRecoveryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				// 记录恐慌日志

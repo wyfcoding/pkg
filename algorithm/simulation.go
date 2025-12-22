@@ -58,7 +58,7 @@ func (gbm *GeometricBrownianMotion) Simulate(steps int) []decimal.Decimal {
 // SimulateMultiplePaths 模拟多条价格路径
 func (gbm *GeometricBrownianMotion) SimulateMultiplePaths(steps, paths int) [][]decimal.Decimal {
 	allPaths := make([][]decimal.Decimal, paths)
-	for i := 0; i < paths; i++ {
+	for i := range paths {
 		allPaths[i] = gbm.Simulate(steps)
 	}
 	return allPaths

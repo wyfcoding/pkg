@@ -72,7 +72,7 @@ func TestAntiBotDetector(t *testing.T) {
 	}
 
 	// Simulate bot
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		detector.IsBot(UserBehavior{
 			UserID:    1,
 			IP:        "127.0.0.1",

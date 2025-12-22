@@ -262,17 +262,17 @@ func (l *GormLogger) LogMode(level logger.LogLevel) logger.Interface {
 }
 
 // Info 实现了gorm logger.Interface的Info方法，将GORM的Info级别日志输出为slog的Info级别。
-func (l *GormLogger) Info(ctx context.Context, msg string, data ...interface{}) {
+func (l *GormLogger) Info(ctx context.Context, msg string, data ...any) {
 	l.logger.InfoContext(ctx, fmt.Sprintf(msg, data...))
 }
 
 // Warn 实现了gorm logger.Interface的Warn方法，将GORM的Warn级别日志输出为slog的Warn级别。
-func (l *GormLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
+func (l *GormLogger) Warn(ctx context.Context, msg string, data ...any) {
 	l.logger.WarnContext(ctx, fmt.Sprintf(msg, data...))
 }
 
 // Error 实现了gorm logger.Interface的Error方法，将GORM的Error级别日志输出为slog的Error级别。
-func (l *GormLogger) Error(ctx context.Context, msg string, data ...interface{}) {
+func (l *GormLogger) Error(ctx context.Context, msg string, data ...any) {
 	l.logger.ErrorContext(ctx, fmt.Sprintf(msg, data...))
 }
 

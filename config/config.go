@@ -246,7 +246,7 @@ type ElasticsearchConfig struct {
 }
 
 // Load 从指定路径加载配置。
-func Load(path string, conf interface{}) error {
+func Load(path string, conf any) error {
 	v := viper.New()
 	v.SetConfigFile(path)
 	v.SetConfigType("toml")

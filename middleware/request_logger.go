@@ -41,7 +41,7 @@ func Logger(logger *slog.Logger) gin.HandlerFunc {
 
 // GRPCLoggingInterceptor 返回一个新的用于日志记录的一元服务器拦截器。
 func GRPCLoggingInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		start := time.Now()
 		// 调用处理程序
 		resp, err := handler(ctx, req)

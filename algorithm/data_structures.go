@@ -293,20 +293,20 @@ type NotificationMessage struct {
 // ConcurrentCache 并发安全的缓存
 type ConcurrentCache struct {
 	mu   sync.RWMutex
-	data map[string]interface{}
+	data map[string]any
 	ttl  map[string]int64
 }
 
 // NewConcurrentCache 创建并发缓存
 func NewConcurrentCache() *ConcurrentCache {
 	return &ConcurrentCache{
-		data: make(map[string]interface{}),
+		data: make(map[string]any),
 		ttl:  make(map[string]int64),
 	}
 }
 
 // Set 设置缓存值
-func (cc *ConcurrentCache) Set(key string, value interface{}, ttl int64) {
+func (cc *ConcurrentCache) Set(key string, value any, ttl int64) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 	cc.data[key] = value
@@ -314,7 +314,7 @@ func (cc *ConcurrentCache) Set(key string, value interface{}, ttl int64) {
 }
 
 // Get 获取缓存值
-func (cc *ConcurrentCache) Get(key string) (interface{}, bool) {
+func (cc *ConcurrentCache) Get(key string) (any, bool) {
 	cc.mu.RLock()
 	defer cc.mu.RUnlock()
 	val, ok := cc.data[key]
@@ -333,6 +333,6 @@ func (cc *ConcurrentCache) Delete(key string) {
 func (cc *ConcurrentCache) Clear() {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
-	cc.data = make(map[string]interface{})
+	cc.data = make(map[string]any)
 	cc.ttl = make(map[string]int64)
 }

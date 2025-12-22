@@ -43,7 +43,7 @@ func CircuitBreaker() gin.HandlerFunc {
 		// 使用熔断器的Execute方法来包装实际的请求处理逻辑
 		// 如果熔断器处于Open状态，Execute会立即返回 gobreaker.ErrOpenState
 		// 如果熔断器允许请求通过，它会执行传入的匿名函数
-		_, err := cb.Execute(func() (interface{}, error) {
+		_, err := cb.Execute(func() (any, error) {
 			// 在熔断器内部执行Gin请求链的其余部分
 			c.Next()
 			// 根据Gin处理后的HTTP状态码判断是否为失败。

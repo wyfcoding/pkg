@@ -33,7 +33,7 @@ func New(serviceName, version string) *Bootstrapper {
 
 // Initialize 解析命令行标志、加载配置文件，并初步初始化日志系统。
 // 它接收一个 cfg 指针，用于将加载的配置反序列化到该结构体中。
-func (b *Bootstrapper) Initialize(cfg interface{}) error {
+func (b *Bootstrapper) Initialize(cfg any) error {
 	var configPath string
 	flag.StringVar(&configPath, "config", "configs/config.toml", "path to config file")
 	flag.Parse()

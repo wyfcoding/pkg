@@ -51,8 +51,8 @@ func init() {
 
 // Cache 定义缓存接口
 type Cache interface {
-	Get(ctx context.Context, key string, value interface{}) error
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error
+	Get(ctx context.Context, key string, value any) error
+	Set(ctx context.Context, key string, value any, expiration time.Duration) error
 	Delete(ctx context.Context, keys ...string) error
 	Exists(ctx context.Context, key string) (bool, error)
 	Close() error
@@ -115,7 +115,7 @@ func (c *RedisCache) buildKey(key string) string {
 
 // Get 从缓存中获取值。
 // value 参数必须是一个指针，以便能将缓存的数据反序列化到其中。
-func (c *RedisCache) Get(ctx context.Context, key string, value interface{}) error {
+func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
 	start := time.Now()
 	defer func() {
 		cacheDuration.WithLabelValues(c.prefix, "get").Observe(time.Since(start).Seconds())
@@ -124,7 +124,7 @@ func (c *RedisCache) Get(ctx context.Context, key string, value interface{}) err
 	fullKey := c.buildKey(key)
 
 	// 使用熔断器包装Redis的Get操作。
-	_, err := c.cb.Execute(func() (interface{}, error) {
+	_, err := c.cb.Execute(func() (any, error) {
 		data, err := c.client.Get(ctx, fullKey).Bytes()
 		if err != nil {
 			if err == redis.Nil {
@@ -143,7 +143,7 @@ func (c *RedisCache) Get(ctx context.Context, key string, value interface{}) err
 // Set 设置缓存值。
 // value 会被JSON序列化后存储。
 // expiration 参数指定了键的过期时间。
-func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	start := time.Now()
 	defer func() {
 		cacheDuration.WithLabelValues(c.prefix, "set").Observe(time.Since(start).Seconds())
@@ -156,7 +156,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 	}
 
 	// 使用熔断器包装Redis的Set操作。
-	_, err = c.cb.Execute(func() (interface{}, error) {
+	_, err = c.cb.Execute(func() (any, error) {
 		return nil, c.client.Set(ctx, fullKey, data, expiration).Err()
 	})
 
@@ -179,7 +179,7 @@ func (c *RedisCache) Delete(ctx context.Context, keys ...string) error {
 	}
 
 	// 使用熔断器包装Redis的Del操作。
-	_, err := c.cb.Execute(func() (interface{}, error) {
+	_, err := c.cb.Execute(func() (any, error) {
 		return nil, c.client.Del(ctx, fullKeys...).Err()
 	})
 
@@ -196,7 +196,7 @@ func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 	fullKey := c.buildKey(key)
 
 	// 使用熔断器包装Redis的Exists操作。
-	result, err := c.cb.Execute(func() (interface{}, error) {
+	result, err := c.cb.Execute(func() (any, error) {
 		n, err := c.client.Exists(ctx, fullKey).Result()
 		if err != nil {
 			return false, err
