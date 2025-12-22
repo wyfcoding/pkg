@@ -45,7 +45,6 @@ func (co *CouponOptimizer) OptimalCombination(
 	originalPrice int64,
 	coupons []Coupon,
 ) ([]uint64, int64, int64) {
-
 	if len(coupons) == 0 {
 		return nil, originalPrice, 0
 	}
@@ -122,7 +121,6 @@ func (co *CouponOptimizer) GreedyOptimization(
 	originalPrice int64,
 	coupons []Coupon,
 ) ([]uint64, int64, int64) {
-
 	// 过滤掉不满足门槛条件的优惠券。
 	available := make([]Coupon, 0)
 	for _, c := range coupons {
@@ -299,7 +297,6 @@ func (co *CouponOptimizer) DynamicProgramming(
 	originalPrice int64,
 	coupons []Coupon,
 ) ([]uint64, int64, int64) {
-
 	// 过滤掉不满足门槛条件的优惠券。
 	available := make([]Coupon, 0)
 	for _, c := range coupons {

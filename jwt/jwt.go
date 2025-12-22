@@ -73,7 +73,6 @@ func ParseToken(tokenString string, secretKey string) (*MyCustomClaims, error) {
 		// 返回用于验证签名的密钥。
 		return []byte(secretKey), nil
 	})
-
 	// 处理解析过程中可能发生的各种错误。
 	if err != nil {
 		// jwt.ErrTokenMalformed: token格式不正确。

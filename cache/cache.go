@@ -203,7 +203,6 @@ func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 		}
 		return n > 0, nil
 	})
-
 	if err != nil {
 		return false, err
 	}

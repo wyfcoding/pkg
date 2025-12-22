@@ -52,7 +52,6 @@ func ParseAdminToken(tokenString string, secretKey string) (*AdminClaims, error)
 	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (any, error) {
 		return []byte(secretKey), nil
 	})
-
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenMalformed) {
 			return nil, ErrTokenMalformed

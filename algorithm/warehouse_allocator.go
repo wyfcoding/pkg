@@ -49,7 +49,6 @@ func (wa *WarehouseAllocator) AllocateOptimal(
 	items []OrderItem,
 	warehouses map[uint64]map[uint64]*WarehouseInfo, // 仓库ID -> SKU ID -> 仓库信息。
 ) []AllocationResult {
-
 	results := make([]AllocationResult, 0)
 	remainingItems := make(map[uint64]int32) // 存储订单中尚未完全分配的商品及数量。
 
@@ -186,7 +185,6 @@ func (wa *WarehouseAllocator) AllocateByDistance(
 	items []OrderItem,
 	warehouses map[uint64]map[uint64]*WarehouseInfo,
 ) []AllocationResult {
-
 	type warehouseDist struct {
 		warehouseID uint64
 		distance    float64

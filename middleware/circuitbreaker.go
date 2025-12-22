@@ -54,7 +54,6 @@ func CircuitBreaker() gin.HandlerFunc {
 			}
 			return nil, nil // 否则视为成功
 		})
-
 		if err != nil {
 			// 如果熔断器处于Open状态，Execute会返回 gobreaker.ErrOpenState
 			if err == gobreaker.ErrOpenState {

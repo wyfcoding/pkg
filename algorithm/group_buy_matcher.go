@@ -51,7 +51,6 @@ func (m *GroupBuyMatcher) FindBestGroup(
 	groups []GroupBuyGroup,
 	strategy MatchStrategy,
 ) *GroupBuyGroup {
-
 	if len(groups) == 0 {
 		return nil
 	}
@@ -118,7 +117,6 @@ func (m *GroupBuyMatcher) matchNearest(
 	userLat, userLon float64,
 	userRegion string,
 ) *GroupBuyGroup {
-
 	sameRegion := make([]GroupBuyGroup, 0)  // 存储与用户同地区的团。
 	otherRegion := make([]GroupBuyGroup, 0) // 存储其他地区的团。
 
@@ -189,7 +187,6 @@ func (m *GroupBuyMatcher) SmartMatch(
 	userRegion string,
 	groups []GroupBuyGroup,
 ) *GroupBuyGroup {
-
 	if len(groups) == 0 {
 		return nil
 	}

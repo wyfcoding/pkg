@@ -49,7 +49,6 @@ func NewClient(cfg config.ClickHouseConfig) (driver.Conn, error) {
 		ConnMaxLifetime: time.Hour,
 		Compression:     &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to open clickhouse connection: %w", err)
 	}
