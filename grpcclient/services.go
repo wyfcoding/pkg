@@ -8,12 +8,11 @@ import (
 
 	"github.com/wyfcoding/pkg/config"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
-// InitServiceClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端。
+// InitClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端。
 // 它返回一个清理函数，用于关闭所有建立的连接。
-func InitServiceClients(services map[string]config.ServiceAddr, targetClients any) (func(), error) {
+func InitClients(services map[string]config.ServiceAddr, targetClients any) (func(), error) {
 	val := reflect.ValueOf(targetClients)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
 		return nil, fmt.Errorf("targetClients must be a pointer to a struct")
@@ -58,8 +57,11 @@ func InitServiceClients(services map[string]config.ServiceAddr, targetClients an
 			continue
 		}
 
-		// 拨号连接
-		conn, err := grpc.NewClient(addrConfig.GRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		// 拨号连接 (使用增强版 NewClient)
+		conn, err := NewClient(ClientConfig{
+			Target:  addrConfig.GRPCAddr,
+			Timeout: 10000, // 默认 10s
+		})
 		if err != nil {
 			// 关闭已打开的连接
 			for _, c := range conns {
