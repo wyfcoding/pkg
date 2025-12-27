@@ -175,6 +175,28 @@ func (b *Builder) Build() *App {
 		}
 	}
 
+	// 3.1 初始化限流 (Rate Limiting)：如果启用，则在 Gin 中间件链中添加限流器。
+	// 使用本地令牌桶限流，Rate 为每秒允许的请求数，Burst 为突发容量。
+	if cfg.RateLimit.Enabled {
+		rate := cfg.RateLimit.Rate
+		burst := cfg.RateLimit.Burst
+		if rate <= 0 {
+			rate = 1000 // 默认每秒 1000 请求
+		}
+		if burst <= 0 {
+			burst = 100 // 默认突发容量 100
+		}
+		logger.Logger.Info("Rate limit middleware enabled", "rate", rate, "burst", burst)
+		b.ginMiddleware = append(b.ginMiddleware, middleware.NewLocalRateLimitMiddleware(rate, burst))
+	}
+
+	// 3.2 初始化熔断 (Circuit Breaker)：如果启用，则在 Gin 中间件链中添加熔断器。
+	// 熔断器会在错误率过高时自动拒绝请求，防止雪崩效应。
+	if cfg.CircuitBreaker.Enabled {
+		logger.Logger.Info("Circuit breaker middleware enabled")
+		b.ginMiddleware = append(b.ginMiddleware, middleware.CircuitBreaker())
+	}
+
 	// 4. 初始化指标收集 (Prometheus)：在指定端口开启 HTTP 服务供 Prometheus 抓取数据。
 	var metricsInstance *metrics.Metrics
 	metricsPort := b.metricsPort
