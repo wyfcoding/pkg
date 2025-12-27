@@ -111,10 +111,14 @@ type JWTConfig struct {
 	ExpireDuration time.Duration `mapstructure:"expire_duration" toml:"expire_duration"`
 }
 
-// SnowflakeConfig 定义雪花算法配置。
+// SnowflakeConfig 定义 ID 生成器配置。
+// Type 可选值：snowflake（默认）、sonyflake。
+// Snowflake 适合高并发场景（每毫秒 4096 个 ID），支持 1024 台机器，可用 69 年。
+// Sonyflake 适合大规模集群（每 10 毫秒 256 个 ID），支持 65536 台机器，可用 174 年。
 type SnowflakeConfig struct {
-	StartTime string `mapstructure:"start_time" toml:"start_time"`
-	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"`
+	Type      string `mapstructure:"type" toml:"type"`             // 生成器类型：snowflake 或 sonyflake
+	StartTime string `mapstructure:"start_time" toml:"start_time"` // 起始时间，格式为 2006-01-02
+	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"` // 机器 ID
 }
 
 // MessageQueueConfig 定义消息队列配置。
