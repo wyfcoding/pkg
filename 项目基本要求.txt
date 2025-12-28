@@ -1,0 +1,124 @@
+      ——【基本要求】——
+      1. 注释使用简体中文，日志输出英文，统一使用 slog。
+      2. 所有服务模块、函数和关键业务逻辑都必须有详细中文注释，并输出英文结构化日志（含 timestamp、level、service、trace_id、span_id、module、msg、error、duration）。
+      3. 配置文件全部使用 TOML，支持环境变量覆盖（env override）与热加载（如使用 viper 等方案）。
+      4. pkg 可以封装成熟库（如 redis pool、sql driver 等），但**禁止为了封装而封装**：只有在封装能够带来实际增强或新功能（例如统一监控/重试/熔断/超时/多环境支持/连接管理/指标暴露/并发安全/更高层抽象/安全增强）时才创建封装层；若仅是“包一层”且无新增功能，则**直接使用原库**。
+      5. 强化：**pkg 必须尽可能多地增加公用模块**，目标是把微服务公共能力最大化抽象出来（见下文 pkg 要求）。
+      6. 禁止生成任何测试文件（*_test.go）和文档文件（md、doc 等），生成代码时优先可编译的生产化骨架。
+      7. 必须使用最新稳定版本库，不使用过时 API。
+      8. 修改或生成代码文件可以直接执行（无需用户确认），但每次生成须在文件头或变更说明中列出关键改动与假设。
+
+      ——【调用链与网关架构（必须严格遵守）】——
+      1. 对外入口基于 Envoy（Envoy-based Ingress）；整个请求链路必须符合：
+         Client → Envoy Ingress → Istio Sidecar → 服务内 Gin（HTTP）→ 服务间 gRPC（RPC）
+      2. 每个服务必须产出并支持：
+         - Envoy 配置（listener、route、filter、gRPC proxy、mTLS 配置示例）
+         - Istio 资源（Gateway、VirtualService、DestinationRule、Sidecar、AuthorizationPolicy、ServiceEntry 等）
+         - Kubernetes 资源（Deployment、Service、HPA、ConfigMap、Secret、NetworkPolicy、readiness/liveness）
+
+      ——【DDD 结构要求】——
+      internal/{service} 四层：
+      - domain：实体、聚合、值对象、领域服务、仓储接口。
+      - application：用例逻辑、DTO、事务边界与补偿策略。
+      - infrastructure：仓储实现、数据库、缓存、消息队列、第三方适配层。
+      - interfaces：Gin HTTP handler / gRPC handler、入参出参转换、校验与中间件接入。
+      - 如果 goapi 已生成对应的 gRPC / Proto 类型，则 internal **不再重复定义**。
+      - internal可直接 import goapi 类型。
+
+      ——【目录结构要求】——
+      cmd/{service}/main.go（启动、依赖注入、优雅关停）
+      api/v1/{service}/（proto、跨服务常量、错误码）
+      goapi/v1/{service}/（pb.go / grpc.pb.go）
+      configs/{service}/config.toml（TOML，含占位符与注释）
+      deployments/{service}/：
+        - Dockerfile：独立，每服务构建
+        - helm/：
+            - Chart.yaml、values.yaml（服务特化）
+            - templates/：deployment.yaml、service.yaml、hpa.yaml、networkpolicy.yaml、configmap.yaml、secret.yaml
+            - templates/istio-gateway.yaml、virtualservice.yaml、destinationrule.yaml、sidecar.yaml
+            - envoy.yaml（自定义 listener/route/filter，仅需要时使用）
+        - scripts/：deploy.sh、migrate.sh、monitor.sh（可模板化，参数化）
+      scripts/{tool}/（migrate/deploy/ops）
+      pkg/（仅在确有增强价值时包含：见 pkg 章节）
+      Jenkinsfile
+      
+      ——【数据库表统一规范（明确使用 gorm.Model）】——
+      - **所有数据库模型必须统一使用 `gorm.Model`**，示例：
+        ```go
+        type User struct {
+            gorm.Model
+            Email string `gorm:"column:email;type:varchar(255);unique_index;not null" json:"email"`
+            // 说明：email 字段用于登录验证，唯一且不能为空
+        }
+        ```
+      - 字段命名统一为 snake_case；必须明确索引、唯一约束与字段注释。
+      - 对于复杂聚合或跨表事务，必须在 application 层定义事务边界，并在注释中说明并发控制策略（如悲观锁/乐观锁/补偿事务）。
+      - 所有 GORM 模型文件需包含字段的中文注释，说明业务含义与约束。
+
+      ——【技术栈要求】——
+      Go（最新稳定版） / Gin（服务内 HTTP） / GORM / MySQL / Redis / gRPC / Kafka / Docker / Kubernetes / Istio / Envoy / Etcd /
+      Elasticsearch / Logstash / Kibana / Prometheus / Grafana / Jaeger / MinIO / ClickHouse / MongoDB / Neo4j / Hadoop / Spark / Flink / Hive / HBase / Hudi /
+      LLM 推理与模型服务（按需接入）等。
+
+      ——【微服务生成顺序】——
+      1. **单微服务粒度**：每次以单个微服务完整生成，完成后再生成下一个。
+      2. **严格顺序**：
+         1) **api/v1/{service}/**：proto 文件、跨服务常量、错误码
+         2) **goapi/v1/{service}/**：生成 pb.go / grpc.pb.go
+         3) **cmd/{service}/main.go**：依赖注入、启动、优雅关停
+         4) **internal/{service}/**：
+            - domain：实体、聚合、值对象、领域服务、仓储接口
+            - application：用例逻辑、DTO、事务边界、补偿策略
+            - infrastructure：数据库/缓存/消息队列/第三方适配层
+            - interfaces：Gin HTTP / gRPC handler、入参出参转换、校验、中间件
+         5) **configs/{service}/config.toml**：TOML，含占位符、注释，支持 env override 和热加载
+         6) **deployments/{service}/**
+
+      ——【pkg：最大化公用模块与封装策略（重点强化）】——
+      - **总原则**：pkg 必须尽最大可能抽象并提供跨微服务可复用的能力，减少重复实现，提高一致性与可维护性。
+      - **必须尽可能实现并提供的公用模块**（但不限于）：
+        1. logger：统一 slog 封装，自动注入 trace_id/span_id、结构化字段、日志切割与远程写入 hooks。
+        2. config：TOML 加载、环境变量覆盖、配置热更、配置 schema 校验。
+        3. db：GORM 初始化、连接池/重连策略、指标暴露、事务助手、分库分表辅助工具、分布式事务/补偿示例支持。
+        4. cache：Redis client（连接池、监控、backoff、二级缓存策略、多种序列化策略）。
+        5. mq：Kafka/Pulsar producer/consumer 通用实现（含幂等、重试、死信队列、事务/Exactly-Once 示例）。
+        6. grpcclient：gRPC 客户端工厂（负载均衡、限流、重试、熔断、拦截器/trace 注入）。
+        7. tracing：OpenTelemetry/Jaeger 统一接入封装。
+        8. metrics：Prometheus helper（常用 counter/gauge/histogram 模板）。
+        9. security：签名/验签、JWT、权限检查中间件、加密工具。
+        10. middleware：Gin 与 gRPC 的通用中间件（日志、trace、panic recover、限流、鉴权）。
+        11. algos：高性能/ACM/竞赛算法集合（撮合相关结构、图算法、DP、后缀结构、并发数据结构等），并给出复杂度分析与适配说明。
+        12. utils：时间/ID（雪花）/hash/serialize/retry/backoff/pagination/errorwrap 等通用工具。
+        13. storage：MinIO/S3 封装、文件上传/分片/归档工具。
+        14. search：Elasticsearch 通用索引与查询封装（包括 bulk/scroll/alias 管理）。
+        15. analytics：ClickHouse/OLAP 写入帮助器（批量写入、压缩、分区策略建议）。
+        16. graph：Neo4j 通用适配器与常用图查询模板。
+      - **不可做的事**：不得创建无意义的 wrapper（即仅仅把第三方函数包一层却无任何增强或文档说明）；若出现此类封装，Agent 应直接改为使用原库并在注释中说明理由。
+
+      ——【高级算法与数据结构】——
+      - 可以使用任何高级算法或竞赛/ACM 算法；对于性能敏感模块（撮合、回测、定价、做市），必须在注释中说明并发模型、内存与延迟优化点与复杂度分析。
+      - 若实现专有数据结构（例如跳表、并发环形队列、内存订单簿），应放在 pkg/algos 或 internal/{service}/infrastructure 下并有完整测试（虽不生成测试文件，但应包含示例验证代码）。
+
+      ——【业务逻辑要求】——
+      - 每个微服务必须至少包含一个端到端业务示例（请求校验 -> 领域逻辑 -> 仓储操作 -> 事件派发 -> 下游消费），并在注释中说明流程与边界条件。
+      - 关键业务（撮合、风控、清算、资金）必须有事务或最终一致性策略说明（例：本地事务 + 事件驱动补偿）。
+      - 所有日志关键点必须包含 trace_id/span_id，并记录 duration 与关键上下文（业务 id、用户 id、订单 id 等）。
+      - 服务越复杂越好，业务越多越好，业务逻辑越复杂越好
+
+      ——【Kubernetes & Istio & Envoy 要求】——
+      - Deployment 应包含资源 requests/limits、podDisruptionBudget、readiness/liveness、HPA、NetworkPolicy、initContainers/sidecarTemplates（如需）。
+      - Istio 与 Envoy 配置必须体现：mTLS、重试、超时、熔断、限流、流量拆分、金丝雀/灰度、熔断策略与 Telemetry/Tracing 配置。
+      - 所有部署配置需模板化（支持 Helm 或 Kustomize），并在注释中说明各参数含义及可选项。
+
+      ——【输出要求】——
+      - 输出完整项目必须可编译（go build），包含 go.mod、Makefile 或构建脚本。
+
+      ——【生成规则】——
+      - 用户请求生成/修改代码、配置或部署资源时，Agent 可以**直接生成或修改文件**，无需再行确认；但必须在生成顶部写明“生成摘要/变更说明”。
+      - 若 Agent 在生成时做了合理假设（例如撮合规则默认价格优先/时间优先），必须在生成文件或 README 中列出该假设并给出可配置项。
+
+      ——【不确定事项必须明确标注】——
+      - 若 Agent 在生成时做了假设（例如外部服务地址、容量或策略默认值），必须在生成文件或 README 中列出假设清单，供后续替换。
+
+      ——【语言要求】——
+      - 回答与注释必须使用中文，所有日志必须为英文。

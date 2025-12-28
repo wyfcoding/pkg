@@ -1,0 +1,46 @@
+# Binaries
+*.exe 
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+*.test
+*.out
+
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+*.pb.go
+*_grpc.pb.go
+
+# Config
+*.env
+.env.local
+configs/local.yaml
+
+# Logs
+logs/
+*.log
+
+# Temp
+tmp/
+temp/
+.tmp/
+
+# Coverage
+*.coverprofile
+coverage.html
+coverage.out
