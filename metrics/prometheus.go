@@ -59,6 +59,12 @@ func (m *Metrics) NewHistogramVec(opts prometheus.HistogramOpts, labelNames []st
 	return histogram
 }
 
+// Handler 返回一个 http.Handler，用于暴露注册表中的指标。
+// 它可以直接集成到 Gin 或标准库的 HTTP 路由中。
+func (m *Metrics) Handler() http.Handler {
+	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+}
+
 // ExposeHttp 启动一个HTTP服务器，用于在指定的端口暴露Prometheus指标。
 // PromQL查询可以通过访问 `/metrics` 路径获取这些指标。
 // port: 服务器监听的端口号。
