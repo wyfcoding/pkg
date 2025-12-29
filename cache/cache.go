@@ -3,8 +3,8 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log/slog"
+	"errors"
+	"math/rand"
 	"time"
 
 	"github.com/wyfcoding/pkg/config"
@@ -14,98 +14,75 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/sony/gobreaker"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
-	// cacheHits 是缓存命中的Prometheus计数器
 	cacheHits = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "cache_hits_total",
-			Help: "The total number of cache hits",
-		},
+		prometheus.CounterOpts{Name: "cache_hits_total", Help: "缓存命中总数"},
 		[]string{"prefix"},
 	)
-	// cacheMisses 是缓存未命中的Prometheus计数器
 	cacheMisses = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "cache_misses_total",
-			Help: "The total number of cache misses",
-		},
+		prometheus.CounterOpts{Name: "cache_misses_total", Help: "缓存未命中总数"},
 		[]string{"prefix"},
 	)
-	// cacheDuration 是缓存操作耗时的Prometheus直方图
 	cacheDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "cache_operation_duration_seconds",
-			Help:    "The duration of cache operations",
+			Help:    "缓存操作耗时",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"prefix", "operation"},
 	)
 )
 
-// init 注册Prometheus监控指标
 func init() {
 	prometheus.MustRegister(cacheHits, cacheMisses, cacheDuration)
 }
 
-// Cache 定义缓存接口
+// ErrCacheMiss 缓存未命中错误
+var ErrCacheMiss = errors.New("cache: key not found")
+
+// Cache 工业级缓存接口
 type Cache interface {
 	Get(ctx context.Context, key string, value any) error
 	Set(ctx context.Context, key string, value any, expiration time.Duration) error
 	Delete(ctx context.Context, keys ...string) error
 	Exists(ctx context.Context, key string) (bool, error)
+	// GetOrSet 解决缓存击穿的核心方法
+	GetOrSet(ctx context.Context, key string, value any, expiration time.Duration, fn func() (any, error)) error
 	Close() error
 }
 
-// RedisCache 使用Redis实现的Cache接口
 type RedisCache struct {
-	client  *redis.Client             // Redis客户端实例
-	cleanup func()                    // 清理函数，用于关闭客户端
-	prefix  string                    // 缓存键前缀
-	cb      *gobreaker.CircuitBreaker // 熔断器实例
+	client  *redis.Client
+	cleanup func()
+	prefix  string
+	cb      *gobreaker.CircuitBreaker
+	sfg     singleflight.Group
 }
 
-// NewRedisCache 创建一个新的RedisCache实例
 func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
-	// 使用共享的Redis客户端工厂
 	client, cleanup, err := redis_pkg.NewClient(&cfg, logging.Default())
 	if err != nil {
 		return nil, err
 	}
 
-	// 初始化熔断器
 	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
-		Name:        "redis-cache",
-		MaxRequests: 0,
-		Interval:    0,
-		Timeout:     30 * time.Second,
+		Name:    "redis-cache",
+		Timeout: 10 * time.Second,
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-			return counts.Requests >= 10 && failureRatio >= 0.6
+			return counts.Requests >= 20 && float64(counts.TotalFailures)/float64(counts.Requests) >= 0.5
 		},
 	})
 
 	return &RedisCache{
 		client:  client,
 		cleanup: cleanup,
-		prefix:  "", // 默认无前缀
 		cb:      cb,
 	}, nil
 }
 
-// WithPrefix 返回一个带有键前缀的新RedisCache实例
-// 底层客户端是共享的
-func (c *RedisCache) WithPrefix(prefix string) *RedisCache {
-	return &RedisCache{
-		client:  c.client,
-		cleanup: c.cleanup, // 共享清理函数？需小心，通常清理归属于所有者
-		prefix:  prefix,
-		cb:      c.cb,
-	}
-}
-
-// buildKey 构建带有前缀的 key。
 func (c *RedisCache) buildKey(key string) string {
 	if c.prefix == "" {
 		return key
@@ -113,8 +90,6 @@ func (c *RedisCache) buildKey(key string) string {
 	return c.prefix + ":" + key
 }
 
-// Get 从缓存中获取值。
-// value 参数必须是一个指针，以便能将缓存的数据反序列化到其中。
 func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
 	start := time.Now()
 	defer func() {
@@ -123,103 +98,103 @@ func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
 
 	fullKey := c.buildKey(key)
 
-	// 使用熔断器包装Redis的Get操作。
-	_, err := c.cb.Execute(func() (any, error) {
-		data, err := c.client.Get(ctx, fullKey).Bytes()
-		if err != nil {
-			if err == redis.Nil {
-				cacheMisses.WithLabelValues(c.prefix).Inc()
-				return nil, fmt.Errorf("cache miss: %s", key)
-			}
-			return nil, err
-		}
-		cacheHits.WithLabelValues(c.prefix).Inc()
-		return data, json.Unmarshal(data, value)
-	})
+	val, err := c.client.Get(ctx, fullKey).Bytes()
+	if err == redis.Nil {
+		cacheMisses.WithLabelValues(c.prefix).Inc()
+		return ErrCacheMiss
+	} else if err != nil {
+		return err
+	}
 
-	return err
+	cacheHits.WithLabelValues(c.prefix).Inc()
+	return json.Unmarshal(val, value)
 }
 
-// Set 设置缓存值。
-// value 会被JSON序列化后存储。
-// expiration 参数指定了键的过期时间。
+// Set 存入缓存，并增加随机 TTL 扰动防止雪崩
 func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	start := time.Now()
 	defer func() {
 		cacheDuration.WithLabelValues(c.prefix, "set").Observe(time.Since(start).Seconds())
 	}()
 
-	fullKey := c.buildKey(key)
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("marshal error: %w", err)
+		return err
 	}
 
-	// 使用熔断器包装Redis的Set操作。
-	_, err = c.cb.Execute(func() (any, error) {
-		return nil, c.client.Set(ctx, fullKey, data, expiration).Err()
-	})
+	// 注入 10% 以内的随机扰动
+	if expiration > 0 {
+		jitter := time.Duration(rand.Int63n(int64(expiration / 10)))
+		expiration = expiration + jitter
+	}
 
-	return err
+	return c.client.Set(ctx, c.buildKey(key), data, expiration).Err()
 }
 
-// Delete 从缓存中删除值。
-func (c *RedisCache) Delete(ctx context.Context, keys ...string) error {
-	start := time.Now()
-	defer func() {
-		cacheDuration.WithLabelValues(c.prefix, "delete").Observe(time.Since(start).Seconds())
-	}()
+// GetOrSet 实现“防击穿”逻辑
+func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expiration time.Duration, fn func() (any, error)) error {
+	// 1. 先尝试获取
+	err := c.Get(ctx, key, value)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrCacheMiss) {
+		return err
+	}
 
+	// 2. 缓存未命中，使用 singleflight 合并回源请求
+	// 确保同一个 key 只有一个协程在跑 fn
+	v, err, _ := c.sfg.Do(key, func() (any, error) {
+		// 双重检查：进锁后再查一次，防止刚才排队期间别人已经写好了
+		var innerVal any
+		if err := c.Get(ctx, key, &innerVal); err == nil {
+			return innerVal, nil
+		}
+
+		// 执行真正的业务回源逻辑
+		data, err := fn()
+		if err != nil {
+			return nil, err
+		}
+
+		// 异步回写缓存
+		_ = c.Set(ctx, key, data, expiration)
+		return data, nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// 将结果反序列化到传入的 value 指针
+	// 注意：由于 singleflight 返回的是 any，我们需要处理类型转换
+	b, _ := json.Marshal(v)
+	return json.Unmarshal(b, value)
+}
+
+func (c *RedisCache) Delete(ctx context.Context, keys ...string) error {
 	if len(keys) == 0 {
 		return nil
 	}
 	fullKeys := make([]string, len(keys))
-	for i, key := range keys {
-		fullKeys[i] = c.buildKey(key)
+	for i, k := range keys {
+		fullKeys[i] = c.buildKey(k)
 	}
-
-	// 使用熔断器包装Redis的Del操作。
-	_, err := c.cb.Execute(func() (any, error) {
-		return nil, c.client.Del(ctx, fullKeys...).Err()
-	})
-
-	return err
+	return c.client.Del(ctx, fullKeys...).Err()
 }
 
-// Exists 检查 key 是否存在。
 func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
-	start := time.Now()
-	defer func() {
-		cacheDuration.WithLabelValues(c.prefix, "exists").Observe(time.Since(start).Seconds())
-	}()
-
-	fullKey := c.buildKey(key)
-
-	// 使用熔断器包装Redis的Exists操作。
-	result, err := c.cb.Execute(func() (any, error) {
-		n, err := c.client.Exists(ctx, fullKey).Result()
-		if err != nil {
-			return false, err
-		}
-		return n > 0, nil
-	})
-	if err != nil {
-		return false, err
-	}
-	return result.(bool), nil
+	n, err := c.client.Exists(ctx, c.buildKey(key)).Result()
+	return n > 0, err
 }
 
-// Close 关闭 Redis 客户端。
 func (c *RedisCache) Close() error {
-	slog.Info("closing redis cache connection...")
 	if c.cleanup != nil {
 		c.cleanup()
 	}
 	return nil
 }
 
-// GetClient 返回底层的 Redis 客户端。
-// 允许直接访问Redis客户端以执行Cache接口未封装的更高级操作。
 func (c *RedisCache) GetClient() *redis.Client {
 	return c.client
 }

@@ -18,9 +18,10 @@ var (
 // MyCustomClaims 定义了JWT的自定义载荷 (Payload) 结构。
 // 它嵌入了 `jwt.RegisteredClaims` 以包含标准的JWT字段，并添加了业务相关的字段。
 type MyCustomClaims struct {
-	UserID               uint64 `json:"user_id"`  // 用户ID。
-	Username             string `json:"username"` // 用户名。
-	jwt.RegisteredClaims        // 嵌入标准的JWT注册声明，如过期时间、签发者等。
+	UserID               uint64   `json:"user_id"`  // 用户ID。
+	Username             string   `json:"username"` // 用户名。
+	Roles                []string `json:"roles"`
+	jwt.RegisteredClaims          // 嵌入标准的JWT注册声明，如过期时间、签发者等。
 }
 
 // GenerateToken 生成一个JWT (JSON Web Token)。

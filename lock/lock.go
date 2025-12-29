@@ -2,71 +2,104 @@ package lock
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/redis/go-redis/v9" // 导入Redis客户端库。
+	"github.com/redis/go-redis/v9"
 )
 
-// 定义分布式锁操作可能返回的错误。
 var (
-	ErrLockFailed   = errors.New("failed to acquire lock") // 获取锁失败。
-	ErrUnlockFailed = errors.New("failed to release lock") // 释放锁失败。
+	ErrLockFailed   = errors.New("failed to acquire lock")
+	ErrUnlockFailed = errors.New("failed to release lock")
 )
 
-// DistributedLock 接口定义了分布式锁的通用行为。
-// 任何实现了此接口的类型都可以用作分布式锁。
+// DistributedLock 定义分布式锁的增强接口
 type DistributedLock interface {
-	// Lock 尝试获取一个指定键的分布式锁。
-	// ctx: 上下文，用于控制操作的生命周期。
-	// key: 锁的唯一标识符。
-	// ttl: 锁的过期时间，防止死锁。
-	// 返回值：一个唯一的令牌（token），用于释放锁；如果获取失败则返回错误。
+	// Lock 尝试加锁 (一次性)
 	Lock(ctx context.Context, key string, ttl time.Duration) (string, error)
-	// Unlock 尝试释放一个指定键的分布式锁。
-	// ctx: 上下文。
-	// key: 锁的唯一标识符。
-	// token: 获取锁时返回的令牌，用于确保只有锁的持有者才能释放锁。
-	// 返回值：如果释放失败则返回错误。
+	// LockWithWatchdog 加锁并启动自动续期协程
+	// 它返回一个 stop 函数，业务执行完后必须调用 stop 停止看门狗
+	LockWithWatchdog(ctx context.Context, key string, ttl time.Duration) (string, func(), error)
+	// Unlock 安全释放锁 (校验所有权)
 	Unlock(ctx context.Context, key string, token string) error
 }
 
-// RedisLock 结构体实现了基于 Redis 的分布式锁。
-// 它利用Redis的原子操作和SETNX命令来确保锁的互斥性和安全性。
 type RedisLock struct {
-	client *redis.Client // Redis客户端实例。
+	client *redis.Client
 }
 
-// NewRedisLock 创建并返回一个新的 RedisLock 实例。
-// client: 已连接的Redis客户端实例。
 func NewRedisLock(client *redis.Client) *RedisLock {
 	return &RedisLock{client: client}
 }
 
-// Lock 尝试获取一个分布式锁。
-// 使用 `SETNX` (SET if Not eXists) 命令来确保原子性。
-// 如果键不存在，则设置键值对并返回成功；否则不执行任何操作并返回失败。
+// Lock 实现基础加锁逻辑
 func (l *RedisLock) Lock(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	token := generateToken() // 生成一个唯一的令牌，用于防止误删。
-	// SETNX 命令原子地执行设置和判断操作。
-	// key: 锁的键名。
-	// value: 锁的值，这里使用唯一的token。
-	// expiration: 锁的过期时间，防止死锁。
+	token := l.generateToken()
 	ok, err := l.client.SetNX(ctx, key, token, ttl).Result()
 	if err != nil {
 		return "", fmt.Errorf("redis setnx failed: %w", err)
 	}
 	if !ok {
-		return "", ErrLockFailed // 如果SetNX返回false，表示锁已被其他客户端持有。
+		return "", ErrLockFailed
 	}
-	return token, nil // 获取锁成功，返回生成的token。
+	return token, nil
 }
 
-// Unlock 尝试释放一个分布式锁。
-// 为了确保只有锁的持有者才能释放锁，使用Lua脚本实现原子性的“GET然后DEL”操作。
+// LockWithWatchdog 具备自动续期能力的锁
+func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.Duration) (string, func(), error) {
+	token, err := l.Lock(ctx, key, ttl)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// 启动看门狗协程
+	// 我们创建一个内部的 cancel context 来控制看门狗的生命周期
+	watchdogCtx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		ticker := time.NewTicker(ttl / 3) // 每 1/3 TTL 续期一次
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// 续期 Lua 脚本：只有 key 的值等于 token 时才更新 TTL
+				script := `
+					if redis.call("get", KEYS[1]) == ARGV[1] then
+						return redis.call("expire", KEYS[1], ARGV[2])
+					else
+						return 0
+					end
+				`
+				res, err := l.client.Eval(watchdogCtx, script, []string{key}, token, int(ttl.Seconds())).Int()
+				if err != nil || res == 0 {
+					slog.Warn("watchdog failed to renew lock", "key", key, "error", err)
+					return // 续期失败或已失去所有权，退出协程
+				}
+			case <-watchdogCtx.Done():
+				return // 外部主动调用了 stop，结束续期
+			case <-ctx.Done():
+				return // 业务 Context 结束，结束续期
+			}
+		}
+	}()
+
+	// 返回清理函数
+	stop := func() {
+		cancel()
+		// 注意：这里不自动解锁，由业务代码显式调用 Unlock，
+		// 这样可以处理业务报错时手动释放或依赖 TTL 自动释放的精细控制。
+	}
+
+	return token, stop, nil
+}
+
+// Unlock 实现安全解锁 (Lua 脚本保证原子性)
 func (l *RedisLock) Unlock(ctx context.Context, key string, token string) error {
-	// Lua脚本确保了在获取锁的值和删除锁这两个操作之间不会有其他客户端修改锁的状态。
 	script := `
 		if redis.call("get", KEYS[1]) == ARGV[1] then
 			return redis.call("del", KEYS[1])
@@ -74,23 +107,19 @@ func (l *RedisLock) Unlock(ctx context.Context, key string, token string) error 
 			return 0
 		end
 	`
-	// Eval 命令执行Lua脚本。
-	// KEYS[1]: 锁的键名。
-	// ARGV[1]: 锁的值（即token）。
-	result, err := l.client.Eval(ctx, script, []string{key}, token).Result()
+	result, err := l.client.Eval(ctx, script, []string{key}, token).Int()
 	if err != nil {
-		return fmt.Errorf("redis eval unlock script failed: %w", err)
+		return fmt.Errorf("redis eval unlock failed: %w", err)
 	}
-	// Lua脚本返回0表示锁的值不匹配（不是持有者），或者锁不存在。
-	if result.(int64) == 0 {
+	if result == 0 {
 		return ErrUnlockFailed
 	}
-	return nil // 释放锁成功。
+	return nil
 }
 
-// generateToken 生成一个唯一的字符串令牌。
-// 它可以用于作为锁的值，以区分不同的锁持有者，防止误删。
-func generateToken() string {
-	// 使用当前时间戳（纳秒级）的格式化字符串作为令牌，保证唯一性。
-	return time.Now().Format("20060102150405.000000")
+// generateToken 生成加密安全的唯一令牌
+func (l *RedisLock) generateToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b) + fmt.Sprintf("%d", time.Now().UnixNano())
 }

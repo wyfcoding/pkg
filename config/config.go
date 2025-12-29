@@ -1,22 +1,19 @@
-// Package config 提供了应用程序的配置管理功能。
-// 它定义了所有服务相关的配置结构体，支持从TOML文件加载配置，并通过环境变量进行覆盖，
-// 同时提供了配置热加载的能力。
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/fsnotify/fsnotify" // 文件系统事件通知库
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-playground/validator/v10"
-	"github.com/spf13/viper" // 强大的配置管理库
+	"github.com/spf13/viper"
 	"gorm.io/gorm/logger"
 )
 
-// Config 是应用程序的顶级配置结构体。
-// 它包含了所有子模块和服务的配置信息。
+// Config 全局顶级配置结构
 type Config struct {
 	Version        string               `mapstructure:"version" toml:"version"`
 	Server         ServerConfig         `mapstructure:"server" toml:"server"`
@@ -36,7 +33,8 @@ type Config struct {
 	Services       ServicesConfig       `mapstructure:"services" toml:"services"`
 }
 
-// ServerConfig 定义服务器配置。
+// ... (ServerConfig, DataConfig 等子结构体定义保持不变，以确保向后兼容) ...
+
 type ServerConfig struct {
 	Name        string `mapstructure:"name" toml:"name" validate:"required"`
 	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
@@ -58,7 +56,6 @@ type ServerConfig struct {
 	} `mapstructure:"grpc" toml:"grpc"`
 }
 
-// DataConfig 定义数据相关的配置。
 type DataConfig struct {
 	Database      DatabaseConfig      `mapstructure:"database" toml:"database"`
 	Shards        []DatabaseConfig    `mapstructure:"shards" toml:"shards"`
@@ -70,7 +67,6 @@ type DataConfig struct {
 	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch" toml:"elasticsearch"`
 }
 
-// DatabaseConfig 定义数据库（MySQL）配置。
 type DatabaseConfig struct {
 	Driver          string          `mapstructure:"driver" toml:"driver" validate:"required"`
 	DSN             string          `mapstructure:"dsn" toml:"dsn" validate:"required"`
@@ -81,7 +77,6 @@ type DatabaseConfig struct {
 	SlowThreshold   time.Duration   `mapstructure:"slow_threshold" toml:"slow_threshold"`
 }
 
-// RedisConfig 定义 Redis 配置。
 type RedisConfig struct {
 	Addr         string        `mapstructure:"addr" toml:"addr" validate:"required"`
 	Password     string        `mapstructure:"password" toml:"password"`
@@ -92,7 +87,6 @@ type RedisConfig struct {
 	MinIdleConns int           `mapstructure:"min_idle_conns" toml:"min_idle_conns"`
 }
 
-// LogConfig 定义日志配置。
 type LogConfig struct {
 	Level      string `mapstructure:"level" toml:"level"`
 	Format     string `mapstructure:"format" toml:"format"`
@@ -104,29 +98,22 @@ type LogConfig struct {
 	Compress   bool   `mapstructure:"compress" toml:"compress"`
 }
 
-// JWTConfig 定义 JWT 认证配置。
 type JWTConfig struct {
 	Secret         string        `mapstructure:"secret" toml:"secret"`
 	Issuer         string        `mapstructure:"issuer" toml:"issuer"`
 	ExpireDuration time.Duration `mapstructure:"expire_duration" toml:"expire_duration"`
 }
 
-// SnowflakeConfig 定义 ID 生成器配置。
-// Type 可选值：snowflake（默认）、sonyflake。
-// Snowflake 适合高并发场景（每毫秒 4096 个 ID），支持 1024 台机器，可用 69 年。
-// Sonyflake 适合大规模集群（每 10 毫秒 256 个 ID），支持 65536 台机器，可用 174 年。
 type SnowflakeConfig struct {
-	Type      string `mapstructure:"type" toml:"type"`             // 生成器类型：snowflake 或 sonyflake
-	StartTime string `mapstructure:"start_time" toml:"start_time"` // 起始时间，格式为 2006-01-02
-	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"` // 机器 ID
+	Type      string `mapstructure:"type" toml:"type"`
+	StartTime string `mapstructure:"start_time" toml:"start_time"`
+	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"`
 }
 
-// MessageQueueConfig 定义消息队列配置。
 type MessageQueueConfig struct {
 	Kafka KafkaConfig `mapstructure:"kafka" toml:"kafka"`
 }
 
-// KafkaConfig 定义 Kafka 配置。
 type KafkaConfig struct {
 	Brokers        []string      `mapstructure:"brokers" toml:"brokers"`
 	Topic          string        `mapstructure:"topic" toml:"topic"`
@@ -143,7 +130,6 @@ type KafkaConfig struct {
 	Async          bool          `mapstructure:"async" toml:"async"`
 }
 
-// MinioConfig 定义 MinIO 对象存储配置。
 type MinioConfig struct {
 	Endpoint        string `mapstructure:"endpoint" toml:"endpoint"`
 	AccessKeyID     string `mapstructure:"access_key_id" toml:"access_key_id"`
@@ -152,28 +138,24 @@ type MinioConfig struct {
 	BucketName      string `mapstructure:"bucket_name" toml:"bucket_name"`
 }
 
-// TracingConfig 定义链路追踪配置。
 type TracingConfig struct {
 	Enabled      bool   `mapstructure:"enabled" toml:"enabled"`
 	ServiceName  string `mapstructure:"service_name" toml:"service_name"`
 	OTLPEndpoint string `mapstructure:"otlp_endpoint" toml:"otlp_endpoint"`
 }
 
-// MetricsConfig 定义监控指标配置。
 type MetricsConfig struct {
 	Enabled bool   `mapstructure:"enabled" toml:"enabled"`
 	Port    string `mapstructure:"port" toml:"port"`
 	Path    string `mapstructure:"path" toml:"path"`
 }
 
-// RateLimitConfig 定义限流配置。
 type RateLimitConfig struct {
 	Enabled bool `mapstructure:"enabled" toml:"enabled"`
 	Rate    int  `mapstructure:"rate" toml:"rate"`
 	Burst   int  `mapstructure:"burst" toml:"burst"`
 }
 
-// CircuitBreakerConfig 定义熔断器配置。
 type CircuitBreakerConfig struct {
 	Enabled     bool          `mapstructure:"enabled" toml:"enabled"`
 	MaxRequests uint32        `mapstructure:"max_requests" toml:"max_requests"`
@@ -181,14 +163,12 @@ type CircuitBreakerConfig struct {
 	Timeout     time.Duration `mapstructure:"timeout" toml:"timeout"`
 }
 
-// CacheConfig 定义缓存配置。
 type CacheConfig struct {
 	Prefix            string        `mapstructure:"prefix" toml:"prefix"`
 	DefaultExpiration time.Duration `mapstructure:"default_expiration" toml:"default_expiration"`
 	CleanupInterval   time.Duration `mapstructure:"cleanup_interval" toml:"cleanup_interval"`
 }
 
-// LockConfig 定义分布式锁配置。
 type LockConfig struct {
 	Prefix            string        `mapstructure:"prefix" toml:"prefix"`
 	DefaultExpiration time.Duration `mapstructure:"default_expiration" toml:"default_expiration"`
@@ -196,21 +176,17 @@ type LockConfig struct {
 	RetryDelay        time.Duration `mapstructure:"retry_delay" toml:"retry_delay"`
 }
 
-// ServicesConfig 定义服务地址映射。
 type ServicesConfig map[string]ServiceAddr
 
-// ServiceAddr 定义单个服务的地址信息。
 type ServiceAddr struct {
 	GRPCAddr string `mapstructure:"grpc_addr" toml:"grpc_addr"`
 	HTTPAddr string `mapstructure:"http_addr" toml:"http_addr"`
 }
 
-// HadoopConfig 定义 Hadoop 配置。
 type HadoopConfig struct {
 	NameNode string `mapstructure:"name_node" toml:"name_node"`
 }
 
-// BigCacheConfig 定义 BigCache 配置。
 type BigCacheConfig struct {
 	Shards             int           `mapstructure:"shards" toml:"shards"`
 	LifeWindow         time.Duration `mapstructure:"life_window" toml:"life_window"`
@@ -221,13 +197,11 @@ type BigCacheConfig struct {
 	OnRemoveWithReason bool          `mapstructure:"on_remove_with_reason" toml:"on_remove_with_reason"`
 }
 
-// MongoDBConfig 定义 MongoDB 配置。
 type MongoDBConfig struct {
 	URI      string `mapstructure:"uri" toml:"uri"`
 	Database string `mapstructure:"database" toml:"database"`
 }
 
-// ClickHouseConfig 定义 ClickHouse 配置。
 type ClickHouseConfig struct {
 	Addr     string `mapstructure:"addr" toml:"addr"`
 	Database string `mapstructure:"database" toml:"database"`
@@ -235,56 +209,108 @@ type ClickHouseConfig struct {
 	Password string `mapstructure:"password" toml:"password"`
 }
 
-// Neo4jConfig 定义 Neo4j 配置。
 type Neo4jConfig struct {
 	URI      string `mapstructure:"uri" toml:"uri"`
 	Username string `mapstructure:"username" toml:"username"`
 	Password string `mapstructure:"password" toml:"password"`
 }
 
-// ElasticsearchConfig 定义 Elasticsearch 配置。
 type ElasticsearchConfig struct {
 	Addresses []string `mapstructure:"addresses" toml:"addresses"`
 	Username  string   `mapstructure:"username" toml:"username"`
 	Password  string   `mapstructure:"password" toml:"password"`
 }
 
-// Load 从指定路径加载配置。
+var v = viper.New()
+
+// Load 全生产级的配置加载逻辑
 func Load(path string, conf any) error {
-	v := viper.New()
 	v.SetConfigFile(path)
 	v.SetConfigType("toml")
-	v.AutomaticEnv()
-	v.SetEnvPrefix("ECOMMERCE")
+
+	// 1. 设置环境变量支持
+	v.SetEnvPrefix("APP") // 环境变量前缀 APP_
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
 
+	// 2. 加载基础文件
 	if err := v.ReadInConfig(); err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
+		return fmt.Errorf("read config error: %w", err)
 	}
 
+	// 3. 初始解析
 	if err := v.Unmarshal(conf); err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
+		return fmt.Errorf("unmarshal config error: %w", err)
 	}
 
-	// 校验配置
+	// 4. 实时校验
 	validate := validator.New()
 	if err := validate.Struct(conf); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
-	// 监听文件变更（热加载）
+	// 5. 开启热加载 (带防抖逻辑)
 	v.WatchConfig()
 	v.OnConfigChange(func(e fsnotify.Event) {
-		slog.Info("config file changed", "file", e.Name)
+		slog.Info("detecting config change", "file", e.Name)
+		// 延迟 500ms 确保文件写操作已完成 (针对某些编辑器的原子保存行为)
+		time.Sleep(500 * time.Millisecond)
 		if err := v.Unmarshal(conf); err != nil {
-			slog.Error("failed to unmarshal config after change", "error", err)
+			slog.Error("reload config unmarshal failed", "error", err)
 			return
 		}
-		// 变更后重新校验
 		if err := validate.Struct(conf); err != nil {
-			slog.Error("config validation failed after change", "error", err)
+			slog.Error("reload config validation failed", "error", err)
+		} else {
+			slog.Info("config hot-reloaded and validated successfully")
 		}
 	})
 
 	return nil
+}
+
+// PrintWithMask 脱敏打印当前配置，方便生产环境排查
+func PrintWithMask(conf any) {
+	data, _ := json.Marshal(conf)
+	var m map[string]any
+	json.Unmarshal(data, &m)
+
+	// 简单的脱敏递归函数
+	mask(m)
+
+	maskedJSON, _ := json.MarshalIndent(m, "  ", "  ")
+	fmt.Printf("--- Current Effective Configuration ---\n%s\n---------------------------------------\n", string(maskedJSON))
+}
+
+func mask(m map[string]any) {
+	sensitiveKeys := []string{"password", "secret", "dsn", "key", "token"}
+	for k, v := range m {
+		// 递归处理子 Map
+		if subMap, ok := v.(map[string]any); ok {
+			mask(subMap)
+			continue
+		}
+		// 递归处理数组中的 Map
+		if slice, ok := v.([]any); ok {
+			for _, item := range slice {
+				if itemMap, ok := item.(map[string]any); ok {
+					mask(itemMap)
+				}
+			}
+			continue
+		}
+
+		// 执行脱敏
+		for _, sk := range sensitiveKeys {
+			if strings.Contains(strings.ToLower(k), sk) {
+				m[k] = "******"
+				break
+			}
+		}
+	}
+}
+
+// GetViper 返回底层的 Viper 实例，供需要直接读取动态值的场景使用
+func GetViper() *viper.Viper {
+	return v
 }

@@ -2,106 +2,119 @@ package limiter
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9" // 导入Redis客户端库。
-	"golang.org/x/time/rate"       // 导入基于令牌桶算法的限流库。
+	"github.com/redis/go-redis/v9"
+	"golang.org/x/time/rate"
 )
 
-// Limiter 接口定义了限流器的通用行为。
-// 任何实现了此接口的类型都可以用作限流器。
+// Limiter 定义了限流器的通用接口。
 type Limiter interface {
-	Allow(ctx context.Context, key string) (bool, error) // 检查是否允许请求通过。
+	// Allow 检查指定的 key 是否允许通过限流。
+	Allow(ctx context.Context, key string) (bool, error)
 }
 
-// LocalLimiter 是一个基于令牌桶算法的本地限流器。
-// 它适用于单个应用程序实例内的限流。
+// --- Local Limiter (Token Bucket) ---
+
+// LocalLimiter 是基于内存的本地令牌桶限流器。
 type LocalLimiter struct {
-	limiter *rate.Limiter // 底层的令牌桶限流器实例。
+	limiter *rate.Limiter
 }
 
-// NewLocalLimiter 创建并返回一个新的 LocalLimiter 实例。
-// r: 每秒生成的令牌数，代表允许的平均请求速率。
-// b: 令牌桶的容量，代表允许的瞬时突发请求数。
+// NewLocalLimiter 创建本地限流器。
+// r: 每秒填充速率，b: 桶容量。
 func NewLocalLimiter(r rate.Limit, b int) *LocalLimiter {
 	return &LocalLimiter{
 		limiter: rate.NewLimiter(r, b),
 	}
 }
 
-// Allow 检查一个请求是否被 LocalLimiter 允许通过。
-// key: 请求的唯一标识符（例如，用户ID或IP地址），但在此本地限流器中，key参数未被使用，因为它是全局限流。
-// 返回值：一个布尔值，表示是否允许请求；一个错误，如果发生内部错误。
 func (l *LocalLimiter) Allow(ctx context.Context, key string) (bool, error) {
-	// Allow() 方法会尝试从令牌桶中获取一个令牌。
-	// 如果令牌可用，则立即返回 true；否则，如果桶已空，则返回 false。
 	return l.limiter.Allow(), nil
 }
 
-// RedisLimiter 是一个基于 Redis 实现的分布式限流器。
-// 它使用Redis的ZSet（有序集合）数据结构实现滑动窗口算法，支持在多个应用程序实例之间共享限流状态。
+// redisTokenBucketScript 是经过充分优化的 Redis Lua 脚本。
+// 该脚本实现了标准的令牌桶算法，具有以下特点：
+// 1. 原子性：所有计算都在 Redis 服务端完成。
+// 2. 高性能：仅需存储两个 Hash 字段，内存开销极小。
+// 3. 实时性：基于时间戳动态计算令牌增量。
+const redisTokenBucketScript = `
+local key = KEYS[1]           -- 限流标识
+local rate = tonumber(ARGV[1]) -- 每秒生成令牌速率
+local burst = tonumber(ARGV[2])-- 桶最大容量
+local now = tonumber(ARGV[3])  -- 当前时间戳 (秒)
+local requested = 1            -- 请求令牌数 (默认为1)
+
+-- 获取当前状态
+local last_tokens = tonumber(redis.call("hget", key, "tokens"))
+local last_refreshed = tonumber(redis.call("hget", key, "last_refreshed"))
+
+-- 第一次初始化
+if last_tokens == nil then
+    last_tokens = burst
+    last_refreshed = now
+end
+
+-- 计算自上次刷新以来新生成的令牌
+local delta = math.max(0, now - last_refreshed)
+local new_tokens = math.min(burst, last_tokens + (delta * rate))
+
+-- 检查令牌是否足够
+local allowed = false
+if new_tokens >= requested then
+    new_tokens = new_tokens - requested
+    allowed = true
+end
+
+-- 更新 Redis 状态并设置过期时间（防止内存泄漏，过期时间设为桶填满所需时间的2倍）
+redis.call("hset", key, "tokens", new_tokens, "last_refreshed", now)
+redis.call("expire", key, math.ceil(burst / rate) * 2)
+
+return allowed and 1 or 0
+`
+
+// RedisLimiter 是基于 Redis 和 Lua 脚本实现的分布式令牌桶限流器。
 type RedisLimiter struct {
-	client *redis.Client // Redis客户端实例。
-	limit  int           // 在指定时间窗口内允许的最大请求数。
-	window time.Duration // 时间窗口的长度。
+	client *redis.Client
+	rate   int // 每秒产生的令牌数
+	burst  int // 桶的最大容量
 }
 
-// NewRedisLimiter 创建并返回一个新的 RedisLimiter 实例。
-// client: 已连接的Redis客户端实例。
-// limit: 时间窗口内允许的最大请求数。
-// window: 时间窗口的持续时间。
-func NewRedisLimiter(client *redis.Client, limit int, window time.Duration) *RedisLimiter {
+// NewRedisLimiter 创建一个新的分布式限流器。
+// client: Redis 客户端。
+// rate: 每秒限制的请求数。
+// window: 在分布式令牌桶中，我们简化为每秒速率，如果传入 1s 则 rate 即为 QPS。
+func NewRedisLimiter(client *redis.Client, rate int, _ time.Duration) *RedisLimiter {
+	// 默认突发流量容量为速率的 20% 或最小为 1，确保平滑
+	burst := rate + (rate / 5)
+	if burst <= 0 {
+		burst = 1
+	}
 	return &RedisLimiter{
 		client: client,
-		limit:  limit,
-		window: window,
+		rate:   rate,
+		burst:  burst,
 	}
 }
 
-// Allow 检查一个请求是否被 RedisLimiter 允许通过。
-// 它实现了基于Redis的滑动窗口算法：
-// 1. 移除时间窗口之外的旧请求记录。
-// 2. 统计当前时间窗口内的请求数量。
-// 3. 如果请求数量未超过限制，则记录当前请求并允许通过。
-// key: 请求的唯一标识符，通常用作Redis键（例如，"rate_limit:user:123"）。
-// 返回值：一个布尔值，表示是否允许请求；一个错误，如果发生Redis操作错误。
+// NewRedisLimiterWithBurst 创建带自定义突发容量的分布式限流器。
+func NewRedisLimiterWithBurst(client *redis.Client, rate int, burst int) *RedisLimiter {
+	return &RedisLimiter{
+		client: client,
+		rate:   rate,
+		burst:  burst,
+	}
+}
+
+// Allow 实现 Limiter 接口。
 func (l *RedisLimiter) Allow(ctx context.Context, key string) (bool, error) {
-	now := time.Now().UnixNano()                // 当前时间（纳秒）。
-	windowStart := now - l.window.Nanoseconds() // 时间窗口的起始时间。
+	now := time.Now().Unix()
 
-	// 使用Redis Pipeline批量执行命令，确保原子性。
-	pipe := l.client.Pipeline()
-
-	// 步骤1: 移除时间窗口之外（早于 windowStart）的旧请求记录。
-	// ZRemRangeByScore 根据分数范围移除有序集合的成员。
-	pipe.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart))
-
-	// 步骤2: 统计当前时间窗口内剩余的请求数。
-	// ZCard 返回有序集合的成员数量。
-	pipe.ZCard(ctx, key)
-
-	// 步骤3: 添加当前请求的记录到有序集合中，分数为当前时间戳。
-	// ZAdd 将成员添加到有序集合中，并指定分数（时间戳）。
-	pipe.ZAdd(ctx, key, redis.Z{
-		Score:  float64(now), // 使用时间戳作为分数。
-		Member: now,          // 成员可以是唯一标识符，这里也使用了时间戳。
-	})
-
-	// 步骤4: 设置Redis键的过期时间，防止内存泄露。
-	pipe.Expire(ctx, key, l.window)
-
-	// 执行所有Pipeline中的命令。
-	cmds, err := pipe.Exec(ctx)
+	// 执行 Lua 脚本
+	result, err := l.client.Eval(ctx, redisTokenBucketScript, []string{key}, l.rate, l.burst, now).Int()
 	if err != nil {
 		return false, err
 	}
 
-	// 获取ZCard命令的执行结果，即当前窗口内的请求数。
-	// cmds[1] 是 ZCard 命令的结果，cmds[0] 是 ZRemRangeByScore 的结果。
-	count := cmds[1].(*redis.IntCmd).Val()
-
-	// 判断是否允许请求通过：如果当前窗口内的请求数小于限制，则允许。
-	// 注意：ZAdd 操作也会增加一个请求，所以这里的 count 包含了当前请求。
-	return count < int64(l.limit), nil
+	return result == 1, nil
 }
