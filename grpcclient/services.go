@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wyfcoding/pkg/config"
+	"github.com/wyfcoding/pkg/logging"
 	"google.golang.org/grpc"
 )
 
@@ -22,6 +23,9 @@ func InitClients(services map[string]config.ServiceAddr, targetClients any) (fun
 	typ := elem.Type()
 
 	var conns []*grpc.ClientConn
+	
+	// 创建 ClientFactory
+	factory := NewClientFactory(logging.Default())
 
 	for i := 0; i < elem.NumField(); i++ {
 		field := elem.Field(i)
@@ -57,11 +61,8 @@ func InitClients(services map[string]config.ServiceAddr, targetClients any) (fun
 			continue
 		}
 
-		// 拨号连接 (使用增强版 NewClient)
-		conn, err := NewClient(ClientConfig{
-			Target:  addrConfig.GRPCAddr,
-			Timeout: 10000, // 默认 10s
-		})
+		// 拨号连接 (使用 ClientFactory)
+		conn, err := factory.NewClient(addrConfig.GRPCAddr)
 		if err != nil {
 			// 关闭已打开的连接
 			for _, c := range conns {

@@ -15,21 +15,21 @@ func JWTAuth(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			response.Unauthorized(c, "missing authorization header")
+			response.ErrorWithStatus(c, http.StatusUnauthorized, "missing authorization header", "")
 			c.Abort()
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			response.Unauthorized(c, "invalid authorization format")
+			response.ErrorWithStatus(c, http.StatusUnauthorized, "invalid authorization format", "")
 			c.Abort()
 			return
 		}
 
 		claims, err := jwt.ParseToken(parts[1], secret)
 		if err != nil {
-			response.Unauthorized(c, "invalid or expired token")
+			response.ErrorWithStatus(c, http.StatusUnauthorized, "invalid or expired token", "")
 			c.Abort()
 			return
 		}

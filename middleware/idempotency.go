@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/wyfcoding/pkg/idempotency"
+	"github.com/wyfcoding/pkg/response"
 )
 
 // responseBodyWriter 用于捕获 Gin 的响应内容
@@ -36,7 +37,7 @@ func IdempotencyMiddleware(manager idempotency.Manager, ttl time.Duration) gin.H
 		isFirst, savedResp, err := manager.TryStart(c.Request.Context(), key, 5*time.Minute) // 默认处理中锁 5 分钟
 		if err != nil {
 			if err == idempotency.ErrInProgress {
-				c.JSON(http.StatusConflict, gin.H{"error": "request is being processed, please do not repeat"})
+				response.ErrorWithStatus(c, http.StatusConflict, "request is being processed, please do not repeat", "")
 				c.Abort()
 				return
 			}

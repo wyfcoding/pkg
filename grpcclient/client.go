@@ -18,16 +18,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ClientConfig 客户端详细配置
-type ClientConfig struct {
-	Target          string
-	Timeout         time.Duration
-	MaxRetries      int
-	InitialBackoff  time.Duration
-	MaxBackoff      time.Duration
-	EnableKeepalive bool
-}
-
 var (
 	grpcClientRequests = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -60,8 +50,9 @@ func NewClientFactory(logger *logging.Logger) *ClientFactory {
 }
 
 // NewClient 创建带负载均衡、熔断、限流和智能重试的连接
-func (f *ClientFactory) NewClient(ctx context.Context, target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	// 1. 初始化服务治理组件
+	// 每个 Target 独立的熔断器
 	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
 		Name:    "grpc-" + target,
 		Timeout: 30 * time.Second,
@@ -69,7 +60,8 @@ func (f *ClientFactory) NewClient(ctx context.Context, target string, opts ...gr
 			return counts.Requests >= 20 && float64(counts.TotalFailures)/float64(counts.Requests) >= 0.5
 		},
 	})
-	limiter := rate.NewLimiter(rate.Limit(5000), 500) // 默认 5000 QPS 限制
+	// 每个 Target 独立的限流器 (默认 5000 QPS)
+	limiter := rate.NewLimiter(rate.Limit(5000), 500)
 
 	// 2. 核心拨号选项
 	defaultOpts := []grpc.DialOption{
@@ -107,13 +99,7 @@ func (f *ClientFactory) metadataPropagationInterceptor() grpc.UnaryClientInterce
 		if !ok {
 			md = metadata.New(nil)
 		}
-
-		// 这里可以根据实际 Context 存储的 Key 进行提取
-		// 示例：从 Context 提取 RequestID 并注入
-		// if rid, ok := ctx.Value("request_id").(string); ok {
-		//     md.Set("x-request-id", rid)
-		// }
-
+		// 确保 OpenTelemetry 的 Context 传播已由 otelgrpc 处理，此处仅处理额外的元数据
 		return invoker(metadata.NewOutgoingContext(ctx, md), method, req, reply, cc, opts...)
 	}
 }
@@ -149,8 +135,6 @@ func isRetriable(code codes.Code) bool {
 		return false
 	}
 }
-
-// --- 其余拦截器 (Metrics, CircuitBreaker, RateLimit, Logging) 保持原逻辑并进行 slog 优化 ---
 
 func (f *ClientFactory) metricsInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
@@ -192,16 +176,9 @@ func (f *ClientFactory) loggingInterceptor() grpc.UnaryClientInterceptor {
 		start := time.Now()
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		if err != nil {
+			// 仅记录错误，避免日志泛滥。正常请求由 metrics 监控。
 			f.logger.ErrorContext(ctx, "grpc call failed", "method", method, "target", cc.Target(), "cost", time.Since(start), "error", err)
 		}
 		return err
 	}
-}
-
-// NewClientWithConfig 兼容旧接口
-func NewClient(cfg ClientConfig) (*grpc.ClientConn, error) {
-	factory := NewClientFactory(logging.Default())
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return factory.NewClient(ctx, cfg.Target)
 }
