@@ -8,17 +8,19 @@ import (
 	"time"
 
 	"github.com/allegro/bigcache/v3"
+	"github.com/wyfcoding/pkg/logging"
 	"golang.org/x/sync/singleflight"
 )
 
 // BigCache 实现了 Cache 接口，使用内存作为底层存储
 type BigCache struct {
-	cache *bigcache.BigCache
-	sfg   singleflight.Group
+	cache  *bigcache.BigCache
+	sfg    singleflight.Group
+	logger *logging.Logger
 }
 
 // NewBigCache 创建本地高性能缓存
-func NewBigCache(ttl time.Duration, maxMB int) (*BigCache, error) {
+func NewBigCache(ttl time.Duration, maxMB int, logger *logging.Logger) (*BigCache, error) {
 	config := bigcache.DefaultConfig(ttl)
 	config.HardMaxCacheSize = maxMB
 	config.CleanWindow = 5 * time.Minute
@@ -28,7 +30,7 @@ func NewBigCache(ttl time.Duration, maxMB int) (*BigCache, error) {
 		return nil, fmt.Errorf("failed to init bigcache: %w", err)
 	}
 
-	return &BigCache{cache: cache}, nil
+	return &BigCache{cache: cache, logger: logger}, nil
 }
 
 func (c *BigCache) Get(ctx context.Context, key string, value any) error {
@@ -60,7 +62,7 @@ func (c *BigCache) GetOrSet(ctx context.Context, key string, value any, expirati
 		return err
 	}
 
-	v, err, _ := c.sfg.Do(key, func() (any, error) {
+	v, err, shared := c.sfg.Do(key, func() (any, error) {
 		var innerVal any
 		if err := c.Get(ctx, key, &innerVal); err == nil {
 			return innerVal, nil
@@ -71,7 +73,9 @@ func (c *BigCache) GetOrSet(ctx context.Context, key string, value any, expirati
 			return nil, err
 		}
 
-		_ = c.Set(ctx, key, data, expiration)
+		if err := c.Set(ctx, key, data, expiration); err != nil {
+			c.logger.Error("failed to set cache in GetOrSet", "key", key, "error", err)
+		}
 		return data, nil
 	})
 
@@ -79,13 +83,22 @@ func (c *BigCache) GetOrSet(ctx context.Context, key string, value any, expirati
 		return err
 	}
 
-	b, _ := json.Marshal(v)
+	if shared {
+		// Result was shared
+	}
+
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
 	return json.Unmarshal(b, value)
 }
 
 func (c *BigCache) Delete(ctx context.Context, keys ...string) error {
 	for _, key := range keys {
-		_ = c.cache.Delete(key)
+		if err := c.cache.Delete(key); err != nil && !errors.Is(err, bigcache.ErrEntryNotFound) {
+			c.logger.Error("failed to delete from bigcache", "key", key, "error", err)
+		}
 	}
 	return nil
 }

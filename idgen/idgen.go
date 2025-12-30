@@ -142,7 +142,9 @@ func Init(cfg config.SnowflakeConfig) error {
 func GenID() uint64 {
 	if defaultGenerator == nil {
 		// 如果未初始化，则使用默认值进行回退初始化。
-		_ = Init(config.SnowflakeConfig{MachineID: 1})
+		if err := Init(config.SnowflakeConfig{MachineID: 1}); err != nil {
+			panic(fmt.Errorf("failed to auto-initialize default id generator: %w", err))
+		}
 	}
 	return uint64(defaultGenerator.Generate())
 }

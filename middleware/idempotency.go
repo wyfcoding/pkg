@@ -76,7 +76,9 @@ func IdempotencyMiddleware(manager idempotency.Manager, ttl time.Duration) gin.H
 			}
 		} else {
 			// 如果处理失败，释放锁，允许客户端修改参数后重试
-			_ = manager.Delete(c.Request.Context(), key)
+			if err := manager.Delete(c.Request.Context(), key); err != nil {
+				slog.Error("failed to release idempotency lock", "key", key, "error", err)
+			}
 		}
 	}
 }

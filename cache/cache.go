@@ -60,10 +60,11 @@ type RedisCache struct {
 	prefix  string
 	cb      *gobreaker.CircuitBreaker
 	sfg     singleflight.Group
+	logger  *logging.Logger
 }
 
-func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
-	client, cleanup, err := redis_pkg.NewClient(&cfg, logging.Default())
+func NewRedisCache(cfg config.RedisConfig, logger *logging.Logger) (*RedisCache, error) {
+	client, cleanup, err := redis_pkg.NewClient(&cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +81,7 @@ func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
 		client:  client,
 		cleanup: cleanup,
 		cb:      cb,
+		logger:  logger,
 	}, nil
 }
 
@@ -144,7 +146,7 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 
 	// 2. 缓存未命中，使用 singleflight 合并回源请求
 	// 确保同一个 key 只有一个协程在跑 fn
-	v, err, _ := c.sfg.Do(key, func() (any, error) {
+	v, err, shared := c.sfg.Do(key, func() (any, error) {
 		// 双重检查：进锁后再查一次，防止刚才排队期间别人已经写好了
 		var innerVal any
 		if err := c.Get(ctx, key, &innerVal); err == nil {
@@ -158,7 +160,9 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 		}
 
 		// 异步回写缓存
-		_ = c.Set(ctx, key, data, expiration)
+		if err := c.Set(ctx, key, data, expiration); err != nil {
+			c.logger.ErrorContext(ctx, "failed to set cache in GetOrSet", "key", key, "error", err)
+		}
 		return data, nil
 	})
 
@@ -166,9 +170,16 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 		return err
 	}
 
+	if shared {
+		// 如果是共享结果，可以在此记录指标
+	}
+
 	// 将结果反序列化到传入的 value 指针
 	// 注意：由于 singleflight 返回的是 any，我们需要处理类型转换
-	b, _ := json.Marshal(v)
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
 	return json.Unmarshal(b, value)
 }
 

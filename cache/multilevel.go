@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/wyfcoding/pkg/logging"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -16,13 +17,15 @@ type MultiLevelCache struct {
 	l1     Cache
 	l2     Cache
 	tracer trace.Tracer
+	logger *logging.Logger
 }
 
-func NewMultiLevelCache(l1, l2 Cache) *MultiLevelCache {
+func NewMultiLevelCache(l1, l2 Cache, logger *logging.Logger) *MultiLevelCache {
 	return &MultiLevelCache{
 		l1:     l1,
 		l2:     l2,
 		tracer: otel.Tracer("github.com/wyfcoding/pkg/cache"),
+		logger: logger,
 	}
 }
 
@@ -42,7 +45,9 @@ func (c *MultiLevelCache) Get(ctx context.Context, key string, value any) error 
 	if err := c.l2.Get(ctx, key, value); err == nil {
 		span.SetAttributes(attribute.String("cache.hit", "L2"))
 		// 回填 L1
-		_ = c.l1.Set(ctx, key, value, 0)
+		if err := c.l1.Set(ctx, key, value, 0); err != nil {
+			c.logger.ErrorContext(ctx, "failed to backfill L1 cache", "key", key, "error", err)
+		}
 		return nil
 	}
 
@@ -64,7 +69,9 @@ func (c *MultiLevelCache) Set(ctx context.Context, key string, value any, expira
 	}
 
 	// 再写 L1 (本地)
-	_ = c.l1.Set(ctx, key, value, expiration)
+	if err := c.l1.Set(ctx, key, value, expiration); err != nil {
+		c.logger.ErrorContext(ctx, "failed to set L1 cache", "key", key, "error", err)
+	}
 	return nil
 }
 
@@ -90,12 +97,17 @@ func (c *MultiLevelCache) GetOrSet(ctx context.Context, key string, value any, e
 }
 
 func (c *MultiLevelCache) Delete(ctx context.Context, keys ...string) error {
-	_ = c.l1.Delete(ctx, keys...)
+	if err := c.l1.Delete(ctx, keys...); err != nil {
+		c.logger.ErrorContext(ctx, "failed to delete from L1 cache", "keys", keys, "error", err)
+	}
 	return c.l2.Delete(ctx, keys...)
 }
 
 func (c *MultiLevelCache) Exists(ctx context.Context, key string) (bool, error) {
-	exists, _ := c.l1.Exists(ctx, key)
+	exists, err := c.l1.Exists(ctx, key)
+	if err != nil {
+		c.logger.ErrorContext(ctx, "failed to check L1 cache existence", "key", key, "error", err)
+	}
 	if exists {
 		return true, nil
 	}
@@ -103,6 +115,14 @@ func (c *MultiLevelCache) Exists(ctx context.Context, key string) (bool, error) 
 }
 
 func (c *MultiLevelCache) Close() error {
-	_ = c.l1.Close()
-	return c.l2.Close()
+	var err error
+	if l1Err := c.l1.Close(); l1Err != nil {
+		c.logger.Error("failed to close L1 cache", "error", l1Err)
+		err = l1Err
+	}
+	if l2Err := c.l2.Close(); l2Err != nil {
+		c.logger.Error("failed to close L2 cache", "error", l2Err)
+		err = l2Err
+	}
+	return err
 }

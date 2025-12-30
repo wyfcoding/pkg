@@ -101,7 +101,9 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 	if err != nil {
 		mqProduced.WithLabelValues(p.writer.Topic, "failed").Inc()
 		p.logger.ErrorContext(ctx, "failed to publish message", "error", err)
-		_ = p.dlqWriter.WriteMessages(ctx, msg)
+		if dlqErr := p.dlqWriter.WriteMessages(ctx, msg); dlqErr != nil {
+			p.logger.ErrorContext(ctx, "failed to write to DLQ", "error", dlqErr)
+		}
 		return err
 	}
 
@@ -110,8 +112,16 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 }
 
 func (p *Producer) Close() error {
-	_ = p.dlqWriter.Close()
-	return p.writer.Close()
+	var err error
+	if dlqErr := p.dlqWriter.Close(); dlqErr != nil {
+		p.logger.Error("failed to close DLQ writer", "error", dlqErr)
+		err = dlqErr
+	}
+	if wErr := p.writer.Close(); wErr != nil {
+		p.logger.Error("failed to close writer", "error", wErr)
+		err = wErr
+	}
+	return err
 }
 
 type Consumer struct {

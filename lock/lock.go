@@ -38,7 +38,10 @@ func NewRedisLock(client *redis.Client) *RedisLock {
 
 // Lock 实现基础加锁逻辑
 func (l *RedisLock) Lock(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	token := l.generateToken()
+	token, err := l.generateToken()
+	if err != nil {
+		return "", fmt.Errorf("generate token failed: %w", err)
+	}
 	ok, err := l.client.SetNX(ctx, key, token, ttl).Result()
 	if err != nil {
 		return "", fmt.Errorf("redis setnx failed: %w", err)
@@ -118,8 +121,10 @@ func (l *RedisLock) Unlock(ctx context.Context, key string, token string) error 
 }
 
 // generateToken 生成加密安全的唯一令牌
-func (l *RedisLock) generateToken() string {
+func (l *RedisLock) generateToken() (string, error) {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b) + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b) + fmt.Sprintf("%d", time.Now().UnixNano()), nil
 }
