@@ -60,7 +60,7 @@ func NewResult[T any](total int64, req *Request, items []T) *Result[T] {
 	if items == nil {
 		items = make([]T, 0)
 	}
-	
+
 	// 计算总页数
 	totalPages := int(math.Ceil(float64(total) / float64(req.PageSize)))
 	if total == 0 {

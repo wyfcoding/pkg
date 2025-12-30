@@ -8,9 +8,9 @@ import (
 
 // BloomFilter 工业级布隆过滤器
 type BloomFilter struct {
-	mu    sync.RWMutex
-	bits  []uint64
-	size  uint
+	mu     sync.RWMutex
+	bits   []uint64
+	size   uint
 	hashes uint
 }
 

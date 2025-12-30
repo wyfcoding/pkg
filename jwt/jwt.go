@@ -2,65 +2,63 @@ package jwt
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
 var (
-	ErrTokenMalformed   = errors.New("token is malformed")
-	ErrTokenExpired     = errors.New("token is expired")
-	ErrTokenNotValidYet = errors.New("token not valid yet")
-	ErrTokenInvalid     = errors.New("token is invalid")
+	ErrTokenMalformed   = errors.New("token format is invalid")
+	ErrTokenExpired     = errors.New("token has expired")
+	ErrTokenNotValidYet = errors.New("token is not active yet")
+	ErrTokenInvalid     = errors.New("token signature is invalid")
 )
 
-// MyCustomClaims 定义了JWT的载荷结构，包含已优化的 Roles 字段
+// MyCustomClaims 定义了包含 RBAC 权限的 JWT 载荷
 type MyCustomClaims struct {
-	UserID               uint64   `json:"user_id"`
-	Username             string   `json:"username"`
-	Roles                []string `json:"roles"` // 【保留优化】：支持 RBAC
+	UserID   uint64   `json:"user_id"`
+	Username string   `json:"username"`
+	Roles    []string `json:"roles"`
 	jwt.RegisteredClaims
 }
 
-// GenerateToken 原始签名函数 (保持不变，以兼容现有调用)
-func GenerateToken(userID uint64, username, secretKey, issuer string, expires time.Duration, method jwt.SigningMethod) (string, error) {
-	// 内部调用增强版函数，roles 传空
-	return GenerateTokenWithRoles(userID, username, nil, secretKey, issuer, expires, method)
-}
-
-// GenerateTokenWithRoles 【新增】：增强版函数，支持传入 Roles
-func GenerateTokenWithRoles(userID uint64, username string, roles []string, secretKey, issuer string, expires time.Duration, method jwt.SigningMethod) (string, error) {
-	if method == nil {
-		method = jwt.SigningMethodHS256
-	}
-
-	expireTime := time.Now().Add(expires)
+// GenerateToken 是项目中唯一合法的 JWT 生成函数
+// 强制要求传入 roles 列表，即使为空也需传入 nil
+func GenerateToken(userID uint64, username string, roles []string, secretKey, issuer string, expires time.Duration) (string, error) {
+	now := time.Now()
 	claims := MyCustomClaims{
 		UserID:   userID,
 		Username: username,
-		Roles:    roles, // 注入角色
+		Roles:    roles,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expireTime),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			NotBefore: jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expires)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    issuer,
 		},
 	}
 
-	token := jwt.NewWithClaims(method, claims)
+	// 统一强制使用 HS256 签名，保证安全与一致性
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secretKey))
 }
 
-// ParseToken 解析JWT字符串
+// ParseToken 安全解析 JWT
 func ParseToken(tokenString string, secretKey string) (*MyCustomClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &MyCustomClaims{}, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return []byte(secretKey), nil
 	})
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenMalformed) {
 			return nil, ErrTokenMalformed
-		} else if errors.Is(err, jwt.ErrTokenExpired) || errors.Is(err, jwt.ErrTokenNotValidYet) {
-			return nil, ErrTokenExpired 
+		} else if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, ErrTokenExpired
+		} else if errors.Is(err, jwt.ErrTokenNotValidYet) {
+			return nil, ErrTokenNotValidYet
 		} else {
 			return nil, ErrTokenInvalid
 		}

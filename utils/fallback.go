@@ -7,15 +7,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	// fallbackTotal 记录降级发生的次数
-	fallbackTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "service_fallback_total",
-			Help: "Total number of service fallbacks executed",
-		},
-		[]string{"service", "operation"},
-	)
+// fallbackTotal 记录降级发生的次数
+var fallbackTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "service_fallback_total",
+		Help: "Total number of service fallbacks executed",
+	},
+	[]string{"service", "operation"},
 )
 
 func init() {

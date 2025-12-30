@@ -24,7 +24,7 @@ func NewMinIOClient(endpoint, accessKeyID, secretAccessKey, bucket string, useSS
 		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
 		Secure: useSSL,
 	}
-	
+
 	client, err := minio.New(endpoint, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create minio client: %w", err)

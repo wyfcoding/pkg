@@ -175,7 +175,7 @@ func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
 }
 
 func (c *Consumer) Start(ctx context.Context, workers int, handler Handler) {
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			if err := c.Consume(ctx, handler); err != nil && err != context.Canceled {
 				c.logger.Error("consumer exit with error", "error", err)

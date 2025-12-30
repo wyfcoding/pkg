@@ -49,7 +49,7 @@ func (cf *CuckooFilter) Add(data []byte) bool {
 		i = i2
 	}
 
-	for k := 0; k < maxKicks; k++ {
+	for range maxKicks {
 		slot := rand.Intn(bucketSize)
 		// 踢出旧指纹，换入新指纹
 		oldFp := cf.buckets[i][slot]
@@ -106,7 +106,7 @@ func (cf *CuckooFilter) getHashOfFingerprint(fp byte) uint {
 }
 
 func (cf *CuckooFilter) insertToBucket(i uint, fp byte) bool {
-	for j := 0; j < bucketSize; j++ {
+	for j := range bucketSize {
 		if cf.buckets[i][j] == 0 {
 			cf.buckets[i][j] = fp
 			return true
@@ -116,7 +116,7 @@ func (cf *CuckooFilter) insertToBucket(i uint, fp byte) bool {
 }
 
 func (cf *CuckooFilter) lookupInBucket(i uint, fp byte) bool {
-	for j := 0; j < bucketSize; j++ {
+	for j := range bucketSize {
 		if cf.buckets[i][j] == fp {
 			return true
 		}
@@ -125,7 +125,7 @@ func (cf *CuckooFilter) lookupInBucket(i uint, fp byte) bool {
 }
 
 func (cf *CuckooFilter) deleteFromBucket(i uint, fp byte) bool {
-	for j := 0; j < bucketSize; j++ {
+	for j := range bucketSize {
 		if cf.buckets[i][j] == fp {
 			cf.buckets[i][j] = 0
 			return true

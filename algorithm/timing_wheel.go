@@ -91,7 +91,7 @@ func (tw *TimingWheel) advanceClock() {
 	tw.currentTime = tw.currentTime.Add(tw.interval)
 	index := tw.getCurrentIndex()
 	bucket := tw.buckets[index]
-	
+
 	// 提取该槽位中所有已到期的任务
 	var expiredTasks []TimerTask
 	for e := bucket.Front(); e != nil; {

@@ -271,14 +271,26 @@ func Load(path string, conf any) error {
 
 // PrintWithMask 脱敏打印当前配置，方便生产环境排查
 func PrintWithMask(conf any) {
-	data, _ := json.Marshal(conf)
+	data, err := json.Marshal(conf)
+	if err != nil {
+		slog.Error("failed to marshal config for printing", "error", err)
+		return
+	}
+
 	var m map[string]any
-	json.Unmarshal(data, &m)
+	if err := json.Unmarshal(data, &m); err != nil {
+		slog.Error("failed to unmarshal config for masking", "error", err)
+		return
+	}
 
 	// 简单的脱敏递归函数
 	mask(m)
 
-	maskedJSON, _ := json.MarshalIndent(m, "  ", "  ")
+	maskedJSON, err := json.MarshalIndent(m, "  ", "  ")
+	if err != nil {
+		slog.Error("failed to marshal masked config", "error", err)
+		return
+	}
 	fmt.Printf("--- Current Effective Configuration ---\n%s\n---------------------------------------\n", string(maskedJSON))
 }
 

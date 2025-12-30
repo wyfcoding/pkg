@@ -16,7 +16,7 @@ func Recovery(logger *slog.Logger) gin.HandlerFunc {
 		defer func() {
 			if err := recover(); err != nil {
 				stack := string(debug.Stack())
-				
+
 				// 记录结构化日志
 				logger.ErrorContext(c.Request.Context(), "Panic recovered",
 					"error", err,

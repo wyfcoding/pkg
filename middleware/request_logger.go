@@ -18,7 +18,7 @@ func Logger(logger *slog.Logger) gin.HandlerFunc {
 		c.Next()
 
 		cost := time.Since(start)
-		
+
 		// 提取链路追踪 ID
 		spanCtx := trace.SpanContextFromContext(c.Request.Context())
 		traceID := ""
