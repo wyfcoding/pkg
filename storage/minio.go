@@ -11,72 +11,102 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// MinIOClient 封装了 MinIO 客户端，提供对象存储服务的基础操作。
+// MinIOClient 实现了 Storage 接口，对接 MinIO/S3 兼容存储。
 type MinIOClient struct {
-	client *minio.Client // 底层MinIO客户端实例。
-	bucket string        // 默认操作的存储桶名称。
+	client *minio.Client
+	core   *minio.Core // 【修复】：引入 Core 客户端处理低级分片操作
+	bucket string
 }
 
-// NewMinIOClient 创建并初始化一个新的 MinIO 客户端。
-// endpoint: MinIO服务的地址，例如 "localhost:9000"。
-// accessKeyID: 访问 MinIO 所需的Access Key。
-// secretAccessKey: 访问 MinIO 所需的Secret Key。
-// bucket: 客户端操作的默认存储桶名称。
-// useSSL: 是否使用HTTPS协议连接MinIO。
+// NewMinIOClient 创建 MinIO 驱动实例
 func NewMinIOClient(endpoint, accessKeyID, secretAccessKey, bucket string, useSSL bool) (*MinIOClient, error) {
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""), // 使用静态凭证。
-		Secure: useSSL,                                                    // 配置是否使用SSL。
-	})
+	opts := &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
+		Secure: useSSL,
+	}
+	
+	client, err := minio.New(endpoint, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
 
+	core, err := minio.NewCore(endpoint, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create minio core client: %w", err)
+	}
+
 	return &MinIOClient{
 		client: client,
+		core:   core,
 		bucket: bucket,
 	}, nil
 }
 
-// Upload 将文件上传到MinIO存储桶中。
-// ctx: 上下文，用于控制操作的生命周期。
-// objectName: 对象在存储桶中的名称（路径）。
-// reader: 文件的内容来源。
-// objectSize: 文件的大小（字节）。
-// contentType: 文件的MIME类型，例如 "image/jpeg"。
-func (c *MinIOClient) Upload(ctx context.Context, objectName string, reader io.Reader, objectSize int64, contentType string) error {
-	_, err := c.client.PutObject(ctx, c.bucket, objectName, reader, objectSize, minio.PutObjectOptions{
-		ContentType: contentType, // 设置对象的Content-Type。
+func (c *MinIOClient) Upload(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) error {
+	_, err := c.client.PutObject(ctx, c.bucket, objectName, reader, size, minio.PutObjectOptions{
+		ContentType: contentType,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to upload object: %w", err)
-	}
-	return nil
+	return err
 }
 
-// Download 从MinIO存储桶下载文件。
-// ctx: 上下文。
-// objectName: 要下载的对象名称。
-// 返回一个 `io.ReadCloser`，调用者需负责关闭。
 func (c *MinIOClient) Download(ctx context.Context, objectName string) (io.ReadCloser, error) {
-	obj, err := c.client.GetObject(ctx, c.bucket, objectName, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get object: %w", err)
-	}
-	return obj, nil
+	return c.client.GetObject(ctx, c.bucket, objectName, minio.GetObjectOptions{})
 }
 
-// GetPresignedURL 生成一个用于访问对象的预签名URL。
-// ctx: 上下文。
-// objectName: 要生成URL的对象名称。
-// expiry: URL的有效期，以秒为单位。
-// 返回预签名URL字符串。
-func (c *MinIOClient) GetPresignedURL(ctx context.Context, objectName string, expiry int64) (string, error) {
-	reqParams := make(url.Values) // 可选的URL参数。
-	// PresignedGetObject 生成一个GET请求的预签名URL。
-	presignedURL, err := c.client.PresignedGetObject(ctx, c.bucket, objectName, time.Duration(expiry)*time.Second, reqParams)
+func (c *MinIOClient) Delete(ctx context.Context, objectName string) error {
+	return c.client.RemoveObject(ctx, c.bucket, objectName, minio.RemoveObjectOptions{})
+}
+
+func (c *MinIOClient) GetPresignedURL(ctx context.Context, objectName string, expiry time.Duration) (string, error) {
+	reqParams := make(url.Values)
+	presignedURL, err := c.client.PresignedGetObject(ctx, c.bucket, objectName, expiry, reqParams)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate presigned url: %w", err)
+		return "", err
 	}
 	return presignedURL.String(), nil
+}
+
+// --- 修复后的分片上传实现 ---
+
+func (c *MinIOClient) InitiateMultipartUpload(ctx context.Context, objectName string, contentType string) (string, error) {
+	// 使用 core.NewMultipartUpload 修复报错
+	uploadID, err := c.core.NewMultipartUpload(ctx, c.bucket, objectName, minio.PutObjectOptions{
+		ContentType: contentType,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to initiate multipart upload: %w", err)
+	}
+	return uploadID, nil
+}
+
+func (c *MinIOClient) UploadPart(ctx context.Context, objectName, uploadID string, partNumber int, reader io.Reader, partSize int64) (string, error) {
+	// 使用 core.PutObjectPart 修复报错
+	part, err := c.core.PutObjectPart(ctx, c.bucket, objectName, uploadID, partNumber, reader, partSize, minio.PutObjectPartOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to upload part %d: %w", partNumber, err)
+	}
+	return part.ETag, nil
+}
+
+func (c *MinIOClient) CompleteMultipartUpload(ctx context.Context, objectName, uploadID string, parts []Part) error {
+	var minioParts []minio.CompletePart
+	for _, p := range parts {
+		minioParts = append(minioParts, minio.CompletePart{
+			PartNumber: p.PartNumber,
+			ETag:       p.ETag,
+		})
+	}
+
+	// 使用 core.CompleteMultipartUpload 修复报错
+	_, err := c.core.CompleteMultipartUpload(ctx, c.bucket, objectName, uploadID, minioParts, minio.PutObjectOptions{})
+	return err
+}
+
+func (c *MinIOClient) AbortMultipartUpload(ctx context.Context, objectName, uploadID string) error {
+	// 使用 core.AbortMultipartUpload 修复报错
+	return c.core.AbortMultipartUpload(ctx, c.bucket, objectName, uploadID)
+}
+
+func (c *MinIOClient) Close() error {
+	return nil
 }

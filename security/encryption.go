@@ -7,13 +7,26 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 )
 
+// GenerateRandomKey 生成加密安全的随机密钥 (32字节，适用于 AES-256)
+func GenerateRandomKey() ([]byte, error) {
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return nil, fmt.Errorf("failed to generate random key: %w", err)
+	}
+	return key, nil
+}
+
 // EncryptAES 使用AES-GCM模式加密给定的明文。
-// AES-GCM是一种认证加密模式，能同时提供保密性、完整性和真实性。
-// key的长度必须是16, 24, 或 32字节，分别对应AES-128, AES-192, AES-256。
 func EncryptAES(key []byte, plaintext string) (string, error) {
+	// 校验密钥长度
+	if l := len(key); l != 16 && l != 24 && l != 32 {
+		return "", errors.New("invalid key length: must be 16, 24, or 32 bytes")
+	}
+
 	// 1. 基于给定的密钥创建一个新的AES密码块
 	block, err := aes.NewCipher(key)
 	if err != nil {

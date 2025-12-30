@@ -2,12 +2,12 @@ package grpcclient
 
 import (
 	"context"
-	"math/rand"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sony/gobreaker"
 	"github.com/wyfcoding/pkg/logging"
+	"github.com/wyfcoding/pkg/utils"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -121,41 +121,23 @@ func (f *ClientFactory) metadataPropagationInterceptor() grpc.UnaryClientInterce
 // retryInterceptor 实现带指数退避和随机抖动的智能重试
 func (f *ClientFactory) retryInterceptor(maxRetries int, initialBackoff, maxBackoff time.Duration) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		var err error
-		backoff := initialBackoff
+		config := utils.DefaultRetryConfig()
+		config.MaxRetries = maxRetries
+		config.InitialBackoff = initialBackoff
+		config.MaxBackoff = maxBackoff
 
-		for i := 0; i <= maxRetries; i++ {
-			err = invoker(ctx, method, req, reply, cc, opts...)
-			if err == nil {
-				return nil
-			}
-
-			// 检查是否为可重试状态码
-			st, ok := status.FromError(err)
-			if !ok || !isRetriable(st.Code()) {
+		return utils.Retry(ctx, func() error {
+			err := invoker(ctx, method, req, reply, cc, opts...)
+			if err != nil {
+				st, ok := status.FromError(err)
+				// 如果不是可重试的错误码，直接返回错误，中断重试循环
+				if ok && !isRetriable(st.Code()) {
+					return err
+				}
 				return err
 			}
-
-			if i == maxRetries {
-				break
-			}
-
-			// 计算退避时间 (Exponential Backoff + Jitter)
-			sleepTime := time.Duration(float64(backoff) * (1.0 + 0.2*rand.Float64())) // 20% 抖动
-			if sleepTime > maxBackoff {
-				sleepTime = maxBackoff
-			}
-
-			timer := time.NewTimer(sleepTime)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return ctx.Err()
-			case <-timer.C:
-				backoff *= 2 // 倍增
-			}
-		}
-		return err
+			return nil
+		}, config)
 	}
 }
 
