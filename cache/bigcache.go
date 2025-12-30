@@ -62,7 +62,7 @@ func (c *BigCache) GetOrSet(ctx context.Context, key string, value any, expirati
 		return err
 	}
 
-	v, err, shared := c.sfg.Do(key, func() (any, error) {
+	v, err, _ := c.sfg.Do(key, func() (any, error) {
 		var innerVal any
 		if err := c.Get(ctx, key, &innerVal); err == nil {
 			return innerVal, nil
@@ -81,10 +81,6 @@ func (c *BigCache) GetOrSet(ctx context.Context, key string, value any, expirati
 
 	if err != nil {
 		return err
-	}
-
-	if shared {
-		// Result was shared
 	}
 
 	b, err := json.Marshal(v)

@@ -146,7 +146,7 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 
 	// 2. 缓存未命中，使用 singleflight 合并回源请求
 	// 确保同一个 key 只有一个协程在跑 fn
-	v, err, shared := c.sfg.Do(key, func() (any, error) {
+	v, err, _ := c.sfg.Do(key, func() (any, error) {
 		// 双重检查：进锁后再查一次，防止刚才排队期间别人已经写好了
 		var innerVal any
 		if err := c.Get(ctx, key, &innerVal); err == nil {
@@ -168,10 +168,6 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 
 	if err != nil {
 		return err
-	}
-
-	if shared {
-		// 如果是共享结果，可以在此记录指标
 	}
 
 	// 将结果反序列化到传入的 value 指针
