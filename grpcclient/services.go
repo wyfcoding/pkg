@@ -23,7 +23,7 @@ func InitClients(services map[string]config.ServiceAddr, targetClients any) (fun
 	typ := elem.Type()
 
 	var conns []*grpc.ClientConn
-	
+
 	// 创建 ClientFactory
 	factory := NewClientFactory(logging.Default())
 
