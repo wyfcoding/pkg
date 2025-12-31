@@ -13,6 +13,9 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// Client 是 redis.Client 的别名，方便业务层直接使用而无需导入原生包
+type Client = redis.Client
+
 var (
 	redisOps = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
