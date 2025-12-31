@@ -23,6 +23,8 @@ type Order struct {
 	Timestamp int64
 	// 用户 ID
 	UserID string
+	// ResultChan 用于接收撮合结果（顶级优化：去中心化通知）
+	ResultChan chan any `json:"-"`
 }
 
 // OrderBookLevel 订单簿层级
