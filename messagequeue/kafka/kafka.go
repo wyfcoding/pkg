@@ -8,42 +8,12 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
+	"github.com/wyfcoding/pkg/metrics"
+	"github.com/wyfcoding/pkg/tracing"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
-
-var (
-	mqProduced = prometheus.NewCounterVec(
-		prometheus.CounterOpts{Name: "mq_produced_total", Help: "消息生产总数"},
-		[]string{"topic", "status"},
-	)
-	mqConsumed = prometheus.NewCounterVec(
-		prometheus.CounterOpts{Name: "mq_consumed_total", Help: "消息消费总数"},
-		[]string{"topic", "status"},
-	)
-	mqDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "mq_operation_duration_seconds",
-			Help:    "MQ操作耗时",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"topic", "operation"},
-	)
-	mqLag = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "mq_consume_lag_seconds",
-			Help:    "消息消费延迟",
-			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
-		},
-		[]string{"topic"},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(mqProduced, mqConsumed, mqDuration, mqLag)
-}
 
 type Handler func(ctx context.Context, msg kafkago.Message) error
 
@@ -51,9 +21,14 @@ type Producer struct {
 	writer    *kafkago.Writer
 	dlqWriter *kafkago.Writer
 	logger    *logging.Logger
+	metrics   *metrics.Metrics
+
+	// 归一化指标
+	producedTotal *prometheus.CounterVec
+	duration      *prometheus.HistogramVec
 }
 
-func NewProducer(cfg config.KafkaConfig, logger *logging.Logger) *Producer {
+func NewProducer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Producer {
 	w := &kafkago.Writer{
 		Addr:         kafkago.TCP(cfg.Brokers...),
 		Topic:        cfg.Topic,
@@ -72,15 +47,26 @@ func NewProducer(cfg config.KafkaConfig, logger *logging.Logger) *Producer {
 		RequiredAcks: kafkago.RequireOne,
 	}
 
-	return &Producer{writer: w, dlqWriter: dlqWriter, logger: logger}
+	producedTotal := m.NewCounterVec(prometheus.CounterOpts{Name: "mq_produced_total", Help: "消息生产总数"}, []string{"topic", "status"})
+	duration := m.NewHistogramVec(prometheus.HistogramOpts{Name: "mq_producer_duration_seconds", Help: "MQ生产耗时"}, []string{"topic"})
+
+	return &Producer{
+		writer:        w,
+		dlqWriter:     dlqWriter,
+		logger:        logger,
+		metrics:       m,
+		producedTotal: producedTotal,
+		duration:      duration,
+	}
 }
 
 func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 	start := time.Now()
-	tracer := otel.Tracer("kafka-producer")
-	ctx, span := tracer.Start(ctx, "Kafka.Publish", trace.WithSpanKind(trace.SpanKindProducer))
+	// 1. 使用 pkg/tracing 开启 Span
+	ctx, span := tracing.StartSpan(ctx, "Kafka.Publish", trace.WithSpanKind(trace.SpanKindProducer))
 	defer span.End()
 
+	// 2. 注入 Trace 上下文到消息头
 	headers := make([]kafkago.Header, 0)
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
@@ -96,10 +82,11 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 	}
 
 	err := p.writer.WriteMessages(ctx, msg)
-	mqDuration.WithLabelValues(p.writer.Topic, "publish").Observe(time.Since(start).Seconds())
+	p.duration.WithLabelValues(p.writer.Topic).Observe(time.Since(start).Seconds())
 
 	if err != nil {
-		mqProduced.WithLabelValues(p.writer.Topic, "failed").Inc()
+		p.producedTotal.WithLabelValues(p.writer.Topic, "failed").Inc()
+		tracing.SetError(ctx, err)
 		p.logger.ErrorContext(ctx, "failed to publish message", "error", err)
 		if dlqErr := p.dlqWriter.WriteMessages(ctx, msg); dlqErr != nil {
 			p.logger.ErrorContext(ctx, "failed to write to DLQ", "error", dlqErr)
@@ -107,7 +94,7 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 		return err
 	}
 
-	mqProduced.WithLabelValues(p.writer.Topic, "success").Inc()
+	p.producedTotal.WithLabelValues(p.writer.Topic, "success").Inc()
 	return nil
 }
 
@@ -125,11 +112,15 @@ func (p *Producer) Close() error {
 }
 
 type Consumer struct {
-	reader *kafkago.Reader
-	logger *logging.Logger
+	reader  *kafkago.Reader
+	logger  *logging.Logger
+	metrics *metrics.Metrics
+
+	consumedTotal *prometheus.CounterVec
+	consumeLag    *prometheus.HistogramVec
 }
 
-func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger) *Consumer {
+func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Consumer {
 	r := kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers:        cfg.Brokers,
 		GroupID:        cfg.GroupID,
@@ -139,11 +130,20 @@ func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger) *Consumer {
 		MaxWait:        time.Second,
 		CommitInterval: 0,
 	})
-	return &Consumer{reader: r, logger: logger}
+
+	consumedTotal := m.NewCounterVec(prometheus.CounterOpts{Name: "mq_consumed_total", Help: "消息消费总数"}, []string{"topic", "status"})
+	consumeLag := m.NewHistogramVec(prometheus.HistogramOpts{Name: "mq_consume_lag_seconds", Help: "消息消费延迟", Buckets: []float64{0.1, 0.5, 1, 5, 10}}, []string{"topic"})
+
+	return &Consumer{
+		reader:        r,
+		logger:        logger,
+		metrics:       m,
+		consumedTotal: consumedTotal,
+		consumeLag:    consumeLag,
+	}
 }
 
 func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
-	tracer := otel.Tracer("kafka-consumer")
 	for {
 		m, err := c.reader.FetchMessage(ctx)
 		if err != nil {
@@ -154,32 +154,32 @@ func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
 			continue
 		}
 
+		// 1. 从消息头提取 Trace 上下文
 		carrier := propagation.MapCarrier{}
 		for _, h := range m.Headers {
 			carrier[h.Key] = string(h.Value)
 		}
 		extractedCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
-		spanCtx, span := tracer.Start(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
 
-		start := time.Now()
+		// 2. 开启消费 Span
+		spanCtx, span := tracing.StartSpan(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
+
 		handleErr := handler(spanCtx, m)
-
-		mqDuration.WithLabelValues(m.Topic, "consume").Observe(time.Since(start).Seconds())
-		mqLag.WithLabelValues(m.Topic).Observe(time.Since(m.Time).Seconds())
+		c.consumeLag.WithLabelValues(m.Topic).Observe(time.Since(m.Time).Seconds())
 
 		if handleErr != nil {
-			mqConsumed.WithLabelValues(m.Topic, "failed").Inc()
-			c.logger.ErrorContext(spanCtx, "message handler failed", "error", handleErr, "topic", m.Topic, "offset", m.Offset)
-			span.SetStatus(codes.Error, handleErr.Error())
+			c.consumedTotal.WithLabelValues(m.Topic, "failed").Inc()
+			tracing.SetError(spanCtx, handleErr)
+			c.logger.ErrorContext(spanCtx, "message handler failed", "error", handleErr, "topic", m.Topic)
 			span.End()
 			continue
 		}
 
 		if err := c.reader.CommitMessages(ctx, m); err != nil {
-			c.logger.ErrorContext(spanCtx, "failed to commit offset", "error", err)
+			c.logger.ErrorContext(spanCtx, "commit failed", "error", err)
 		}
 
-		mqConsumed.WithLabelValues(m.Topic, "success").Inc()
+		c.consumedTotal.WithLabelValues(m.Topic, "success").Inc()
 		span.End()
 	}
 }
@@ -188,7 +188,7 @@ func (c *Consumer) Start(ctx context.Context, workers int, handler Handler) {
 	for range workers {
 		go func() {
 			if err := c.Consume(ctx, handler); err != nil && err != context.Canceled {
-				c.logger.Error("consumer exit with error", "error", err)
+				c.logger.Error("consumer stopped", "error", err)
 			}
 		}()
 	}

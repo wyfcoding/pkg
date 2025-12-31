@@ -2,12 +2,13 @@ package databases
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/wyfcoding/pkg/breaker"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
+	"github.com/wyfcoding/pkg/metrics"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/driver/clickhouse"
@@ -18,27 +19,30 @@ import (
 	"gorm.io/plugin/opentelemetry/tracing"
 )
 
-var (
-	dbPoolMaxOpen = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "db_pool_max_open",
-		Help: "数据库连接池最大打开数",
-	}, []string{"db_name"})
-	dbPoolOpenConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "db_pool_open_connections",
-		Help: "数据库当前已建立连接数",
-	}, []string{"db_name"})
-	dbPoolInUse = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "db_pool_in_use",
-		Help: "数据库当前正在使用的连接数",
-	}, []string{"db_name"})
-)
+// DB 包装了 GORM 实例及其治理组件
+type DB struct {
+	*gorm.DB
+	breaker *breaker.Breaker
+	metrics *metrics.Metrics
+	name    string
+}
 
-func init() {
-	prometheus.MustRegister(dbPoolMaxOpen, dbPoolOpenConnections, dbPoolInUse)
+// RawDB 返回底层的 gorm.DB 实例
+func (db *DB) RawDB() *gorm.DB {
+	return db.DB
+}
+
+// Close 关闭数据库连接
+func (db *DB) Close() error {
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }
 
 // NewDB 创建具备全方位治理能力的 GORM 实例
-func NewDB(cfg config.DatabaseConfig, logger *logging.Logger) (*gorm.DB, error) {
+func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*DB, error) {
 	gormLogger := logging.NewGormLogger(logger, cfg.SlowThreshold)
 
 	gormConfig := &gorm.Config{
@@ -46,13 +50,8 @@ func NewDB(cfg config.DatabaseConfig, logger *logging.Logger) (*gorm.DB, error) 
 		NamingStrategy: schema.NamingStrategy{
 			SingularTable: true,
 		},
-		NowFunc: func() time.Time {
-			return time.Now().Local()
-		},
-		// 【优化】：禁用默认事务，提升单条 SQL 的执行效率
 		SkipDefaultTransaction: true,
-		// 【性能】：开启预编译 SQL 缓存
-		PrepareStmt: true,
+		PrepareStmt:            true,
 	}
 
 	var dialector gorm.Dialector
@@ -67,50 +66,71 @@ func NewDB(cfg config.DatabaseConfig, logger *logging.Logger) (*gorm.DB, error) 
 		return nil, fmt.Errorf("unsupported database driver: %s", cfg.Driver)
 	}
 
-	db, err := gorm.Open(dialector, gormConfig)
+	rawDB, err := gorm.Open(dialector, gormConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	// 1. 注入全链路追踪插件
-	if err := db.Use(tracing.NewPlugin()); err != nil {
-		return nil, fmt.Errorf("failed to use tracing plugin: %w", err)
+	// 1. 注入 OpenTelemetry Tracing
+	if err := rawDB.Use(tracing.NewPlugin()); err != nil {
+		return nil, err
 	}
 
-	sqlDB, err := db.DB()
+	sqlDB, err := rawDB.DB()
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. 连接池精细化配置
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
-	// 3. 强一致性预热
 	if err := sqlDB.Ping(); err != nil {
-		return nil, fmt.Errorf("database ping failed: %w", err)
+		return nil, err
 	}
 
-	// 4. 启动异步监控
-	go collectDBStats(cfg.Driver, sqlDB)
+	// 2. 初始化项目标准熔断器
+	dbBreaker := breaker.NewBreaker(breaker.Settings{
+		Name:   "DB-" + cfg.Driver,
+		Config: cbCfg,
+	}, m)
 
-	return db, nil
+	// 3. 注册连接池指标到统一 Registry
+	poolMax := m.NewGaugeVec(prometheus.GaugeOpts{Name: "db_pool_max_open", Help: "Max open connections"}, []string{"db"})
+	poolOpen := m.NewGaugeVec(prometheus.GaugeOpts{Name: "db_pool_open", Help: "Current open connections"}, []string{"db"})
+	poolInUse := m.NewGaugeVec(prometheus.GaugeOpts{Name: "db_pool_in_use", Help: "Current in-use connections"}, []string{"db"})
+
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			stats := sqlDB.Stats()
+			poolMax.WithLabelValues(cfg.Driver).Set(float64(stats.MaxOpenConnections))
+			poolOpen.WithLabelValues(cfg.Driver).Set(float64(stats.OpenConnections))
+			poolInUse.WithLabelValues(cfg.Driver).Set(float64(stats.InUse))
+		}
+	}()
+
+	return &DB{
+		DB:      rawDB,
+		breaker: dbBreaker,
+		metrics: m,
+		name:    cfg.Driver,
+	}, nil
 }
 
-func collectDBStats(dbName string, sqlDB *sql.DB) {
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		stats := sqlDB.Stats()
-		dbPoolMaxOpen.WithLabelValues(dbName).Set(float64(stats.MaxOpenConnections))
-		dbPoolOpenConnections.WithLabelValues(dbName).Set(float64(stats.OpenConnections))
-		dbPoolInUse.WithLabelValues(dbName).Set(float64(stats.InUse))
-	}
+// ExecSafe 执行带熔断保护的数据库操作
+func (db *DB) ExecSafe(fn func(tx *gorm.DB) error) error {
+	_, err := db.breaker.Execute(func() (any, error) {
+		return nil, fn(db.DB)
+	})
+	return err
 }
 
-// WithTransaction 事务助手：全自动处理 Begin/Commit/Rollback/Panic
-func WithTransaction(ctx context.Context, db *gorm.DB, fn func(tx *gorm.DB) error) error {
-	return db.WithContext(ctx).Transaction(fn)
+// WithTransaction 事务助手：全自动处理，并注入熔断保护
+func (db *DB) WithTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	_, err := db.breaker.Execute(func() (any, error) {
+		return nil, db.DB.WithContext(ctx).Transaction(fn)
+	})
+	return err
 }
