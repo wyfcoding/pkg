@@ -38,10 +38,32 @@ type PricingFactors struct {
 	SeasonFactor    float64 // 季节性因素（通常在0到1之间，0.5表示平均季节影响）。
 }
 
+// PricingResult 结构体包含价格计算结果及各因素的影响详情。
+type PricingResult struct {
+	FinalPrice       int64   // 最终价格
+	BasePrice        int64   // 基础价格
+	InventoryFactor  float64 // 库存因素调整系数
+	DemandFactor     float64 // 需求因素调整系数
+	CompetitorFactor float64 // 竞品因素调整系数
+	TimeFactor       float64 // 时间因素调整系数
+	SeasonFactor     float64 // 季节因素调整系数
+	UserFactor       float64 // 用户因素调整系数
+}
+
 // CalculatePrice 根据一系列动态定价因素计算商品的调整后价格。
 // 这个方法综合了库存、需求、竞品价格、时间、日期、节假日、用户等级和季节等因素。
-func (pe *PricingEngine) CalculatePrice(factors PricingFactors) int64 {
+// 返回详细的计算结果。
+func (pe *PricingEngine) CalculatePrice(factors PricingFactors) PricingResult {
 	price := float64(pe.basePrice) // 从基础价格开始调整。
+	result := PricingResult{
+		BasePrice:        pe.basePrice,
+		InventoryFactor:  1.0,
+		DemandFactor:     1.0,
+		CompetitorFactor: 1.0,
+		TimeFactor:       1.0,
+		SeasonFactor:     1.0,
+		UserFactor:       1.0,
+	}
 
 	// 1. 库存因素：库存量越少，价格越高；库存量越多，价格越低。
 	// 避免除以零。
@@ -51,58 +73,63 @@ func (pe *PricingEngine) CalculatePrice(factors PricingFactors) int64 {
 	}
 
 	if stockRatio < 0.1 { // 库存不足10%，价格上涨20%。
-		price *= 1.2
+		result.InventoryFactor = 1.2
 	} else if stockRatio < 0.3 { // 库存不足30%，价格上涨10%。
-		price *= 1.1
+		result.InventoryFactor = 1.1
 	} else if stockRatio > 0.8 { // 库存超过80%，价格下降10%。
-		price *= 0.9
+		result.InventoryFactor = 0.9
 	}
+	price *= result.InventoryFactor
 
 	// 2. 需求因素：需求水平越高，价格越高。
 	// (factors.DemandLevel - 0.5) * 0.4 会在需求水平为0.5时为0，需求高时为正，需求低时为负。
-	demandMultiplier := 1.0 + (factors.DemandLevel-0.5)*0.4
-	price *= demandMultiplier
+	result.DemandFactor = 1.0 + (factors.DemandLevel-0.5)*0.4
+	price *= result.DemandFactor
 
 	// 3. 竞品价格因素：根据与竞品价格的比较调整自身价格。
 	if factors.CompetitorPrice > 0 {
 		competitorRatio := float64(pe.basePrice) / float64(factors.CompetitorPrice)
 		if competitorRatio > 1.1 { // 如果我们的基础价格比竞品高10%以上，则适当降价。
-			price *= 0.95
+			result.CompetitorFactor = 0.95
 		} else if competitorRatio < 0.9 { // 如果我们的基础价格比竞品低10%以上，则可以适当涨价。
-			price *= 1.05
+			result.CompetitorFactor = 1.05
 		}
 	}
+	price *= result.CompetitorFactor
 
 	// 4. 时间因素：例如，在一天中的高峰时段提高价格。
 	if factors.TimeOfDay >= 10 && factors.TimeOfDay <= 22 { // 早上10点到晚上10点，价格上涨5%。
-		price *= 1.05
+		result.TimeFactor *= 1.05
 	}
 
 	// 5. 星期因素：例如，在周末提高价格。
 	if factors.DayOfWeek == 0 || factors.DayOfWeek == 6 { // 星期日或星期六，价格上涨8%。
-		price *= 1.08
+		result.TimeFactor *= 1.08
 	}
 
 	// 6. 节假日因素：在节假日提高价格。
 	if factors.IsHoliday {
-		price *= 1.15 // 节假日价格上涨15%。
+		result.TimeFactor *= 1.15 // 节假日价格上涨15%。
 	}
+	price *= result.TimeFactor
 
 	// 7. 用户等级因素：根据用户等级给予不同折扣。
 	if factors.UserLevel >= 8 { // VIP用户享受9折优惠。
-		price *= 0.9
+		result.UserFactor = 0.9
 	} else if factors.UserLevel >= 5 { // 高级用户享受95折优惠。
-		price *= 0.95
+		result.UserFactor = 0.95
 	}
+	price *= result.UserFactor
 
 	// 8. 季节因素：根据季节性波动调整价格。
 	// (factors.SeasonFactor - 0.5) * 0.2 会在季节因子为0.5时为0，季节性旺盛时为正，淡季时为负。
-	price *= (1.0 + (factors.SeasonFactor-0.5)*0.2)
+	result.SeasonFactor = 1.0 + (factors.SeasonFactor-0.5)*0.2
+	price *= result.SeasonFactor
 
 	// 将计算出的浮点价格转换为整数分，并限制在最小和最高价格之间。
-	finalPrice := min(max(int64(price), pe.minPrice), pe.maxPrice)
+	result.FinalPrice = min(max(int64(price), pe.minPrice), pe.maxPrice)
 
-	return finalPrice
+	return result
 }
 
 // CalculateDemandElasticity 计算需求价格弹性。
