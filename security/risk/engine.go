@@ -3,51 +3,75 @@ package risk
 import (
 	"context"
 	"log/slog"
+
+	"github.com/wyfcoding/pkg/ruleengine"
 )
 
-// SimpleRuleEngine 基于简单规则的评估器示例
-type SimpleRuleEngine struct {
+// DynamicRiskEngine 基于规则引擎的高级风控实现
+type DynamicRiskEngine struct {
+	re     *ruleengine.Engine
 	logger *slog.Logger
 }
 
-func NewSimpleRuleEngine(logger *slog.Logger) *SimpleRuleEngine {
-	return &SimpleRuleEngine{logger: logger}
+func NewDynamicRiskEngine(logger *slog.Logger) *DynamicRiskEngine {
+	engine := ruleengine.NewEngine()
+	dre := &DynamicRiskEngine{
+		re:     engine,
+		logger: logger,
+	}
+	dre.initDefaultRules() // 初始化默认规则，生产环境可改为从数据库/配置中心加载
+	return dre
 }
 
-func (e *SimpleRuleEngine) Assess(ctx context.Context, action string, data map[string]any) (*Assessment, error) {
-	// 架构师提示：实际生产中此处应调用：
-	// 1. 规则引擎 (如 Expr, Go-Rules)
-	// 2. 外部风控微服务
-	// 3. AI 模型推理接口
+func (e *DynamicRiskEngine) initDefaultRules() {
+	// 规则 1: 黑名单拦截
+	_ = e.re.AddRule(ruleengine.Rule{
+		ID:         "R001",
+		Name:       "Blacklist Check",
+		Expression: "user_id == 888 || client_ip == '1.2.3.4'",
+		Metadata:   map[string]any{"level": Reject, "code": "USER_IN_BLACKLIST"},
+	})
 
-	amount, ok := data["amount"].(int64)
-	if !ok {
-		return &Assessment{Level: Pass}, nil
+	// 规则 2: 大额且未实名拦截
+	_ = e.re.AddRule(ruleengine.Rule{
+		ID:         "R002",
+		Name:       "High Value Unverified",
+		Expression: "amount > 100000 && !is_real_name",
+		Metadata:   map[string]any{"level": Reject, "code": "HIGH_VALUE_NO_VERIFY"},
+	})
+
+	// 规则 3: 疑似欺诈行为审核
+	_ = e.re.AddRule(ruleengine.Rule{
+		ID:         "R003",
+		Name:       "Suspicious Frequency",
+		Expression: "daily_count > 50",
+		Metadata:   map[string]any{"level": Review, "code": "HIGH_FREQUENCY"},
+	})
+}
+
+func (e *DynamicRiskEngine) Assess(ctx context.Context, action string, data map[string]any) (*Assessment, error) {
+	hits, err := e.re.ExecuteAll(ctx, data)
+	if err != nil {
+		return nil, err
 	}
 
-	// 演示规则：单笔订单金额超过 100,000 (1000元) 且没有实名认证的进入审核
-	if amount > 100000 {
-		isRealName, _ := data["is_real_name"].(bool)
-		if !isRealName {
+	// 策略选择：如果有多个规则命中，取风险最高的一个 (Reject > Review > Pass)
+	finalAssessment := &Assessment{Level: Pass, Code: "OK", Score: 0}
+
+	for _, hit := range hits {
+		levelStr, _ := hit.Metadata["level"].(Level)
+		if levelStr == Reject {
 			return &Assessment{
-				Level:  Review,
-				Code:   "HIGH_VALUE_NO_VERIFY",
-				Reason: "大额交易且未实名认证",
-				Score:  70,
+				Level:  Reject,
+				Code:   hit.Metadata["code"].(string),
+				Reason: "Rule hit: " + hit.RuleID,
 			}, nil
+		}
+		if levelStr == Review {
+			finalAssessment.Level = Review
+			finalAssessment.Code = hit.Metadata["code"].(string)
 		}
 	}
 
-	// 演示规则：黑名单用户拦截
-	userID, _ := data["user_id"].(uint64)
-	if userID == 888 { // 模拟黑名单 ID
-		return &Assessment{
-			Level:  Reject,
-			Code:   "USER_IN_BLACKLIST",
-			Reason: "用户处于风控黑名单",
-			Score:  99,
-		}, nil
-	}
-
-	return &Assessment{Level: Pass, Code: "OK", Score: 10}, nil
+	return finalAssessment, nil
 }

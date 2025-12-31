@@ -7,6 +7,7 @@ require (
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/bwmarrin/snowflake v0.3.0
 	github.com/elastic/go-elasticsearch/v9 v9.2.1
+	github.com/expr-lang/expr v1.17.7
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-playground/validator/v10 v10.30.1
