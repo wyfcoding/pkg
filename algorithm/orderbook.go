@@ -178,6 +178,41 @@ type Trade struct {
 	Timestamp int64
 }
 
+var (
+	orderPool = sync.Pool{
+		New: func() any {
+			return &Order{}
+		},
+	}
+	tradePool = sync.Pool{
+		New: func() any {
+			return &Trade{}
+		},
+	}
+)
+
+// AcquireOrder 从对象池获取 Order
+func AcquireOrder() *Order {
+	return orderPool.Get().(*Order)
+}
+
+// ReleaseOrder 将 Order 放回对象池
+func ReleaseOrder(o *Order) {
+	*o = Order{} // 重置对象
+	orderPool.Put(o)
+}
+
+// AcquireTrade 从对象池获取 Trade
+func AcquireTrade() *Trade {
+	return tradePool.Get().(*Trade)
+}
+
+// ReleaseTrade 将 Trade 放回对象池
+func ReleaseTrade(t *Trade) {
+	*t = Trade{} // 重置对象
+	tradePool.Put(t)
+}
+
 // NewMatchingEngine 创建撮合引擎
 func NewMatchingEngine() *MatchingEngine {
 	return &MatchingEngine{
