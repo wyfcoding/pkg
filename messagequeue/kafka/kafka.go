@@ -31,7 +31,7 @@ type Producer struct {
 func NewProducer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Producer {
 	w := &kafkago.Writer{
 		Addr:         kafkago.TCP(cfg.Brokers...),
-		Topic:        cfg.Topic,
+		Topic:        cfg.Topic, // 如果为空，则必须在 Message 中指定 Topic
 		Balancer:     &kafkago.Hash{},
 		WriteTimeout: cfg.WriteTimeout,
 		ReadTimeout:  cfg.ReadTimeout,
@@ -40,9 +40,14 @@ func NewProducer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metr
 		Async:        cfg.Async,
 	}
 
+	dlqTopic := cfg.Topic
+	if dlqTopic == "" {
+		dlqTopic = "default"
+	}
+
 	dlqWriter := &kafkago.Writer{
 		Addr:         kafkago.TCP(cfg.Brokers...),
-		Topic:        cfg.Topic + ".dlq",
+		Topic:        dlqTopic + ".dlq",
 		Balancer:     &kafkago.LeastBytes{},
 		RequiredAcks: kafkago.RequireOne,
 	}
@@ -60,7 +65,13 @@ func NewProducer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metr
 	}
 }
 
+// Publish 发送到默认 Topic
 func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
+	return p.PublishToTopic(ctx, p.writer.Topic, key, value)
+}
+
+// PublishToTopic 发送到指定 Topic
+func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value []byte) error {
 	start := time.Now()
 	// 1. 使用 pkg/tracing 开启 Span
 	ctx, span := tracing.StartSpan(ctx, "Kafka.Publish", trace.WithSpanKind(trace.SpanKindProducer))
@@ -75,6 +86,7 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 	}
 
 	msg := kafkago.Message{
+		Topic:   topic,
 		Key:     key,
 		Value:   value,
 		Headers: headers,
@@ -82,19 +94,19 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 	}
 
 	err := p.writer.WriteMessages(ctx, msg)
-	p.duration.WithLabelValues(p.writer.Topic).Observe(time.Since(start).Seconds())
+	p.duration.WithLabelValues(topic).Observe(time.Since(start).Seconds())
 
 	if err != nil {
-		p.producedTotal.WithLabelValues(p.writer.Topic, "failed").Inc()
+		p.producedTotal.WithLabelValues(topic, "failed").Inc()
 		tracing.SetError(ctx, err)
-		p.logger.ErrorContext(ctx, "failed to publish message", "error", err)
+		p.logger.ErrorContext(ctx, "failed to publish message", "topic", topic, "error", err)
 		if dlqErr := p.dlqWriter.WriteMessages(ctx, msg); dlqErr != nil {
 			p.logger.ErrorContext(ctx, "failed to write to DLQ", "error", dlqErr)
 		}
 		return err
 	}
 
-	p.producedTotal.WithLabelValues(p.writer.Topic, "success").Inc()
+	p.producedTotal.WithLabelValues(topic, "success").Inc()
 	return nil
 }
 
