@@ -118,3 +118,13 @@ func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (*redis.Client, 
 
 	return client, cleanup, nil
 }
+
+// PFAdd 增加 HyperLogLog 元素 (基数统计)
+func PFAdd(ctx context.Context, client *redis.Client, key string, els ...interface{}) error {
+	return client.PFAdd(ctx, key, els...).Err()
+}
+
+// PFCount 获取 HyperLogLog 基数估算值
+func PFCount(ctx context.Context, client *redis.Client, keys ...string) (int64, error) {
+	return client.PFCount(ctx, keys...).Result()
+}
