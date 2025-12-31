@@ -5,121 +5,119 @@ import (
 	"sync"
 )
 
-// MaxFlowGraph 结构体代表一个流网络图。
-// 流网络是一种有向图，每条边都有一个容量，并且有一个源点和一个汇点。
-// 最大流问题是寻找从源点到汇点可以发送的最大流量。
-type MaxFlowGraph struct {
-	capacity map[string]map[string]int64 // capacity[u][v] 表示从节点u到节点v的边的容量。
-	flow     map[string]map[string]int64 // flow[u][v] 表示从节点u到节点v的当前流量。
-	nodes    map[string]bool             // 图中所有节点的集合。
-	mu       sync.RWMutex                // 读写锁，用于保护图的并发访问。
+// Edge 代表流网络中的一条边
+type Edge struct {
+	To     int
+	Cap    int64
+	Flow   int64
+	RevIdx int // 反向边在邻接表中的索引
 }
 
-// NewMaxFlowGraph 创建并返回一个新的 MaxFlowGraph 实例。
-func NewMaxFlowGraph() *MaxFlowGraph {
-	return &MaxFlowGraph{
-		capacity: make(map[string]map[string]int64),
-		flow:     make(map[string]map[string]int64),
-		nodes:    make(map[string]bool),
+// DinicGraph 实现了基于分层图和 DFS 的 Dinic 最大流算法
+type DinicGraph struct {
+	nodes int
+	adj   [][]Edge
+	level []int // 节点深度
+	ptr   []int // 当前弧优化：记录 DFS 遍历到哪个边了
+	mu    sync.Mutex
+}
+
+// NewDinicGraph 创建一个新的 Dinic 图
+func NewDinicGraph(n int) *DinicGraph {
+	return &DinicGraph{
+		nodes: n,
+		adj:   make([][]Edge, n),
+		level: make([]int, n),
+		ptr:   make([]int, n),
 	}
 }
 
-// AddEdge 向流网络图中添加一条边。
-// from: 边的起始节点。
-// to: 边的结束节点。
-// cap: 边的容量。
-func (g *MaxFlowGraph) AddEdge(from, to string, cap int64) {
-	g.mu.Lock()         // 加写锁，以确保修改图的线程安全。
-	defer g.mu.Unlock() // 确保函数退出时解锁。
+// AddEdge 添加有向边和对应的反向边
+func (g *DinicGraph) AddEdge(from, to int, cap int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	// 确保起始和结束节点在容量和流量图中都有对应的内层map。
-	if g.capacity[from] == nil {
-		g.capacity[from] = make(map[string]int64)
-		g.flow[from] = make(map[string]int64)
-	}
-	if g.capacity[to] == nil {
-		g.capacity[to] = make(map[string]int64)
-		g.flow[to] = make(map[string]int64)
-	}
-
-	g.capacity[from][to] += cap // 增加边的容量（处理并行边）。
-	g.nodes[from] = true        // 记录节点。
-	g.nodes[to] = true          // 记录节点。
+	g.adj[from] = append(g.adj[from], Edge{
+		To:     to,
+		Cap:    cap,
+		RevIdx: len(g.adj[to]),
+	})
+	g.adj[to] = append(g.adj[to], Edge{
+		To:     from,
+		Cap:    0,
+		RevIdx: len(g.adj[from]) - 1,
+	})
 }
 
-// FordFulkerson 算法实现了福特-富尔克森方法来计算流网络中的最大流。
-// 它通过反复寻找从源点到汇点的增广路径并增加流量，直到找不到更多增广路径为止。
-// 应用场景：多仓库到多订单的最优库存分配、网络路由、任务分配等。
-// source: 流的源点。
-// sink: 流的汇点。
-// 返回从源点到汇点的最大流量。
-func (g *MaxFlowGraph) FordFulkerson(source, sink string) int64 {
-	g.mu.Lock()         // 加写锁，因为会修改流量矩阵。
-	defer g.mu.Unlock() // 确保函数退出时解锁。
-
-	maxFlow := int64(0) // 记录最大总流量。
-
-	for {
-		// 使用BFS（广度优先搜索）在残余网络中寻找一条从源点到汇点的增广路径。
-		// parent map存储了路径上每个节点的前驱节点，用于回溯路径。
-		parent := g.bfs(source, sink)
-		if parent == nil {
-			// 如果没有找到增广路径，说明已经达到最大流，算法终止。
-			break
-		}
-
-		// 找到当前增广路径上的最小剩余容量（瓶颈容量）。
-		pathFlow := int64(math.MaxInt64)
-		for v := sink; v != source; v = parent[v] {
-			u := parent[v]
-			// 剩余容量 = 边的容量 - 边的当前流量。
-			residual := g.capacity[u][v] - g.flow[u][v]
-			if residual < pathFlow {
-				pathFlow = residual
-			}
-		}
-
-		// 沿着增广路径更新流量。
-		for v := sink; v != source; v = parent[v] {
-			u := parent[v]
-			g.flow[u][v] += pathFlow // 正向边增加流量。
-			g.flow[v][u] -= pathFlow // 反向边减少流量，模拟流量回退的能力。
-		}
-
-		maxFlow += pathFlow // 将本次增广路径的流量累加到总最大流量中。
+// bfs 构造分层图
+func (g *DinicGraph) bfs(s, t int) bool {
+	for i := range g.level {
+		g.level[i] = -1
 	}
-
-	return maxFlow
-}
-
-// bfs 广度优先搜索算法，用于在残余网络中寻找一条从源点到汇点的路径。
-// source: 搜索的起始节点。
-// sink: 搜索的目标节点。
-// 返回一个 map，其中键是节点，值是其在路径中的前驱节点。如果找不到路径，则返回 nil。
-func (g *MaxFlowGraph) bfs(source, sink string) map[string]string {
-	visited := make(map[string]bool)  // 记录在本次BFS中已访问的节点。
-	parent := make(map[string]string) // 记录路径。
-	queue := []string{source}         // BFS队列，初始化为源点。
-	visited[source] = true            // 标记源点为已访问。
+	g.level[s] = 0
+	queue := []int{s}
 
 	for len(queue) > 0 {
-		u := queue[0]     // 取出队列头节点。
-		queue = queue[1:] // 队列出队。
-
-		if u == sink {
-			return parent // 如果到达汇点，则找到了路径。
-		}
-
-		// 遍历节点 u 的所有邻接点 v。
-		for v := range g.capacity[u] {
-			// 如果 v 尚未被访问，并且从 u 到 v 在残余网络中仍有剩余容量。
-			if !visited[v] && g.capacity[u][v] > g.flow[u][v] {
-				visited[v] = true        // 标记 v 为已访问。
-				parent[v] = u            // 记录 v 的前驱节点为 u。
-				queue = append(queue, v) // v 入队。
+		v := queue[0]
+		queue = queue[1:]
+		for _, edge := range g.adj[v] {
+			if edge.Cap-edge.Flow > 0 && g.level[edge.To] == -1 {
+				g.level[edge.To] = g.level[v] + 1
+				queue = append(queue, edge.To)
 			}
 		}
 	}
+	return g.level[t] != -1
+}
 
-	return nil // 没有找到从源点到汇点的路径。
+// dfs 寻找阻塞流
+func (g *DinicGraph) dfs(v, t int, pushed int64) int64 {
+	if pushed == 0 || v == t {
+		return pushed
+	}
+
+	for g.ptr[v] < len(g.adj[v]) {
+		i := g.ptr[v]
+		edge := &g.adj[v][i]
+		if g.level[v]+1 != g.level[edge.To] || edge.Cap-edge.Flow == 0 {
+			g.ptr[v]++
+			continue
+		}
+
+		tr := g.dfs(edge.To, t, minInt64(pushed, edge.Cap-edge.Flow))
+		if tr == 0 {
+			g.ptr[v]++
+			continue
+		}
+
+		edge.Flow += tr
+		g.adj[edge.To][edge.RevIdx].Flow -= tr
+		return tr
+	}
+	return 0
+}
+
+// MaxFlow 计算从 s 到 t 的最大流
+func (g *DinicGraph) MaxFlow(s, t int) int64 {
+	var flow int64
+	for g.bfs(s, t) {
+		for i := range g.ptr {
+			g.ptr[i] = 0
+		}
+		for {
+			pushed := g.dfs(s, t, math.MaxInt64)
+			if pushed == 0 {
+				break
+			}
+			flow += pushed
+		}
+	}
+	return flow
+}
+
+func minInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }

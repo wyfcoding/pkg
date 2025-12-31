@@ -87,25 +87,68 @@ func (sa *SuffixArray) build() {
 	}
 }
 
-// Search 在原始文本中搜索所有模式 (pattern) 的出现位置。
-// 应用场景：商品搜索优化、日志分析等。
-// pattern: 待搜索的模式字符串。
-// 返回模式在原始文本中所有出现的起始索引列表。
+// Search 在原始文本中搜索模式 (pattern) 的所有出现位置。
+// 使用二分查找利用后缀数组的有序性。
 func (sa *SuffixArray) Search(pattern string) []int {
-	sa.mu.RLock()         // 搜索操作只需要读锁。
-	defer sa.mu.RUnlock() // 确保函数退出时解锁。
+	sa.mu.RLock()
+	defer sa.mu.RUnlock()
 
-	results := make([]int, 0)
-	// 遍历排序后的后缀数组。
-	// 这是一个简单的线性扫描，更高效的搜索通常结合二分查找。
-	for _, pos := range sa.sa {
-		// 检查当前后缀是否足够长以包含模式。
-		if pos+len(pattern) <= len(sa.text) {
-			// 如果当前后缀以模式开头，则记录该位置。
-			if sa.text[pos:pos+len(pattern)] == pattern {
-				results = append(results, pos)
-			}
+	n := len(sa.text)
+	m := len(pattern)
+	if m == 0 { return nil }
+
+	// 1. 寻找左边界 (第一个 >= pattern 的位置)
+	l, r := 0, n-1
+	first := -1
+	for l <= r {
+		mid := l + (r-l)/2
+		suffix := sa.getSuffix(sa.sa[mid], m)
+		if suffix >= pattern {
+			first = mid
+			r = mid - 1
+		} else {
+			l = mid + 1
 		}
 	}
+
+	if first == -1 || sa.getSuffix(sa.sa[first], m) != pattern {
+		return nil
+	}
+
+	// 2. 寻找右边界 (最后一个 == pattern 的位置)
+	l, r = first, n-1
+	last := first
+	for l <= r {
+		mid := l + (r-l)/2
+		suffix := sa.getSuffix(sa.sa[mid], m)
+		if suffix == pattern {
+			last = mid
+			l = mid + 1
+		} else if suffix > pattern {
+			r = mid - 1
+		} else {
+			l = mid + 1
+		}
+	}
+
+	results := make([]int, 0, last-first+1)
+	for i := first; i <= last; i++ {
+		results = append(results, sa.sa[i])
+	}
 	return results
+}
+
+// getSuffix 获取从 start 开始长度为 length 的后缀（处理越界）
+func (sa *SuffixArray) getSuffix(start, length int) string {
+	end := start + length
+	if end > len(sa.text) {
+		end = len(sa.text)
+	}
+	return sa.text[start:end]
+}
+
+// Count 统计模式串出现的次数
+func (sa *SuffixArray) Count(pattern string) int {
+	pos := sa.Search(pattern)
+	return len(pos)
 }
