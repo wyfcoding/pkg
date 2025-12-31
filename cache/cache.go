@@ -7,38 +7,16 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/wyfcoding/pkg/breaker"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
+	"github.com/wyfcoding/pkg/metrics"
 	redis_pkg "github.com/wyfcoding/pkg/redis"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
-	"github.com/sony/gobreaker"
 	"golang.org/x/sync/singleflight"
 )
-
-var (
-	cacheHits = prometheus.NewCounterVec(
-		prometheus.CounterOpts{Name: "cache_hits_total", Help: "缓存命中总数"},
-		[]string{"prefix"},
-	)
-	cacheMisses = prometheus.NewCounterVec(
-		prometheus.CounterOpts{Name: "cache_misses_total", Help: "缓存未命中总数"},
-		[]string{"prefix"},
-	)
-	cacheDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "cache_operation_duration_seconds",
-			Help:    "缓存操作耗时",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"prefix", "operation"},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(cacheHits, cacheMisses, cacheDuration)
-}
 
 // ErrCacheMiss 缓存未命中错误
 var ErrCacheMiss = errors.New("cache: key not found")
@@ -58,30 +36,54 @@ type RedisCache struct {
 	client  *redis.Client
 	cleanup func()
 	prefix  string
-	cb      *gobreaker.CircuitBreaker
+	cb      *breaker.Breaker
 	sfg     singleflight.Group
 	logger  *logging.Logger
+
+	// 指标组件 (复用 pkg/metrics)
+	hits     *prometheus.CounterVec
+	misses   *prometheus.CounterVec
+	duration *prometheus.HistogramVec
 }
 
-func NewRedisCache(cfg config.RedisConfig, logger *logging.Logger) (*RedisCache, error) {
+func NewRedisCache(cfg config.RedisConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*RedisCache, error) {
 	client, cleanup, err := redis_pkg.NewClient(&cfg, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
-		Name:    "redis-cache",
-		Timeout: 10 * time.Second,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.Requests >= 20 && float64(counts.TotalFailures)/float64(counts.Requests) >= 0.5
-		},
-	})
+	// 1. 复用 pkg/breaker
+	cb := breaker.NewBreaker(breaker.Settings{
+		Name:   "redis-cache",
+		Config: cbCfg,
+	}, m)
+
+	// 2. 复用 pkg/metrics 注册指标
+	hits := m.NewCounterVec(prometheus.CounterOpts{
+		Name: "cache_hits_total",
+		Help: "Total number of cache hits",
+	}, []string{"service"})
+
+	misses := m.NewCounterVec(prometheus.CounterOpts{
+		Name: "cache_misses_total",
+		Help: "Total number of cache misses",
+	}, []string{"service"})
+
+	duration := m.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cache_operation_duration_seconds",
+		Help:    "Duration of cache operations",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"service", "op"})
 
 	return &RedisCache{
-		client:  client,
-		cleanup: cleanup,
-		cb:      cb,
-		logger:  logger,
+		client:   client,
+		cleanup:  cleanup,
+		cb:       cb,
+		logger:   logger,
+		hits:     hits,
+		misses:   misses,
+		duration: duration,
+		prefix:   cfg.Addr, // 默认用地址做前缀标识
 	}, nil
 }
 
@@ -95,28 +97,30 @@ func (c *RedisCache) buildKey(key string) string {
 func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
 	start := time.Now()
 	defer func() {
-		cacheDuration.WithLabelValues(c.prefix, "get").Observe(time.Since(start).Seconds())
+		c.duration.WithLabelValues(c.prefix, "get").Observe(time.Since(start).Seconds())
 	}()
 
-	fullKey := c.buildKey(key)
+	// 这里的 Execute 提供了熔断保护，防止 Redis 故障拖垮服务
+	_, err := c.cb.Execute(func() (any, error) {
+		val, err := c.client.Get(ctx, c.buildKey(key)).Bytes()
+		if err == redis.Nil {
+			c.misses.WithLabelValues(c.prefix).Inc()
+			return nil, ErrCacheMiss
+		}
+		if err != nil {
+			return nil, err
+		}
+		c.hits.WithLabelValues(c.prefix).Inc()
+		return val, json.Unmarshal(val, value)
+	})
 
-	val, err := c.client.Get(ctx, fullKey).Bytes()
-	if err == redis.Nil {
-		cacheMisses.WithLabelValues(c.prefix).Inc()
-		return ErrCacheMiss
-	} else if err != nil {
-		return err
-	}
-
-	cacheHits.WithLabelValues(c.prefix).Inc()
-	return json.Unmarshal(val, value)
+	return err
 }
 
-// Set 存入缓存，并增加随机 TTL 扰动防止雪崩
 func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	start := time.Now()
 	defer func() {
-		cacheDuration.WithLabelValues(c.prefix, "set").Observe(time.Since(start).Seconds())
+		c.duration.WithLabelValues(c.prefix, "set").Observe(time.Since(start).Seconds())
 	}()
 
 	data, err := json.Marshal(value)
@@ -124,7 +128,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 		return err
 	}
 
-	// 注入 10% 以内的随机扰动
+	// 注入随机扰动防止雪崩
 	if expiration > 0 {
 		jitter := time.Duration(rand.Int63n(int64(expiration / 10)))
 		expiration = expiration + jitter
@@ -133,36 +137,33 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 	return c.client.Set(ctx, c.buildKey(key), data, expiration).Err()
 }
 
-// GetOrSet 实现“防击穿”逻辑
 func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expiration time.Duration, fn func() (any, error)) error {
-	// 1. 先尝试获取
-	err := c.Get(ctx, key, value)
-	if err == nil {
+	// 1. 快速路径：缓存命中直接返回
+	if err := c.Get(ctx, key, value); err == nil {
 		return nil
 	}
-	if !errors.Is(err, ErrCacheMiss) {
-		return err
-	}
 
-	// 2. 缓存未命中，使用 singleflight 合并回源请求
-	// 确保同一个 key 只有一个协程在跑 fn
+	// 2. 慢速路径：Singleflight 合并回源
 	v, err, _ := c.sfg.Do(key, func() (any, error) {
-		// 双重检查：进锁后再查一次，防止刚才排队期间别人已经写好了
+		// 双重检查
 		var innerVal any
 		if err := c.Get(ctx, key, &innerVal); err == nil {
 			return innerVal, nil
 		}
 
-		// 执行真正的业务回源逻辑
+		// 回源查询 (例如打库)
 		data, err := fn()
 		if err != nil {
 			return nil, err
 		}
 
-		// 异步回写缓存
-		if err := c.Set(ctx, key, data, expiration); err != nil {
-			c.logger.ErrorContext(ctx, "failed to set cache in GetOrSet", "key", key, "error", err)
-		}
+		// 异步回写 (不阻塞 singleflight 释放)
+		go func() {
+			if err := c.Set(context.Background(), key, data, expiration); err != nil {
+				c.logger.Error("cache backfill failed", "key", key, "error", err)
+			}
+		}()
+
 		return data, nil
 	})
 
@@ -191,7 +192,7 @@ func (c *RedisCache) Delete(ctx context.Context, keys ...string) error {
 }
 
 func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
-	n, err := c.client.Exists(ctx, c.buildKey(key)).Result()
+	n, err := c.client.Exists(ctx, key).Result()
 	return n > 0, err
 }
 
