@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -44,7 +46,32 @@ type Config struct {
 
 // NewClient 创建具备全方位治理能力的 ES 客户端
 func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client, error) {
-	// ... (HTTP Transport 保持不变) ...
+	// 1. 深度优化 HTTP Transport
+	tp := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	esCfg := elasticsearch.Config{
+		Addresses: cfg.Addresses,
+		Username:  cfg.Username,
+		Password:  cfg.Password,
+		Transport: tp,
+		RetryOnStatus: []int{502, 503, 504, 429},
+		MaxRetries:    cfg.MaxRetries,
+	}
+
+	esClient, err := elasticsearch.NewClient(esCfg)
+	if err != nil {
+		return nil, err
+	}
 
 	// 2. 初始化项目标准的熔断器
 	cb := breaker.NewBreaker(breaker.Settings{
@@ -68,7 +95,7 @@ func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client,
 	l := limiter.NewLocalLimiter(2000, 200)
 
 	return &Client{
-		es:              es,
+		es:              esClient,
 		logger:          logger,
 		slowThreshold:   cfg.SlowThreshold,
 		cb:              cb,

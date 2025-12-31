@@ -8,12 +8,13 @@ import (
 
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
+	"github.com/wyfcoding/pkg/metrics"
 	"google.golang.org/grpc"
 )
 
 // InitClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端。
 // 它返回一个清理函数，用于关闭所有建立的连接。
-func InitClients(services map[string]config.ServiceAddr, targetClients any) (func(), error) {
+func InitClients(services map[string]config.ServiceAddr, m *metrics.Metrics, cbCfg config.CircuitBreakerConfig, targetClients any) (func(), error) {
 	val := reflect.ValueOf(targetClients)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
 		return nil, fmt.Errorf("targetClients must be a pointer to a struct")
@@ -25,7 +26,7 @@ func InitClients(services map[string]config.ServiceAddr, targetClients any) (fun
 	var conns []*grpc.ClientConn
 
 	// 创建 ClientFactory
-	factory := NewClientFactory(logging.Default())
+	factory := NewClientFactory(logging.Default(), m, cbCfg)
 
 	for i := 0; i < elem.NumField(); i++ {
 		field := elem.Field(i)

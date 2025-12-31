@@ -175,6 +175,22 @@ func (b *Builder) Build() *App {
 		}
 	}
 
+	// 4. 初始化指标收集 (Prometheus)：在指定端口开启 HTTP 服务供 Prometheus 抓取数据。
+	var metricsInstance *metrics.Metrics
+	metricsPort := b.metricsPort
+	if metricsPort == "" && cfg.Metrics.Enabled {
+		metricsPort = cfg.Metrics.Port
+	}
+
+	if metricsPort != "" {
+		metricsInstance = metrics.NewMetrics(b.serviceName)
+		metricsCleanup := metricsInstance.ExposeHttp(metricsPort)
+		b.appOpts = append(b.appOpts, WithCleanup(metricsCleanup))
+	} else {
+		// 即使不暴露 HTTP 端口，也初始化一个默认的 Metrics 实例用于内部采集
+		metricsInstance = metrics.NewMetrics(b.serviceName)
+	}
+
 	// 3.1 初始化限流 (Rate Limiting)：如果启用，则在 Gin 中间件链中添加限流器。
 	// 使用本地令牌桶限流，Rate 为每秒允许的请求数，Burst 为突发容量。
 	if cfg.RateLimit.Enabled {
@@ -194,21 +210,12 @@ func (b *Builder) Build() *App {
 	// 熔断器会在错误率过高时自动拒绝请求，防止雪崩效应。
 	if cfg.CircuitBreaker.Enabled {
 		logger.Logger.Info("Circuit breaker middleware enabled")
-		b.ginMiddleware = append(b.ginMiddleware, middleware.CircuitBreaker())
+		b.ginMiddleware = append(b.ginMiddleware, middleware.HttpCircuitBreaker(cfg.CircuitBreaker, metricsInstance))
 	}
 
-	// 4. 初始化指标收集 (Prometheus)：在指定端口开启 HTTP 服务供 Prometheus 抓取数据。
-	var metricsInstance *metrics.Metrics
-	metricsPort := b.metricsPort
-	if metricsPort == "" && cfg.Metrics.Enabled {
-		metricsPort = cfg.Metrics.Port
-	}
-
-	if metricsPort != "" {
-		metricsInstance = metrics.NewMetrics(b.serviceName)
-		metricsCleanup := metricsInstance.ExposeHttp(metricsPort)
-		b.appOpts = append(b.appOpts, WithCleanup(metricsCleanup))
-	}
+	// 3.3 注入标准 Metrics 中间件
+	b.ginMiddleware = append(b.ginMiddleware, middleware.HttpMetricsMiddleware(metricsInstance))
+	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GrpcMetricsInterceptor(metricsInstance))
 
 	// 5. 依赖注入与核心业务初始化。
 	// 调用用户注册的 initService 函数，创建具体的 Repository、Service 和 Facade。
