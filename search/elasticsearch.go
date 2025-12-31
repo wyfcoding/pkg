@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/wyfcoding/pkg/breaker"
 	"github.com/wyfcoding/pkg/config"
@@ -60,10 +60,10 @@ func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client,
 	}
 
 	esCfg := elasticsearch.Config{
-		Addresses: cfg.Addresses,
-		Username:  cfg.Username,
-		Password:  cfg.Password,
-		Transport: tp,
+		Addresses:     cfg.Addresses,
+		Username:      cfg.Username,
+		Password:      cfg.Password,
+		Transport:     tp,
 		RetryOnStatus: []int{502, 503, 504, 429},
 		MaxRetries:    cfg.MaxRetries,
 	}
