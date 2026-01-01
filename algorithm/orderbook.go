@@ -172,6 +172,10 @@ type Trade struct {
 	BuyOrderID string
 	// 卖方订单 ID
 	SellOrderID string
+	// 买方用户 ID
+	BuyUserID string
+	// 卖方用户 ID
+	SellUserID string
 	// 成交价格
 	Price decimal.Decimal
 	// 成交数量
@@ -250,6 +254,8 @@ func (me *MatchingEngine) Match(order *Order) []*Trade {
 				Symbol:      order.Symbol,
 				BuyOrderID:  order.OrderID,
 				SellOrderID: bestAsk.OrderID,
+				BuyUserID:   order.UserID,
+				SellUserID:  bestAsk.UserID,
 				Price:       bestAsk.Price,
 				Quantity:    matchQty,
 				Timestamp:   order.Timestamp,
@@ -285,6 +291,8 @@ func (me *MatchingEngine) Match(order *Order) []*Trade {
 				Symbol:      order.Symbol,
 				BuyOrderID:  bestBid.OrderID,
 				SellOrderID: order.OrderID,
+				BuyUserID:   bestBid.UserID,
+				SellUserID:  order.UserID,
 				Price:       bestBid.Price,
 				Quantity:    matchQty,
 				Timestamp:   order.Timestamp,
