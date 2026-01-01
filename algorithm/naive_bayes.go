@@ -83,37 +83,51 @@ func (nb *NaiveBayes) Train(documents [][]string, labels []string) {
 // document: 待分类的文档，表示为一个词语切片。
 // 返回文档最可能所属的类别标签。
 func (nb *NaiveBayes) Predict(document []string) string {
-	nb.mu.RLock()         // 预测过程只需要读锁。
-	defer nb.mu.RUnlock() // 确保函数退出时解锁。
+	label, _ := nb.PredictWithConfidence(document)
+	return label
+}
 
-	maxProb := math.Inf(-1) // 记录最大对数概率，初始化为负无穷。
-	maxLabel := ""          // 记录最大概率对应的类别标签。
+// PredictWithConfidence 预测给定文档的类别标签并返回置信度。
+// document: 待分类的文档。
+// 返回预测的标签和 0.0 到 1.0 之间的置信度。
+func (nb *NaiveBayes) PredictWithConfidence(document []string) (string, float64) {
+	nb.mu.RLock()
+	defer nb.mu.RUnlock()
 
-	// 遍历所有可能的类别。
+	if len(nb.classes) == 0 {
+		return "", 0.0
+	}
+
+	scores := make(map[string]float64)
+	maxProb := math.Inf(-1)
+	maxLabel := ""
+
+	// 1. 计算每个类别的对数得分
 	for label, classProb := range nb.classes {
-		// 使用对数概率避免浮点数下溢，并简化乘法为加法。
-		prob := math.Log(classProb) // 加上类别的先验概率 P(C)。
-
-		// 遍历文档中的每个词（特征）。
+		prob := math.Log(classProb)
 		for _, word := range document {
 			if wordProb, exists := nb.features[label][word]; exists {
-				// 如果词在训练集中出现过，则加上其条件概率 P(F | C)。
 				prob += math.Log(wordProb)
 			} else {
-				// 如果是训练集中未出现过的词（未知词），也进行拉普拉斯平滑处理。
-				// 这里假设所有未知词的概率都相同。
-				// vocabularySize 应为整个训练集的词汇表大小，这里简化为当前类别下的词汇表大小+1。
 				vocabularySize := len(nb.featureCount[label])
 				prob += math.Log(1.0 / float64(nb.classCount[label]+vocabularySize+1))
 			}
 		}
-
-		// 如果当前类别的总概率大于已知的最大概率，则更新最大概率和对应的标签。
+		scores[label] = prob
 		if prob > maxProb {
 			maxProb = prob
 			maxLabel = label
 		}
 	}
 
-	return maxLabel // 返回预测的类别标签。
+	// 2. 将对数得分转换为归一化概率（置信度）
+	// 为了防止数值溢出，使用 Softmax 技巧：P(i) = exp(s_i - max_s) / sum(exp(s_j - max_s))
+	sumExp := 0.0
+	for _, score := range scores {
+		sumExp += math.Exp(score - maxProb)
+	}
+
+	confidence := 1.0 / sumExp // 因为 P(max) = exp(max_s - max_s) / sumExp = 1 / sumExp
+
+	return maxLabel, confidence
 }
