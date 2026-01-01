@@ -45,6 +45,17 @@ func (m *Manager) GetDB(key uint64) *gorm.DB {
 	return m.shards[shardIndex].RawDB()
 }
 
+// GetAllDBs 返回所有分片的 GORM DB 实例
+func (m *Manager) GetAllDBs() []*gorm.DB {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	dbs := make([]*gorm.DB, 0, m.shardCount)
+	for i := 0; i < m.shardCount; i++ {
+		dbs = append(dbs, m.shards[i].RawDB())
+	}
+	return dbs
+}
+
 func (m *Manager) Close() error {
 	m.mu.Lock()         // 加写锁，以确保在关闭过程中不会有新的DB访问。
 	defer m.mu.Unlock() // 确保函数退出时解锁。

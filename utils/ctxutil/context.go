@@ -11,6 +11,7 @@ const (
 	TenantIDKey contextKey = "tenant_id"
 	RoleKey     contextKey = "user_role"
 	IPKey       contextKey = "client_ip"
+	UAKey       contextKey = "user_agent"
 )
 
 // WithUserID 注入用户 ID
@@ -37,6 +38,19 @@ func GetIP(ctx context.Context) string {
 		return val
 	}
 	return "0.0.0.0"
+}
+
+// WithUserAgent 注入 User-Agent
+func WithUserAgent(ctx context.Context, ua string) context.Context {
+	return context.WithValue(ctx, UAKey, ua)
+}
+
+// GetUserAgent 提取 User-Agent
+func GetUserAgent(ctx context.Context) string {
+	if val, ok := ctx.Value(UAKey).(string); ok {
+		return val
+	}
+	return "Unknown"
 }
 
 // WithTenantID 注入租户 ID (多租户架构必备)
