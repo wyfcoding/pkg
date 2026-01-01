@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/sourcegraph/conc"
 )
 
 // TimerTask 定义定时任务函数签名
@@ -27,7 +29,7 @@ type TimingWheel struct {
 	current   int           // 当前指针位置
 	slots     []*list.List  // 槽位链表
 	exitC     chan struct{}
-	wg        sync.WaitGroup
+	wg        conc.WaitGroup
 	mu        sync.Mutex
 	running   bool
 }
@@ -63,9 +65,7 @@ func (tw *TimingWheel) Start() {
 	tw.running = true
 	tw.mu.Unlock()
 
-	tw.wg.Add(1)
-	go func() {
-		defer tw.wg.Done()
+	tw.wg.Go(func() {
 		ticker := time.NewTicker(tw.tick)
 		defer ticker.Stop()
 
@@ -77,7 +77,7 @@ func (tw *TimingWheel) Start() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 // Stop 停止时间轮
