@@ -30,45 +30,43 @@ func NewSVM(dim int) *SVM {
 }
 
 // Train 训练SVM模型。
-// 此处使用简化的梯度下降（或感知机算法的变种）进行训练。
-// 应用场景：用户分类、异常检测、文本分类等。
-// points: 训练数据集的特征点切片。
-// labels: 每个数据点对应的真实标签（预期为0或1，此处会转换为-1或1）。
-// learningRate: 学习率，控制每次权重和偏置更新的步长。
-// iterations: 训练迭代次数（epochs）。
+// 升级实现：使用带 L2 正则化的合页损失 (Hinge Loss) 随机梯度下降 (SGD)。
 func (svm *SVM) Train(points []*SVMPoint, labels []int, learningRate float64, iterations int) {
-	svm.mu.Lock()         // 训练过程需要加写锁。
-	defer svm.mu.Unlock() // 确保函数退出时解锁。
+	svm.mu.Lock()
+	defer svm.mu.Unlock()
 
-	dim := len(points[0].Data) // 输入特征的维度。
+	dim := len(svm.weights)
+	lambda := 0.01 // 正则化参数
 
-	for range iterations {
+	for iter := 0; iter < iterations; iter++ {
 		for i, p := range points {
-			// 计算当前数据点的预测值。
-			// 预测值 = 权重向量与特征向量的点积 + 偏置项。
-			pred := svm.bias
-			for j := range dim {
-				pred += svm.weights[j] * p.Data[j]
-			}
-
-			// 将标签从 0/1 转换为 -1/1，以适应SVM的损失函数（通常是合页损失）。
+			// 将标签从 0/1 转换为 -1/1
 			label := float64(labels[i])
 			if label == 0 {
-				label = -1 // 将标签0转换为-1。
+				label = -1
 			}
 
-			// 计算误差（这里是预测值与真实标签的差值，通常SVM会使用 (1 - y * pred) 作为误差项）。
-			error := label - pred // 这是一个简化的误差计算。
-
-			// 更新权重。
-			// 权重更新 = 学习率 * 误差 * 特征值。
-			for j := range dim {
-				svm.weights[j] += learningRate * error * p.Data[j]
+			// 计算 y * (w * x + b)
+			dotProduct := svm.bias
+			for j := 0; j < dim; j++ {
+				dotProduct += svm.weights[j] * p.Data[j]
 			}
 
-			// 更新偏置。
-			// 偏置更新 = 学习率 * 误差。
-			svm.bias += learningRate * error
+			// 合页损失梯度下降更新规则
+			// 如果 label * pred < 1, 说明该点在间隔内或分类错误
+			if label*dotProduct < 1 {
+				// 更新权重: w = w + lr * (label * x - 2 * lambda * w)
+				for j := 0; j < dim; j++ {
+					svm.weights[j] += learningRate * (label*p.Data[j] - 2*lambda*svm.weights[j])
+				}
+				// 更新偏置
+				svm.bias += learningRate * label
+			} else {
+				// 如果分类正确且在间隔外，仅应用正则化项（权重衰减）
+				for j := 0; j < dim; j++ {
+					svm.weights[j] += learningRate * (-2 * lambda * svm.weights[j])
+				}
+			}
 		}
 	}
 }

@@ -100,15 +100,22 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 
 // Generate 生成一个新的 ID。
 func (g *SonyflakeGenerator) Generate() int64 {
-	// Sonyflake 返回 uint64，但为了统一接口我们转为 int64
-	// 由于 ID 的最高位通常为 0（用于表示正数），这不会导致问题
-	id, err := g.sf.NextID()
-	if err != nil {
-		// 在极端情况下（如时钟回拨）可能失败，返回 0 并记录错误
-		// 生产环境中应有更健壮的处理，这里简化处理
-		return 0
+	// 真实实现：处理时钟回拨导致的失败，进行有限重试
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		id, err := g.sf.NextID()
+		if err == nil {
+			return int64(id)
+		}
+
+		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)
+		// 如果是时钟回拨，等待一小段时间后重试
+		time.Sleep(10 * time.Millisecond)
 	}
-	return int64(id)
+
+	// 如果多次重试仍失败，记录严重错误
+	slog.Error("Sonyflake generator failed after multiple retries")
+	return 0
 }
 
 // NewGenerator 根据配置创建对应类型的 ID 生成器。
