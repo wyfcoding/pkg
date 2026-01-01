@@ -53,6 +53,19 @@ func GetUserAgent(ctx context.Context) string {
 	return "Unknown"
 }
 
+// WithRole 注入用户角色
+func WithRole(ctx context.Context, role string) context.Context {
+	return context.WithValue(ctx, RoleKey, role)
+}
+
+// GetRole 提取用户角色
+func GetRole(ctx context.Context) string {
+	if val, ok := ctx.Value(RoleKey).(string); ok {
+		return val
+	}
+	return ""
+}
+
 // WithTenantID 注入租户 ID (多租户架构必备)
 func WithTenantID(ctx context.Context, tenantID string) context.Context {
 	return context.WithValue(ctx, TenantIDKey, tenantID)
