@@ -81,7 +81,7 @@ func (rb *RingBuffer[T]) Poll() (T, error) {
 		if atomic.CompareAndSwapUint64(&rb.head, head, head+1) {
 			item := rb.buffer[head&rb.mask]
 			// 释放引用，帮助 GC (如果是指针类型)
-			// rb.buffer[head&rb.mask] = zero 
+			// rb.buffer[head&rb.mask] = zero
 			return item, nil
 		}
 		runtime.Gosched()

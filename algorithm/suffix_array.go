@@ -95,7 +95,9 @@ func (sa *SuffixArray) Search(pattern string) []int {
 
 	n := len(sa.text)
 	m := len(pattern)
-	if m == 0 { return nil }
+	if m == 0 {
+		return nil
+	}
 
 	// 1. 寻找左边界 (第一个 >= pattern 的位置)
 	l, r := 0, n-1

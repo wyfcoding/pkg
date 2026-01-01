@@ -23,9 +23,9 @@ func (g *Graph) AddEdge(u, v int) {
 
 // TarjanSCC Tarjan 强连通分量算法
 type TarjanSCC struct {
-	graph  *Graph
-	index  int
-	stack  []int
+	graph   *Graph
+	index   int
+	stack   []int
 	onStack []bool
 	indices []int
 	lowlink []int

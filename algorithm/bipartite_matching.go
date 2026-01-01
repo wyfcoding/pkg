@@ -8,14 +8,14 @@ import (
 // WeightedBipartiteGraph 结构体代表一个带权的二分图。
 // 使用 KM (Kuhn-Munkres) 算法解决最大权/最小权完美匹配问题。
 type WeightedBipartiteGraph struct {
-	nx, ny   int         // 左右两侧节点数量
-	weights  [][]float64 // 权重矩阵
-	lx, ly   []float64   // 左右顶标
-	matchX   []int       // 左侧匹配结果
-	matchY   []int       // 右侧匹配结果
-	slack    []float64   // 松弛量
-	visX, visY []bool     // 访问标记
-	mu       sync.Mutex
+	nx, ny     int         // 左右两侧节点数量
+	weights    [][]float64 // 权重矩阵
+	lx, ly     []float64   // 左右顶标
+	matchX     []int       // 左侧匹配结果
+	matchY     []int       // 右侧匹配结果
+	slack      []float64   // 松弛量
+	visX, visY []bool      // 访问标记
+	mu         sync.Mutex
 }
 
 // NewWeightedBipartiteGraph 创建一个新的带权二分图
@@ -24,7 +24,7 @@ func NewWeightedBipartiteGraph(nx, ny int) *WeightedBipartiteGraph {
 	if ny > nx {
 		maxNodes = ny
 	}
-	
+
 	weights := make([][]float64, maxNodes)
 	for i := range weights {
 		weights[i] = make([]float64, maxNodes)

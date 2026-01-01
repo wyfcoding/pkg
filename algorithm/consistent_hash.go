@@ -13,9 +13,9 @@ type Hash func(data []byte) uint32
 // ConsistentHash 一致性哈希算法实现
 type ConsistentHash struct {
 	hash     Hash
-	replicas int               // 虚拟节点倍数
-	keys     []int             // 已排序的哈希环
-	hashMap  map[int]string    // 虚拟节点哈希值到物理节点名称的映射
+	replicas int            // 虚拟节点倍数
+	keys     []int          // 已排序的哈希环
+	hashMap  map[int]string // 虚拟节点哈希值到物理节点名称的映射
 	mu       sync.RWMutex
 }
 

@@ -130,7 +130,7 @@ func (tw *TimingWheel) tickTock() {
 
 	// 获取当前槽位的链表
 	l := tw.slots[tw.current]
-	
+
 	// 遍历并处理任务
 	var next *list.Element
 	for e := l.Front(); e != nil; e = next {

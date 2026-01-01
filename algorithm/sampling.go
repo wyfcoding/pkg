@@ -25,7 +25,7 @@ func NewReservoirSampler[T any](k int) *ReservoirSampler[T] {
 // Observe 处理一个新到达的元素
 func (s *ReservoirSampler[T]) Observe(item T) {
 	s.count++
-	
+
 	if len(s.samples) < s.k {
 		// 1. 如果池子还没满，直接放入
 		s.samples = append(s.samples, item)

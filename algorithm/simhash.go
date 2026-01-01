@@ -29,7 +29,7 @@ func (s *SimHash) Calculate(text string) uint64 {
 	for _, word := range words {
 		// 计算单词的传统哈希值
 		h := fnvHash(word)
-		
+
 		// 3. 加权
 		// 如果对应位为1，权重+1；为0，权重-1
 		for i := 0; i < s.hashBits; i++ {

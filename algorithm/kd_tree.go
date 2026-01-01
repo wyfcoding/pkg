@@ -42,7 +42,7 @@ func (t *KDTree) build(points []KDPoint, depth int) *KDNode {
 	}
 
 	axis := depth % t.K
-	
+
 	// 根据当前维度排序，取中位数
 	sort.Slice(points, func(i, j int) bool {
 		return points[i].Vector[axis] < points[j].Vector[axis]

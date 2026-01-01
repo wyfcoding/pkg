@@ -16,10 +16,10 @@ type Metrics struct {
 	registry *prometheus.Registry
 
 	// 预定义的标准指标 (避免各处重复定义)
-	HttpRequestsTotal    *prometheus.CounterVec
-	HttpRequestDuration  *prometheus.HistogramVec
-	GrpcRequestsTotal    *prometheus.CounterVec
-	GrpcRequestDuration  *prometheus.HistogramVec
+	HttpRequestsTotal   *prometheus.CounterVec
+	HttpRequestDuration *prometheus.HistogramVec
+	GrpcRequestsTotal   *prometheus.CounterVec
+	GrpcRequestDuration *prometheus.HistogramVec
 }
 
 func NewMetrics(serviceName string) *Metrics {

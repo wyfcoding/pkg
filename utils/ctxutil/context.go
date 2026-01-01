@@ -7,9 +7,9 @@ import (
 type contextKey string
 
 const (
-	UserIDKey contextKey = "user_id"
+	UserIDKey   contextKey = "user_id"
 	TenantIDKey contextKey = "tenant_id"
-	RoleKey   contextKey = "user_role"
+	RoleKey     contextKey = "user_role"
 )
 
 // WithUserID 注入用户 ID

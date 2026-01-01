@@ -18,7 +18,7 @@ type PersistentSegmentTree struct {
 // maxOp: 预估的操作次数，用于分配初始内存
 func NewPersistentSegmentTree(n int, maxOp int) *PersistentSegmentTree {
 	// 空间复杂度 O(M log N)
-	expectedNodes := maxOp * 40 
+	expectedNodes := maxOp * 40
 	return &PersistentSegmentTree{
 		roots: make([]int, 0),
 		nodes: make([]PSTNode, 1, expectedNodes), // 0 号节点作为空节点
@@ -83,8 +83,8 @@ func (t *PersistentSegmentTree) query(nodeIdx, l, r int, ql, qr int) int {
 		return t.nodes[nodeIdx].Count
 	}
 	mid := (l + r) >> 1
-	return t.query(t.nodes[nodeIdx].L, l, mid, ql, qr) + 
-	       t.query(t.nodes[nodeIdx].R, mid+1, r, ql, qr)
+	return t.query(t.nodes[nodeIdx].L, l, mid, ql, qr) +
+		t.query(t.nodes[nodeIdx].R, mid+1, r, ql, qr)
 }
 
 // CurrentVersion 获取当前最新版本号
