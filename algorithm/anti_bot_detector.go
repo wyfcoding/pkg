@@ -2,6 +2,7 @@ package algorithm
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
@@ -207,19 +208,29 @@ func (d *AntiBotDetector) isDirectKill(behaviors []UserBehavior, current UserBeh
 }
 
 // isAbnormalUserAgent 检查User-Agent字符串是否异常。
-// 简化的判断方式：检查是否包含常见的浏览器标识。
 func (d *AntiBotDetector) isAbnormalUserAgent(userAgent string) bool {
-	// 定义常见的正常浏览器User-Agent标识。
-	normalAgents := []string{"Mozilla", "Chrome", "Safari", "Firefox", "Edge"}
+	ua := strings.ToLower(userAgent)
+	if ua == "" || len(ua) < 10 {
+		return true // 空或过短的 UA 视为异常
+	}
 
+	// 1. 检查已知的爬虫标识
+	botPatterns := []string{"bot", "crawler", "spider", "scrap", "curl", "wget", "python", "http-client"}
+	for _, p := range botPatterns {
+		if strings.Contains(ua, p) {
+			return true
+		}
+	}
+
+	// 2. 检查常见的正常浏览器 User-Agent 标识。
+	normalAgents := []string{"mozilla", "chrome", "safari", "firefox", "edge", "applewebkit"}
 	for _, agent := range normalAgents {
-		// 如果User-Agent包含任何一个正常标识，则认为User-Agent正常。
-		if contains(userAgent, agent) {
+		if strings.Contains(ua, agent) {
 			return false
 		}
 	}
 
-	return true // 如果不包含任何正常标识，则认为User-Agent异常。
+	return true // 如果不包含任何正常标识且通过了爬虫检查，仍视为异常 (可能是罕见或自定义客户端)
 }
 
 // checkIPAbnormal 检查IP地址是否存在异常。
@@ -384,22 +395,4 @@ func (d *AntiBotDetector) GetRiskScore(behavior UserBehavior) int {
 	}
 
 	return score
-}
-
-// contains 检查字符串s是否包含子字符串substr。
-// 这是一个辅助函数，用于 isAbnormalUserAgent。
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-			findSubstring(s, substr)))
-}
-
-// findSubstring 是 contains 函数的辅助函数，实现了简单的子字符串查找。
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
