@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"fmt"
 	"math"
 	"sync"
 )
@@ -69,75 +70,103 @@ func (hmm *HiddenMarkovModel) SetInitialProb(state string, prob float64) {
 }
 
 // Viterbi 算法用于寻找给定一个观测序列时，最有可能的隐藏状态序列。
-// 应用场景包括用户行为序列预测、订单异常检测、语音识别等。
-// observations: 观测序列。
-// 返回最可能的隐藏状态序列。
 func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
-	hmm.mu.RLock()         // Viterbi算法只读取模型参数，因此加读锁。
-	defer hmm.mu.RUnlock() // 确保函数退出时解锁。
+	if len(observations) == 0 {
+		return nil
+	}
 
-	n := len(observations) // 观测序列的长度。
-	m := len(hmm.states)   // 隐藏状态的数量。
+	hmm.mu.RLock()
+	defer hmm.mu.RUnlock()
 
-	// dp 数组 (delta) 用于存储在时间 i 观测到 observations[i]，并且在状态 j 结束时的最大概率的对数。
+	n := len(observations)
+	m := len(hmm.states)
+
+	// 辅助函数：安全对数计算，防止 log(0)
+	safeLog := func(p float64) float64 {
+		if p <= 0 {
+			return -1e10 // 使用一个极小的负数代替负无穷，保持数值稳定
+		}
+		return math.Log(p)
+	}
+
 	dp := make([][]float64, n)
-	// path 数组 (psi) 用于存储在回溯时，达到当前状态 j 的前一个最可能状态的索引。
 	path := make([][]int, n)
-
-	for i := range n {
+	for i := 0; i < n; i++ {
 		dp[i] = make([]float64, m)
 		path[i] = make([]int, m)
 	}
 
-	// 初始化 Viterbi 算法 (t=0 时刻)：
-	// 对于第一个观测 observations[0]，计算到达每个隐藏状态的概率。
+	// 1. 初始化 (t=0)
 	for j, state := range hmm.states {
-		// 使用对数概率避免浮点数下溢，并简化乘法为加法。
-		dp[0][j] = math.Log(hmm.initialProb[state]) + math.Log(hmm.emissionProb[state][observations[0]])
+		dp[0][j] = safeLog(hmm.initialProb[state]) + safeLog(hmm.emissionProb[state][observations[0]])
 	}
 
-	// 递推步骤 (t=1 到 n-1 时刻)：
-	// 对于每个时间步 i 和每个当前状态 j，计算达到该状态的最大对数概率。
+	// 2. 递推 (t=1..n-1)
 	for i := 1; i < n; i++ {
-		for j, state := range hmm.states { // 遍历当前时间步的所有可能状态。
-			maxProb := math.Inf(-1) // 初始化为负无穷，因为是负的对数概率，最大概率对应最小的负值。
-			maxK := 0               // 记录前一个时间步中导致最大概率的状态索引。
+		for j, state := range hmm.states {
+			maxProb := -1e20 // 初始极小值
+			maxK := 0
 
-			for k, prevState := range hmm.states { // 遍历前一个时间步的所有可能状态。
-				// 计算从前一个状态 k 转移到当前状态 j 的概率。
-				prob := dp[i-1][k] + math.Log(hmm.transitionProb[prevState][state])
+			for k, prevState := range hmm.states {
+				prob := dp[i-1][k] + safeLog(hmm.transitionProb[prevState][state])
 				if prob > maxProb {
 					maxProb = prob
 					maxK = k
 				}
 			}
 
-			// 加上当前状态下观测到当前符号的发射概率。
-			dp[i][j] = maxProb + math.Log(hmm.emissionProb[state][observations[i]])
-			path[i][j] = maxK // 记录路径。
+			dp[i][j] = maxProb + safeLog(hmm.emissionProb[state][observations[i]])
+			path[i][j] = maxK
 		}
 	}
 
-	// 回溯步骤 (t=n-1 时刻到 t=0 时刻)：
-	// 找到最后一个观测的最可能状态，然后反向追踪路径以重建整个隐藏状态序列。
-	result := make([]string, n) // 存储最终的隐藏状态序列。
-	maxProb := math.Inf(-1)     // 最后一个时间步的最大对数概率。
-	maxIdx := 0                 // 最后一个时间步中导致最大对数概率的状态索引。
+	// 3. 回溯
+	result := make([]string, n)
+	maxProb := -1e20
+	maxIdx := 0
 
-	// 找到最后一个观测的最可能隐藏状态。
-	for j := range m {
+	for j := 0; j < m; j++ {
 		if dp[n-1][j] > maxProb {
 			maxProb = dp[n-1][j]
 			maxIdx = j
 		}
 	}
 
-	result[n-1] = hmm.states[maxIdx] // 确定最后一个状态。
-	// 从后向前回溯路径，确定所有隐藏状态。
+	result[n-1] = hmm.states[maxIdx]
 	for i := n - 1; i > 0; i-- {
-		maxIdx = path[i][maxIdx]         // 根据 path 数组找到前一个最可能的状态索引。
-		result[i-1] = hmm.states[maxIdx] // 确定该状态。
+		maxIdx = path[i][maxIdx]
+		result[i-1] = hmm.states[maxIdx]
 	}
 
 	return result
+}
+
+// Validate 校验模型参数是否完整合法 (各概率分布之和是否近似为 1)
+func (hmm *HiddenMarkovModel) Validate() error {
+	hmm.mu.RLock()
+	defer hmm.mu.RUnlock()
+
+	const epsilon = 1e-6
+
+	// 1. 校验初始概率
+	sumInit := 0.0
+	for _, p := range hmm.initialProb {
+		sumInit += p
+	}
+	if math.Abs(sumInit-1.0) > epsilon {
+		return fmt.Errorf("initial probabilities sum to %f, expected 1.0", sumInit)
+	}
+
+	// 2. 校验转移概率
+	for _, state := range hmm.states {
+		sumTrans := 0.0
+		for _, nextState := range hmm.states {
+			sumTrans += hmm.transitionProb[state][nextState]
+		}
+		if math.Abs(sumTrans-1.0) > epsilon {
+			return fmt.Errorf("transition probabilities from state %s sum to %f, expected 1.0", state, sumTrans)
+		}
+	}
+
+	return nil
 }

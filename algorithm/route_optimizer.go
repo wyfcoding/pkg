@@ -7,9 +7,10 @@ import (
 
 // Location 代表地理位置。
 type Location struct {
-	ID  uint64
-	Lat float64
-	Lon float64
+	ID     uint64
+	Lat    float64
+	Lon    float64
+	Demand float64 // 该位置的载重需求量
 }
 
 // Route 代表优化后的路线。
