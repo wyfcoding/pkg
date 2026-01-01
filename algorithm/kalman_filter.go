@@ -45,3 +45,17 @@ func (f *KalmanFilter) Update(measurement float64) float64 {
 func (f *KalmanFilter) CurrentValue() float64 {
 	return f.x
 }
+
+// GetConfidence 获取估算的相对置信度 (0.0 到 1.0)
+// 基于协方差 p 计算。p 越小，置信度越高。
+func (f *KalmanFilter) GetConfidence() float64 {
+	// 简单的非线性映射，实际可根据业务方差分布调整
+	if f.p <= 0 {
+		return 1.0
+	}
+	conf := 1.0 / (1.0 + f.p)
+	if conf > 1.0 {
+		return 1.0
+	}
+	return conf
+}
