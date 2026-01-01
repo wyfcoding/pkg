@@ -2,6 +2,7 @@ package algorithm
 
 import (
 	"errors"
+	"log/slog"
 	"runtime"
 	"sync/atomic"
 	"unsafe"
@@ -11,15 +12,15 @@ import (
 // 适用于：撮合引擎定序、日志收集、Actor 模型消息邮箱。
 // 性能：在高并发写入下远超标准 Channel。
 type MpscRingBuffer[T any] struct {
-	_padding0 [56]byte // 缓存行填充，防止伪共享 (Cache Line Padding)
+	_ [56]byte // 缓存行填充，防止伪共享 (Cache Line Padding)
 
 	head uint64 // 消费者读取位置 (仅由消费者修改)
 
-	_padding1 [56]byte
+	_ [56]byte
 
 	tail uint64 // 生产者写入位置 (由多个生产者通过 CAS 修改)
 
-	_padding2 [56]byte
+	_ [56]byte
 
 	mask   uint64
 	buffer []unsafe.Pointer // 存储 *T，为了支持原子操作，必须存储指针
@@ -28,9 +29,11 @@ type MpscRingBuffer[T any] struct {
 // NewMpscRingBuffer 创建一个新的 MPSC RingBuffer
 func NewMpscRingBuffer[T any](capacity uint64) (*MpscRingBuffer[T], error) {
 	if capacity == 0 || (capacity&(capacity-1)) != 0 {
+		slog.Error("MpscRingBuffer initialization failed: capacity must be a power of 2", "capacity", capacity)
 		return nil, errors.New("capacity must be a power of 2")
 	}
 
+	slog.Info("MpscRingBuffer initialized", "capacity", capacity)
 	return &MpscRingBuffer[T]{
 		mask:   capacity - 1,
 		buffer: make([]unsafe.Pointer, capacity),

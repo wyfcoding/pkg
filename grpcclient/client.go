@@ -67,10 +67,7 @@ func (f *ClientFactory) metricsInterceptor(target string) grpc.UnaryClientInterc
 		start := time.Now()
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		duration := time.Since(start).Seconds()
-		st, ok := status.FromError(err)
-		if !ok {
-			// Optional: handle non-grpc error status
-		}
+		st, _ := status.FromError(err)
 		// 记录客户端指标，增加 target 标签以区分目标服务
 		f.metrics.GrpcRequestsTotal.WithLabelValues("client", target+":"+method, st.Code().String()).Inc()
 		f.metrics.GrpcRequestDuration.WithLabelValues("client", target+":"+method).Observe(duration)

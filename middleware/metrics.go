@@ -36,10 +36,7 @@ func GrpcMetricsInterceptor(m *metrics.Metrics) grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 		duration := time.Since(start).Seconds()
 
-		st, ok := status.FromError(err)
-		if !ok {
-			// Optional: handle non-grpc error status
-		}
+		st, _ := status.FromError(err)
 		m.GrpcRequestsTotal.WithLabelValues("server", info.FullMethod, st.Code().String()).Inc()
 		m.GrpcRequestDuration.WithLabelValues("server", info.FullMethod).Observe(duration)
 

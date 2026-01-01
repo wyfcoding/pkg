@@ -10,9 +10,7 @@ import (
 	"github.com/wyfcoding/pkg/metrics"
 )
 
-var (
-	ErrServiceUnavailable = errors.New("service unavailable (circuit breaker open)")
-)
+var ErrServiceUnavailable = errors.New("service unavailable (circuit breaker open)")
 
 // Breaker 封装了具备指标监控能力的熔断器
 type Breaker struct {

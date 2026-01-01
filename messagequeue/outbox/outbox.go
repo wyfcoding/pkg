@@ -138,7 +138,6 @@ func (p *Processor) process() {
 		Limit(p.batchSize).
 		Order("id ASC").
 		Find(&messages).Error
-
 	if err != nil {
 		p.mgr.logger.Error("failed to fetch outbox messages", "error", err)
 		return
