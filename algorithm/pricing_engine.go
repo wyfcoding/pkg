@@ -132,11 +132,7 @@ func (pe *PricingEngine) CalculatePrice(factors PricingFactors) PricingResult {
 	return result
 }
 
-// CalculateDemandElasticity 计算需求价格弹性。
-// 需求价格弹性衡量当商品价格发生1%变化时，需求量变化的百分比。
-// currentPrice, currentDemand: 变化前的价格和需求量。
-// newPrice, newDemand: 变化后的价格和需求量。
-// 返回需求价格弹性系数。
+// CalculateDemandElasticity 基于两点计算简单的需求价格弹性。
 func (pe *PricingEngine) CalculateDemandElasticity(currentPrice, currentDemand int64, newPrice, newDemand int64) float64 {
 	// 计算价格变化率。
 	priceChange := (float64(newPrice) - float64(currentPrice)) / float64(currentPrice)
@@ -148,6 +144,43 @@ func (pe *PricingEngine) CalculateDemandElasticity(currentPrice, currentDemand i
 	}
 
 	return demandChange / priceChange // 弹性系数 = 需求量变化率 / 价格变化率。
+}
+
+// EstimateElasticityFromHistory 使用历史数据通过线性回归估算特定价格点的弹性。
+// 弹性 e = (dQ/dP) * (P/Q)。 在线性模型 Q = a + bP 中， dQ/dP = b。
+func (pe *PricingEngine) EstimateElasticityFromHistory(price int64, historicalData []DemandData) float64 {
+	if len(historicalData) < 2 {
+		return pe.elasticity // 数据不足，返回默认弹性
+	}
+
+	n := float64(len(historicalData))
+	var sumX, sumY, sumXY, sumX2 float64
+
+	for _, data := range historicalData {
+		x := float64(data.Price)
+		y := float64(data.Demand)
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumX2 += x * x
+	}
+
+	// 计算回归系数 b (即 dQ/dP)
+	denominator := n*sumX2 - sumX*sumX
+	if denominator == 0 {
+		return 0
+	}
+	b := (n*sumXY - sumX*sumY) / denominator
+	a := (sumY - b*sumX) / n
+
+	// 计算该价格点的预测需求 Q
+	q := a + b*float64(price)
+	if q <= 0 {
+		return 0
+	}
+
+	// 弹性 e = b * (P/Q)
+	return b * (float64(price) / q)
 }
 
 // OptimalPrice 计算实现利润最大化的最优价格。
