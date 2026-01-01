@@ -1,5 +1,7 @@
 package algorithm
 
+import "math"
+
 // LinearProgramming 结构体定义了一个线性规划问题。
 // 线性规划是一种在给定一组线性约束条件下，最大化或最小化线性目标函数的数学优化技术。
 // 在本实现中，`SimplexMethod` 提供了一个简化的贪心近似求解方法。
@@ -48,35 +50,114 @@ func (lp *LinearProgramming) AddConstraint(idx int, coeffs []float64, bound floa
 	lp.bounds[idx] = bound
 }
 
-// SimplexMethod 尝试使用单纯形法求解线性规划问题。
-// 注意：此实现是一个高度简化的贪心近似，并非完整的单纯形算法。
-// 它仅适用于特定类型的线性规划问题（例如，所有目标函数系数为正数时，尝试最大化目标函数），
-// 并且不保证找到最优解。完整的单纯形法实现要复杂得多。
-// 应用场景：例如，在库存优化中，分配有限资源以最大化利润或最小化成本。
-// 返回一个包含每个决策变量解的切片。
+// SimplexMethod 使用单纯形法求解线性规划问题（标准最大化问题）。
+// 标准形式：Max Z = CX, 满足 AX <= B 且 X >= 0。
+// 返回决策变量的最优解切片。
 func (lp *LinearProgramming) SimplexMethod() []float64 {
-	// 初始化解向量，所有变量的初始解为0。
+	// 1. 构建初始单纯形大表 (Tableau)
+	// 行数 = 约束数 + 1 (目标函数行)
+	// 列数 = 决策变量数 + 松弛变量数 + 1 (右侧常数项)
+	numSlack := lp.numConstraints
+	rows := lp.numConstraints + 1
+	cols := lp.numVars + numSlack + 1
+	tableau := make([][]float64, rows)
+	for i := range tableau {
+		tableau[i] = make([]float64, cols)
+	}
+
+	// 填充约束条件
+	for i := 0; i < lp.numConstraints; i++ {
+		for j := 0; j < lp.numVars; j++ {
+			tableau[i][j] = lp.constraints[i][j]
+		}
+		// 填充松弛变量 (单位矩阵)
+		tableau[i][lp.numVars+i] = 1
+		// 填充右侧常数
+		tableau[i][cols-1] = lp.bounds[i]
+	}
+
+	// 填充目标函数行 (最后一行)
+	// 形式为: Z - c1x1 - c2x2 ... = 0
+	for j := 0; j < lp.numVars; j++ {
+		tableau[rows-1][j] = -lp.objective[j]
+	}
+
+	// 2. 迭代寻优
+	for {
+		// 找到入基变量：寻找最后一行中绝对值最大的负数
+		pivotCol := -1
+		minVal := 0.0
+		for j := 0; j < cols-1; j++ {
+			if tableau[rows-1][j] < minVal {
+				minVal = tableau[rows-1][j]
+				pivotCol = j
+			}
+		}
+
+		// 如果没有负系数，说明已达到最优解
+		if pivotCol == -1 {
+			break
+		}
+
+		// 找到出基变量：计算最小比率 (Min Ratio Test)
+		pivotRow := -1
+		minRatio := math.MaxFloat64
+		for i := 0; i < lp.numConstraints; i++ {
+			if tableau[i][pivotCol] > 0 {
+				ratio := tableau[i][cols-1] / tableau[i][pivotCol]
+				if ratio < minRatio {
+					minRatio = ratio
+					pivotRow = i
+				}
+			}
+		}
+
+		// 如果无法找到出基变量，说明问题无界
+		if pivotRow == -1 {
+			return nil
+		}
+
+		// 3. 枢轴转动 (Pivoting)
+		pivotVal := tableau[pivotRow][pivotCol]
+		// 归一化枢轴行
+		for j := 0; j < cols; j++ {
+			tableau[pivotRow][j] /= pivotVal
+		}
+
+		// 消除其他行
+		for i := 0; i < rows; i++ {
+			if i != pivotRow {
+				factor := tableau[i][pivotCol]
+				for j := 0; j < cols; j++ {
+					tableau[i][j] -= factor * tableau[pivotRow][j]
+				}
+			}
+		}
+	}
+
+	// 4. 提取决策变量的解
 	solution := make([]float64, lp.numVars)
-
-	// 计算每个变量的“效益/成本比”。
-	// 在这个简化的贪心近似中，直接使用目标函数系数作为“效益”。
-	ratios := make([]float64, lp.numVars)
-	for i := 0; i < lp.numVars; i++ {
-		if lp.objective[i] > 0 { // 假设我们总是尝试最大化正效益的变量。
-			ratios[i] = lp.objective[i]
+	for j := 0; j < lp.numVars; j++ {
+		isBasic := false
+		rowIndex := -1
+		for i := 0; i < lp.numConstraints; i++ {
+			if tableau[i][j] == 1 {
+				if rowIndex == -1 {
+					rowIndex = i
+					isBasic = true
+				} else {
+					isBasic = false // 这一列有多个 1
+					break
+				}
+			} else if tableau[i][j] != 0 {
+				isBasic = false // 这一列包含非 0/1 的值
+				break
+			}
 		}
-		// 如果目标函数系数为负，则表示该变量会降低效益，或者这是一个最小化问题，
-		// 这种简化算法可能无法正确处理。
+		if isBasic && rowIndex != -1 {
+			solution[j] = tableau[rowIndex][cols-1]
+		}
 	}
 
-	// 贪心分配策略：
-	// 简单地将具有正效益（目标函数系数）的变量设置为其效益值。
-	// 这完全忽略了约束条件，因此这只是一个非常粗略的近似。
-	for i := 0; i < lp.numVars; i++ {
-		if ratios[i] > 0 {
-			solution[i] = ratios[i]
-		}
-	}
-
-	return solution // 返回近似解。
+	return solution
 }
