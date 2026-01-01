@@ -22,7 +22,16 @@ type Order struct {
 	// 时间戳（用于时间优先）
 	Timestamp int64
 	// 用户 ID
+	// UserID 用户 ID
 	UserID string
+	// IsIceberg 是否为冰山单
+	IsIceberg bool
+	// DisplayQty 冰山单显性规模
+	DisplayQty decimal.Decimal
+	// HiddenQty 冰山单隐性规模（剩余未显示部分）
+	HiddenQty decimal.Decimal
+	// PostOnly 是否为只做 Maker（如果该报单会导致立即成交，则被撤单或拒绝）
+	PostOnly bool
 	// ResultChan 用于接收撮合结果（顶级优化：去中心化通知）
 	ResultChan chan any `json:"-"`
 }
@@ -234,6 +243,22 @@ func (me *MatchingEngine) Match(order *Order) []*Trade {
 
 	trades := make([]*Trade, 0)
 
+	// Post-Only 预检：如果 PostOnly 为 true，且订单会立即产生成交（作为 Taker），则拒绝执行并直接返回
+	if order.PostOnly {
+		if order.Side == "BUY" {
+			bestAsk := me.orderBook.GetBestAsk()
+			if bestAsk != nil && bestAsk.Price.LessThanOrEqual(order.Price) {
+				// 作为 Taker 成交，违反 Post-Only 规则
+				return trades
+			}
+		} else {
+			bestBid := me.orderBook.GetBestBid()
+			if bestBid != nil && bestBid.Price.GreaterThanOrEqual(order.Price) {
+				return trades
+			}
+		}
+	}
+
 	if order.Side == "BUY" {
 		// 买单与卖单撮合
 		for order.Quantity.GreaterThan(decimal.Zero) {
@@ -266,9 +291,26 @@ func (me *MatchingEngine) Match(order *Order) []*Trade {
 			order.Quantity = order.Quantity.Sub(matchQty)
 			bestAsk.Quantity = bestAsk.Quantity.Sub(matchQty)
 
-			// 如果卖单已完全成交，移除
+			// 如果卖单已完全成交，检查是否为冰山单需要刷新
 			if bestAsk.Quantity.Equal(decimal.Zero) {
-				me.orderBook.RemoveOrder(bestAsk.OrderID)
+				if bestAsk.IsIceberg && bestAsk.HiddenQty.GreaterThan(decimal.Zero) {
+					// 刷新卖方冰山单：从隐藏量中提取显性量
+					refreshQty := bestAsk.DisplayQty
+					if refreshQty.GreaterThan(bestAsk.HiddenQty) {
+						refreshQty = bestAsk.HiddenQty
+					}
+					bestAsk.Quantity = refreshQty
+					bestAsk.HiddenQty = bestAsk.HiddenQty.Sub(refreshQty)
+
+					// 刷新时间戳以失去当前价位的时间优先权（符合行业标准）
+					bestAsk.Timestamp = order.Timestamp + 1 // 模拟稍后
+
+					// 重新插入订单簿（先删后加）
+					me.orderBook.RemoveOrder(bestAsk.OrderID)
+					me.orderBook.AddOrder(bestAsk)
+				} else {
+					me.orderBook.RemoveOrder(bestAsk.OrderID)
+				}
 			}
 		}
 	} else {
@@ -303,15 +345,37 @@ func (me *MatchingEngine) Match(order *Order) []*Trade {
 			order.Quantity = order.Quantity.Sub(matchQty)
 			bestBid.Quantity = bestBid.Quantity.Sub(matchQty)
 
-			// 如果买单已完全成交，移除
+			// 如果买单已完全成交，检查是否为冰山单需要刷新
 			if bestBid.Quantity.Equal(decimal.Zero) {
-				me.orderBook.RemoveOrder(bestBid.OrderID)
+				if bestBid.IsIceberg && bestBid.HiddenQty.GreaterThan(decimal.Zero) {
+					// 刷新买方冰山单
+					refreshQty := bestBid.DisplayQty
+					if refreshQty.GreaterThan(bestBid.HiddenQty) {
+						refreshQty = bestBid.HiddenQty
+					}
+					bestBid.Quantity = refreshQty
+					bestBid.HiddenQty = bestBid.HiddenQty.Sub(refreshQty)
+
+					// 刷新时间戳以失去时间优先权
+					bestBid.Timestamp = order.Timestamp + 1
+
+					// 重新插入订单簿
+					me.orderBook.RemoveOrder(bestBid.OrderID)
+					me.orderBook.AddOrder(bestBid)
+				} else {
+					me.orderBook.RemoveOrder(bestBid.OrderID)
+				}
 			}
 		}
 	}
 
-	// 如果订单还有剩余，添加到订单簿
+	// 如果订单还有剩余，添加到订单簿。
+	// 注意：如果是冰山单，首次进入订单簿时应仅显示显示量，并将剩余量存入 HiddenQty
 	if order.Quantity.GreaterThan(decimal.Zero) {
+		if order.IsIceberg && order.Quantity.GreaterThan(order.DisplayQty) {
+			order.HiddenQty = order.Quantity.Sub(order.DisplayQty)
+			order.Quantity = order.DisplayQty
+		}
 		me.orderBook.AddOrder(order)
 	}
 
