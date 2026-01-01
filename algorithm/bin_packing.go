@@ -1,7 +1,9 @@
 package algorithm
 
 import (
+	"log/slog"
 	"sort"
+	"time"
 )
 
 // Item 代表需要装箱的物品
@@ -32,6 +34,7 @@ func NewBinPackingOptimizer(binCapacity float64) *BinPackingOptimizer {
 // 2. 遍历物品，寻找第一个能放下它的箱子
 // 3. 如果所有现有箱子都放不下，开一个新箱子
 func (o *BinPackingOptimizer) FFD(items []Item) []*Bin {
+	start := time.Now()
 	if len(items) == 0 {
 		return nil
 	}
@@ -70,5 +73,6 @@ func (o *BinPackingOptimizer) FFD(items []Item) []*Bin {
 		}
 	}
 
+	slog.Info("Bin packing FFD completed", "items_count", len(items), "bins_count", len(bins), "duration", time.Since(start))
 	return bins
 }

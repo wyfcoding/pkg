@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -40,6 +41,7 @@ func NewAntiBotDetector() *AntiBotDetector {
 
 	// 启动一个独立的goroutine定期清理过期的用户行为和请求记录。
 	go detector.cleanup()
+	slog.Info("AntiBotDetector initialized and background cleanup started")
 
 	return detector
 }
@@ -48,21 +50,25 @@ func NewAntiBotDetector() *AntiBotDetector {
 // 它综合了请求频率、行为模式和IP异常等多种检测维度。
 // 返回值：一个布尔值表示是否是机器人，以及一个字符串说明判断为机器人的原因。
 func (d *AntiBotDetector) IsBot(behavior UserBehavior) (bool, string) {
+	start := time.Now()
 	d.mu.Lock()         // 写锁，因为可能会记录新的行为。
 	defer d.mu.Unlock() // 确保函数退出时解锁。
 
 	// 1. 检查请求频率是否异常高。
 	if isHighFrequency, reason := d.checkFrequency(behavior); isHighFrequency {
+		slog.Warn("Bot detected by frequency", "user_id", behavior.UserID, "ip", behavior.IP, "reason", reason, "duration", time.Since(start))
 		return true, reason
 	}
 
 	// 2. 检查用户行为模式是否存在可疑迹象。
 	if isSuspicious, reason := d.checkBehaviorPattern(behavior); isSuspicious {
+		slog.Warn("Bot detected by behavior pattern", "user_id", behavior.UserID, "ip", behavior.IP, "reason", reason, "duration", time.Since(start))
 		return true, reason
 	}
 
 	// 3. 检查IP地址是否存在异常。
 	if isAbnormalIP, reason := d.checkIPAbnormal(behavior); isAbnormalIP {
+		slog.Warn("Bot detected by IP abnormal", "user_id", behavior.UserID, "ip", behavior.IP, "reason", reason, "duration", time.Since(start))
 		return true, reason
 	}
 
@@ -262,10 +268,12 @@ func (d *AntiBotDetector) cleanup() {
 	defer ticker.Stop()                       // 函数退出时停止ticker。
 
 	for range ticker.C { // 循环等待ticker事件。
+		start := time.Now()
 		d.mu.Lock() // 加写锁，以安全地修改数据。
 
 		now := time.Now()
 		expireTime := 5 * time.Minute // 数据保留5分钟。
+		userCount, ipCount, behaviorCount := 0, 0, 0
 
 		// 清理用户请求记录。
 		for userID, requests := range d.userRequests {
@@ -277,6 +285,7 @@ func (d *AntiBotDetector) cleanup() {
 			}
 			if len(validRequests) == 0 {
 				delete(d.userRequests, userID) // 如果没有有效请求，则删除该用户的所有记录。
+				userCount++
 			} else {
 				d.userRequests[userID] = validRequests
 			}
@@ -292,6 +301,7 @@ func (d *AntiBotDetector) cleanup() {
 			}
 			if len(validRequests) == 0 {
 				delete(d.ipRequests, ip)
+				ipCount++
 			} else {
 				d.ipRequests[ip] = validRequests
 			}
@@ -307,12 +317,14 @@ func (d *AntiBotDetector) cleanup() {
 			}
 			if len(validBehaviors) == 0 {
 				delete(d.userBehaviors, userID)
+				behaviorCount++
 			} else {
 				d.userBehaviors[userID] = validBehaviors
 			}
 		}
 
 		d.mu.Unlock() // 解锁。
+		slog.Debug("AntiBotDetector cleanup finished", "deleted_users", userCount, "deleted_ips", ipCount, "deleted_behaviors", behaviorCount, "duration", time.Since(start))
 	}
 }
 

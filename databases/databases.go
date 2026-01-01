@@ -38,11 +38,16 @@ func (db *DB) Close() error {
 	if err != nil {
 		return err
 	}
-	return sqlDB.Close()
+	err = sqlDB.Close()
+	if err == nil {
+		fmt.Printf("Database connection closed: %s\n", db.name)
+	}
+	return err
 }
 
 // NewDB 创建具备全方位治理能力的 GORM 实例
 func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*DB, error) {
+	logger.Info("Initializing database connection", "driver", cfg.Driver, "dsn_mask", "******")
 	gormLogger := logging.NewGormLogger(logger, cfg.SlowThreshold)
 
 	gormConfig := &gorm.Config{
@@ -110,6 +115,8 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 			poolInUse.WithLabelValues(cfg.Driver).Set(float64(stats.InUse))
 		}
 	}()
+
+	logger.Info("Database initialized successfully", "driver", cfg.Driver)
 
 	return &DB{
 		DB:      rawDB,

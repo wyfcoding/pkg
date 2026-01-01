@@ -44,11 +44,14 @@ func (l *RedisLock) Lock(ctx context.Context, key string, ttl time.Duration) (st
 	}
 	ok, err := l.client.SetNX(ctx, key, token, ttl).Result()
 	if err != nil {
+		slog.Error("Redis Lock error", "key", key, "error", err)
 		return "", fmt.Errorf("redis setnx failed: %w", err)
 	}
 	if !ok {
+		slog.Warn("Redis Lock failed (already locked)", "key", key)
 		return "", ErrLockFailed
 	}
+	slog.Debug("Redis Lock acquired", "key", key)
 	return token, nil
 }
 
@@ -83,6 +86,7 @@ func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.D
 					slog.Warn("watchdog failed to renew lock", "key", key, "error", err)
 					return // 续期失败或已失去所有权，退出协程
 				}
+				slog.Debug("watchdog renewed lock", "key", key)
 			case <-watchdogCtx.Done():
 				return // 外部主动调用了 stop，结束续期
 			case <-ctx.Done():
@@ -112,11 +116,14 @@ func (l *RedisLock) Unlock(ctx context.Context, key string, token string) error 
 	`
 	result, err := l.client.Eval(ctx, script, []string{key}, token).Int()
 	if err != nil {
+		slog.Error("Redis Unlock error", "key", key, "error", err)
 		return fmt.Errorf("redis eval unlock failed: %w", err)
 	}
 	if result == 0 {
+		slog.Warn("Redis Unlock failed (not owner or key expired)", "key", key)
 		return ErrUnlockFailed
 	}
+	slog.Debug("Redis Lock released", "key", key)
 	return nil
 }
 

@@ -2,6 +2,7 @@ package breaker
 
 import (
 	"errors"
+	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sony/gobreaker"
@@ -67,6 +68,7 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 			val = 3.0
 		}
 		cbStatus.WithLabelValues(name).Set(val)
+		slog.Warn("Circuit breaker state changed", "name", name, "from", from.String(), "to", to.String())
 	}
 
 	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{

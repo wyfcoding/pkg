@@ -3,6 +3,7 @@ package algorithm
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 )
 
@@ -16,6 +17,7 @@ type ConcurrentQueue struct {
 
 // NewConcurrentQueue 创建并发队列
 func NewConcurrentQueue() *ConcurrentQueue {
+	slog.Info("ConcurrentQueue initialized")
 	return &ConcurrentQueue{
 		items: make([]any, 0),
 	}
@@ -83,6 +85,7 @@ type ConcurrentStack struct {
 
 // NewConcurrentStack 创建并发栈
 func NewConcurrentStack() *ConcurrentStack {
+	slog.Info("ConcurrentStack initialized")
 	return &ConcurrentStack{
 		items: make([]any, 0),
 	}
@@ -155,6 +158,7 @@ type ConcurrentRingBuffer struct {
 
 // NewConcurrentRingBuffer 创建并发环形缓冲区
 func NewConcurrentRingBuffer(capacity int) *ConcurrentRingBuffer {
+	slog.Info("ConcurrentRingBuffer initialized", "capacity", capacity)
 	return &ConcurrentRingBuffer{
 		buffer:   make([]any, capacity),
 		capacity: capacity,

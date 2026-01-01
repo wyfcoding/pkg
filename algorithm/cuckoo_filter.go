@@ -2,6 +2,7 @@ package algorithm
 
 import (
 	"hash/fnv"
+	"log/slog"
 	"math/rand"
 )
 
@@ -27,6 +28,7 @@ func NewCuckooFilter(capacity uint) *CuckooFilter {
 	if size == 0 {
 		size = 1
 	}
+	slog.Info("CuckooFilter initialized", "capacity", capacity, "buckets_size", size)
 	return &CuckooFilter{
 		buckets: make([]bucket, size),
 		size:    size,
@@ -49,7 +51,7 @@ func (cf *CuckooFilter) Add(data []byte) bool {
 		i = i2
 	}
 
-	for range maxKicks {
+	for k := 0; k < maxKicks; k++ {
 		slot := rand.Intn(bucketSize)
 		// 踢出旧指纹，换入新指纹
 		oldFp := cf.buckets[i][slot]
@@ -65,6 +67,7 @@ func (cf *CuckooFilter) Add(data []byte) bool {
 		}
 	}
 
+	slog.Warn("CuckooFilter is full, insertion failed", "count", cf.count, "buckets", cf.size)
 	return false // 过滤器太满，插入失败
 }
 

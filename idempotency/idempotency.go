@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -76,23 +77,28 @@ func (m *redisManager) TryStart(ctx context.Context, key string, ttl time.Durati
 
 	res, err := m.client.Eval(ctx, script, []string{fullKey}, string(StatusStarted), int(ttl.Seconds())).Result()
 	if err != nil {
+		slog.Error("Idempotency TryStart error", "key", fullKey, "error", err)
 		return false, nil, err
 	}
 
 	if res == "OK" {
+		slog.Debug("Idempotency check passed (first time)", "key", fullKey)
 		return true, nil, nil
 	}
 
 	if res == string(StatusStarted) {
+		slog.Warn("Idempotency check failed (in progress)", "key", fullKey)
 		return false, nil, ErrInProgress
 	}
 
 	// 如果是已完成的状态，res 存储的是 JSON 格式的 Response
 	var savedResp Response
 	if err := json.Unmarshal([]byte(res.(string)), &savedResp); err != nil {
+		slog.Error("Idempotency failed to unmarshal saved response", "key", fullKey, "error", err)
 		return false, nil, fmt.Errorf("failed to unmarshal saved response: %w", err)
 	}
 
+	slog.Info("Idempotency check hit (finished)", "key", fullKey)
 	return false, &savedResp, nil
 }
 
@@ -104,7 +110,13 @@ func (m *redisManager) Finish(ctx context.Context, key string, resp *Response, t
 	}
 
 	// 更新状态为结果 JSON，并延长过期时间
-	return m.client.Set(ctx, fullKey, string(data), ttl).Err()
+	err = m.client.Set(ctx, fullKey, string(data), ttl).Err()
+	if err != nil {
+		slog.Error("Idempotency Finish error", "key", fullKey, "error", err)
+		return err
+	}
+	slog.Debug("Idempotency request finished and saved", "key", fullKey)
+	return nil
 }
 
 func (m *redisManager) Delete(ctx context.Context, key string) error {

@@ -4,6 +4,7 @@ package idgen
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -42,6 +43,8 @@ func NewSnowflakeGenerator(cfg config.SnowflakeConfig) (*SnowflakeGenerator, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create snowflake node: %w", err)
 	}
+
+	slog.Info("SnowflakeGenerator initialized", "machine_id", cfg.MachineID, "epoch", snowflake.Epoch)
 
 	return &SnowflakeGenerator{
 		node: node,
@@ -87,6 +90,8 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sonyflake instance: %w", err)
 	}
+
+	slog.Info("SonyflakeGenerator initialized", "machine_id", cfg.MachineID, "start_time", startTime)
 
 	return &SonyflakeGenerator{
 		sf: sf,

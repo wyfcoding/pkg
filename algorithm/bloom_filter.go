@@ -2,6 +2,7 @@ package algorithm
 
 import (
 	"hash/fnv"
+	"log/slog"
 	"math"
 	"sync"
 )
@@ -22,6 +23,8 @@ func NewBloomFilter(n uint, p float64) *BloomFilter {
 	m := uint(math.Ceil(-float64(n) * math.Log(p) / math.Pow(math.Log(2), 2)))
 	// 计算最优的哈希函数个数 k
 	k := uint(math.Ceil(float64(m) / float64(n) * math.Log(2)))
+
+	slog.Info("BloomFilter initialized", "expected_elements", n, "false_positive_rate", p, "bits_size", m, "hashes_count", k)
 
 	return &BloomFilter{
 		bits:   make([]uint64, (m+63)/64),

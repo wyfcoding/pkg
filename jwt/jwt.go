@@ -3,6 +3,7 @@ package jwt
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -53,6 +54,7 @@ func ParseToken(tokenString string, secretKey string) (*MyCustomClaims, error) {
 		return []byte(secretKey), nil
 	})
 	if err != nil {
+		slog.Warn("JWT parse failed", "error", err)
 		if errors.Is(err, jwt.ErrTokenMalformed) {
 			return nil, ErrTokenMalformed
 		} else if errors.Is(err, jwt.ErrTokenExpired) {

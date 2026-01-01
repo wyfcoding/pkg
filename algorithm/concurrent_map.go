@@ -2,6 +2,7 @@
 package algorithm
 
 import (
+	"log/slog"
 	"sync"
 )
 
@@ -30,6 +31,7 @@ func NewConcurrentMap[K comparable, V any](shardCount int) *ConcurrentMap[K, V] 
 	if shardCount <= 0 {
 		shardCount = 32 // 默认分片数
 	}
+	slog.Info("ConcurrentMap initialized", "shard_count", shardCount)
 	m := &ConcurrentMap[K, V]{
 		shards:     make([]*shard[K, V], shardCount),
 		shardCount: uint64(shardCount),
@@ -54,6 +56,7 @@ func NewConcurrentStringMap[V any](shardCount int) *ConcurrentStringMap[V] {
 	if shardCount <= 0 {
 		shardCount = 32
 	}
+	slog.Info("ConcurrentStringMap initialized", "shard_count", shardCount)
 	m := &ConcurrentStringMap[V]{
 		shards:     make([]*shard[string, V], shardCount),
 		shardCount: uint64(shardCount),

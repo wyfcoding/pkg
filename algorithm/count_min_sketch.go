@@ -3,6 +3,7 @@ package algorithm
 import (
 	"errors"
 	"hash/fnv"
+	"log/slog"
 	"math"
 	"math/rand"
 	"sync/atomic"
@@ -26,6 +27,8 @@ func NewCountMinSketch(epsilon, delta float64) (*CountMinSketch, error) {
 
 	width := uint(math.Ceil(math.E / epsilon))
 	depth := uint(math.Ceil(math.Log(1 / delta)))
+
+	slog.Info("CountMinSketch initialized", "epsilon", epsilon, "delta", delta, "width", width, "depth", depth)
 
 	return &CountMinSketch{
 		width:  width,
@@ -82,6 +85,7 @@ func (cms *CountMinSketch) EstimateString(key string) uint64 {
 
 // Decay 衰减机制：将所有计数值减半
 func (cms *CountMinSketch) Decay() {
+	start := time.Now()
 	for i := range cms.matrix {
 		val := atomic.LoadUint64(&cms.matrix[i])
 		if val > 0 {
@@ -89,6 +93,7 @@ func (cms *CountMinSketch) Decay() {
 		}
 	}
 	atomic.StoreUint64(&cms.count, atomic.LoadUint64(&cms.count)/2)
+	slog.Info("CountMinSketch decay completed", "duration", time.Since(start))
 }
 
 // Reset 重置所有计数

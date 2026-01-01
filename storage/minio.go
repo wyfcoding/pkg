@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"time"
 
@@ -27,13 +28,17 @@ func NewMinIOClient(endpoint, accessKeyID, secretAccessKey, bucket string, useSS
 
 	client, err := minio.New(endpoint, opts)
 	if err != nil {
+		slog.Error("Failed to create minio client", "endpoint", endpoint, "error", err)
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
 
 	core, err := minio.NewCore(endpoint, opts)
 	if err != nil {
+		slog.Error("Failed to create minio core client", "endpoint", endpoint, "error", err)
 		return nil, fmt.Errorf("failed to create minio core client: %w", err)
 	}
+
+	slog.Info("MinIOClient initialized", "endpoint", endpoint, "bucket", bucket)
 
 	return &MinIOClient{
 		client: client,
@@ -43,10 +48,16 @@ func NewMinIOClient(endpoint, accessKeyID, secretAccessKey, bucket string, useSS
 }
 
 func (c *MinIOClient) Upload(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) error {
+	start := time.Now()
 	_, err := c.client.PutObject(ctx, c.bucket, objectName, reader, size, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
-	return err
+	if err != nil {
+		slog.Error("MinIO upload failed", "object", objectName, "error", err)
+		return err
+	}
+	slog.Debug("MinIO upload successful", "object", objectName, "duration", time.Since(start))
+	return nil
 }
 
 func (c *MinIOClient) Download(ctx context.Context, objectName string) (io.ReadCloser, error) {

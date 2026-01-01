@@ -3,6 +3,7 @@ package algorithm
 import (
 	"fmt"
 	"hash/crc32"
+	"log/slog"
 	"sort"
 	"sync"
 )
@@ -31,6 +32,7 @@ func NewConsistentHash(replicas int, fn Hash) *ConsistentHash {
 	if ch.hash == nil {
 		ch.hash = crc32.ChecksumIEEE
 	}
+	slog.Info("ConsistentHash initialized", "replicas", replicas)
 	return ch
 }
 
@@ -46,6 +48,7 @@ func (ch *ConsistentHash) Add(nodes ...string) {
 			ch.keys = append(ch.keys, hash)
 			ch.hashMap[hash] = node
 		}
+		slog.Info("Node added to ConsistentHash ring", "node", node, "virtual_nodes", ch.replicas)
 	}
 	sort.Ints(ch.keys) // 保持哈希环有序
 }
@@ -88,4 +91,5 @@ func (ch *ConsistentHash) Remove(node string) {
 		}
 		delete(ch.hashMap, hash)
 	}
+	slog.Info("Node removed from ConsistentHash ring", "node", node)
 }

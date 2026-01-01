@@ -2,7 +2,9 @@ package algorithm
 
 import (
 	"container/list"
+	"log/slog"
 	"sync"
+	"time"
 )
 
 // ACNode AC自动机节点
@@ -48,6 +50,7 @@ func (ac *AhoCorasick) AddPatterns(patterns ...string) {
 
 // Build 构造失败指针
 func (ac *AhoCorasick) Build() {
+	start := time.Now()
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
 
@@ -84,10 +87,12 @@ func (ac *AhoCorasick) Build() {
 			queue.PushBack(v)
 		}
 	}
+	slog.Info("AhoCorasick build completed", "duration", time.Since(start))
 }
 
 // Match 在文本中搜索所有出现的模式串
 func (ac *AhoCorasick) Match(text string) map[string][]int {
+	start := time.Now()
 	ac.mu.RLock()
 	defer ac.mu.RUnlock()
 
@@ -115,6 +120,7 @@ func (ac *AhoCorasick) Match(text string) map[string][]int {
 		}
 	}
 
+	slog.Debug("AhoCorasick match completed", "text_len", len(text), "results_count", len(results), "duration", time.Since(start))
 	return results
 }
 

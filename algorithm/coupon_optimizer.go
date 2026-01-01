@@ -1,7 +1,9 @@
 package algorithm
 
 import (
+	"log/slog"
 	"sort"
+	"time"
 )
 
 // CouponType 优惠券的类型。
@@ -45,6 +47,7 @@ func (co *CouponOptimizer) OptimalCombination(
 	originalPrice int64,
 	coupons []Coupon,
 ) ([]uint64, int64, int64) {
+	start := time.Now()
 	if len(coupons) == 0 {
 		return nil, originalPrice, 0
 	}
@@ -78,7 +81,7 @@ func (co *CouponOptimizer) OptimalCombination(
 		combination := make([]Coupon, 0)
 
 		// 根据mask的位来构建当前组合。
-		for i := range n {
+		for i := 0; i < n; i++ {
 			if mask&(1<<i) != 0 { // 如果第i位是1，则选中第i个优惠券。
 				combination = append(combination, available[i])
 			}
@@ -105,6 +108,7 @@ func (co *CouponOptimizer) OptimalCombination(
 		}
 	}
 
+	slog.Info("OptimalCombination optimization completed", "original_price", originalPrice, "final_price", bestPrice, "discount", maxDiscount, "duration", time.Since(start))
 	return bestCombination, bestPrice, maxDiscount
 }
 
@@ -114,13 +118,14 @@ func (co *CouponOptimizer) OptimalCombination(
 // originalPrice: 原始订单价格（单位：分）。
 // coupons: 可用的优惠券列表。
 // 返回值：
-//   - []uint64: 选定的优惠券ID列表。
+//   - []uint64: 选定的优惠券ID列表.
 //   - int64: 使用选定组合后的最终价格（单位：分）。
 //   - int64: 选定组合带来的总优惠金额（单位：分）。
 func (co *CouponOptimizer) GreedyOptimization(
 	originalPrice int64,
 	coupons []Coupon,
 ) ([]uint64, int64, int64) {
+	start := time.Now()
 	// 过滤掉不满足门槛条件的优惠券。
 	available := make([]Coupon, 0)
 	for _, c := range coupons {
@@ -177,6 +182,7 @@ func (co *CouponOptimizer) GreedyOptimization(
 	}
 
 	discount := originalPrice - currentPrice // 计算总优惠金额。
+	slog.Info("GreedyOptimization optimization completed", "original_price", originalPrice, "final_price", currentPrice, "discount", discount, "duration", time.Since(start))
 	return result, currentPrice, discount
 }
 

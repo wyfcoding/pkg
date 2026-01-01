@@ -4,6 +4,7 @@ package utils
 
 import (
 	"context"
+	"log/slog"
 	"math/rand"
 	"time"
 )
@@ -44,16 +45,6 @@ func DefaultRetryConfig() RetryConfig {
 
 // Retry 根据指定的配置（cfg）来执行一个函数（fn），并在其返回错误时进行重试。
 // 它结合了指数退避（Exponential Backoff）和抖动（Jitter）策略。
-//
-// 工作流程:
-// 1. 立即执行一次 `fn`。如果成功（返回 nil），则函数直接返回 nil。
-// 2. 如果 `fn` 失败，则进入重试循环，最多重试 `MaxRetries` 次。
-// 3. 在每次重试前，函数会检查 `context` 是否已被取消。如果已取消，则立即返回 `context.Err()`。
-// 4. 如果未取消，则根据当前退避时间 `backoff` 进行等待。
-// 5. 等待结束后，计算下一次的退避时间：`backoff = backoff * Multiplier ± Jitter`。
-// 6. 新的 `backoff` 不会超过 `MaxBackoff`。
-// 7. 循环执行 `fn`，直到成功或达到最大重试次数。
-// 8. 如果所有重试都失败，则返回最后一次 `fn` 执行时遇到的错误。
 func Retry(ctx context.Context, fn RetryFunc, cfg RetryConfig) error {
 	var err error
 	backoff := cfg.InitialBackoff
@@ -67,8 +58,11 @@ func Retry(ctx context.Context, fn RetryFunc, cfg RetryConfig) error {
 
 		// 如果已达到最大重试次数，则不再继续，跳出循环并返回最后一次的错误
 		if i == cfg.MaxRetries {
+			slog.Warn("Maximum retries reached", "retries", i, "error", err)
 			break
 		}
+
+		slog.Warn("Retry attempt failed", "attempt", i+1, "next_backoff", backoff, "error", err)
 
 		// 在两次重试之间，检查上下文是否被取消
 		select {

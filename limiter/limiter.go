@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -24,6 +25,7 @@ type LocalLimiter struct {
 // NewLocalLimiter 创建本地限流器。
 // r: 每秒填充速率，b: 桶容量。
 func NewLocalLimiter(r rate.Limit, b int) *LocalLimiter {
+	slog.Info("LocalLimiter initialized", "rate", r, "burst", b)
 	return &LocalLimiter{
 		limiter: rate.NewLimiter(r, b),
 	}
@@ -90,6 +92,7 @@ func NewRedisLimiter(client *redis.Client, rate int, _ time.Duration) *RedisLimi
 	if burst <= 0 {
 		burst = 1
 	}
+	slog.Info("RedisLimiter initialized", "rate", rate, "burst", burst)
 	return &RedisLimiter{
 		client: client,
 		rate:   rate,
