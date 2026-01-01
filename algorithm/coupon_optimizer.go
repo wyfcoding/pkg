@@ -81,7 +81,7 @@ func (co *CouponOptimizer) OptimalCombination(
 		combination := make([]Coupon, 0)
 
 		// 根据mask的位来构建当前组合。
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if mask&(1<<i) != 0 { // 如果第i位是1，则选中第i个优惠券。
 				combination = append(combination, available[i])
 			}

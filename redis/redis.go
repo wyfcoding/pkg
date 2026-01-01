@@ -123,7 +123,7 @@ func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (*redis.Client, 
 }
 
 // PFAdd 增加 HyperLogLog 元素 (基数统计)
-func PFAdd(ctx context.Context, client *redis.Client, key string, els ...interface{}) error {
+func PFAdd(ctx context.Context, client *redis.Client, key string, els ...any) error {
 	return client.PFAdd(ctx, key, els...).Err()
 }
 

@@ -97,7 +97,7 @@ func (sl *SkipList[K, V]) Insert(key K, value V) {
 		next:  make([]*SkipListNode[K, V], lvl),
 	}
 
-	for i := 0; i < lvl; i++ {
+	for i := range lvl {
 		newNode.next[i] = update[i].next[i]
 		update[i].next[i] = newNode
 	}

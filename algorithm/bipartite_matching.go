@@ -1,8 +1,10 @@
 package algorithm
 
 import (
+	"log/slog"
 	"math"
 	"sync"
+	"time"
 )
 
 // WeightedBipartiteGraph 结构体代表一个带权的二分图。
@@ -20,10 +22,7 @@ type WeightedBipartiteGraph struct {
 
 // NewWeightedBipartiteGraph 创建一个新的带权二分图
 func NewWeightedBipartiteGraph(nx, ny int) *WeightedBipartiteGraph {
-	maxNodes := nx
-	if ny > nx {
-		maxNodes = ny
-	}
+	maxNodes := max(nx, ny)
 
 	weights := make([][]float64, maxNodes)
 	for i := range weights {
@@ -77,6 +76,7 @@ func (g *WeightedBipartiteGraph) dfs(u int) bool {
 
 // Solve 运行 KM 算法，返回最大权重和。
 func (g *WeightedBipartiteGraph) Solve() float64 {
+	start := time.Now()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -137,11 +137,14 @@ func (g *WeightedBipartiteGraph) Solve() float64 {
 	}
 
 	res := 0.0
+	matchCount := 0
 	for i := 0; i < g.ny; i++ {
 		if g.matchY[i] != -1 {
 			res += g.weights[g.matchY[i]][i]
+			matchCount++
 		}
 	}
+	slog.Info("Weighted bipartite matching Solve completed", "nx", g.nx, "ny", g.ny, "matches", matchCount, "weight_sum", res, "duration", time.Since(start))
 	return res
 }
 

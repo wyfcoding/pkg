@@ -44,7 +44,7 @@ func (ch *ConsistentHash) Add(nodes ...string) {
 	for _, node := range nodes {
 		for i := 0; i < ch.replicas; i++ {
 			// 为每个虚拟节点计算哈希值
-			hash := int(ch.hash([]byte(fmt.Sprintf("%d%s", i, node))))
+			hash := int(ch.hash(fmt.Appendf(nil, "%d%s", i, node)))
 			ch.keys = append(ch.keys, hash)
 			ch.hashMap[hash] = node
 		}
@@ -83,7 +83,7 @@ func (ch *ConsistentHash) Remove(node string) {
 	defer ch.mu.Unlock()
 
 	for i := 0; i < ch.replicas; i++ {
-		hash := int(ch.hash([]byte(fmt.Sprintf("%d%s", i, node))))
+		hash := int(ch.hash(fmt.Appendf(nil, "%d%s", i, node)))
 		// 从有序 keys 中移除
 		idx := sort.SearchInts(ch.keys, hash)
 		if idx < len(ch.keys) && ch.keys[idx] == hash {

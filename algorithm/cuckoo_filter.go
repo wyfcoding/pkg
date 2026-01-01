@@ -51,7 +51,7 @@ func (cf *CuckooFilter) Add(data []byte) bool {
 		i = i2
 	}
 
-	for k := 0; k < maxKicks; k++ {
+	for range maxKicks {
 		slot := rand.Intn(bucketSize)
 		// 踢出旧指纹，换入新指纹
 		oldFp := cf.buckets[i][slot]

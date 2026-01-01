@@ -164,10 +164,7 @@ func (p *Processor) send(msg OutboxMessage) {
 	}
 
 	// 发送失败：增加重试次数，计算下次重试时间（指数退避策略）
-	backoff := time.Duration(1<<uint(msg.RetryCount)) * time.Minute
-	if backoff > 24*time.Hour {
-		backoff = 24 * time.Hour
-	}
+	backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour)
 
 	updates := map[string]any{
 		"retry_count": msg.RetryCount + 1,

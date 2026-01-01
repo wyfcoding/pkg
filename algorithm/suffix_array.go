@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"log/slog"
 	"sort"
 	"sync"
 )
@@ -18,6 +19,7 @@ type SuffixArray struct {
 // NewSuffixArray 创建并返回一个新的 SuffixArray 实例。
 // text: 用于构建后缀数组的原始字符串。
 func NewSuffixArray(text string) *SuffixArray {
+	slog.Debug("Building SuffixArray", "text_len", len(text))
 	sa := &SuffixArray{
 		text: text,
 		sa:   make([]int, len(text)),
@@ -142,10 +144,7 @@ func (sa *SuffixArray) Search(pattern string) []int {
 
 // getSuffix 获取从 start 开始长度为 length 的后缀（处理越界）
 func (sa *SuffixArray) getSuffix(start, length int) string {
-	end := start + length
-	if end > len(sa.text) {
-		end = len(sa.text)
-	}
+	end := min(start+length, len(sa.text))
 	return sa.text[start:end]
 }
 

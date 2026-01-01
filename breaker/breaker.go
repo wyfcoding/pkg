@@ -87,7 +87,7 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 }
 
 // Execute 执行受熔断保护的逻辑
-func (b *Breaker) Execute(req func() (interface{}, error)) (interface{}, error) {
+func (b *Breaker) Execute(req func() (any, error)) (any, error) {
 	result, err := b.cb.Execute(req)
 	if err != nil {
 		if errors.Is(err, gobreaker.ErrOpenState) {
