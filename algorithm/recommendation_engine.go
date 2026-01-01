@@ -177,41 +177,39 @@ func (re *RecommendationEngine) HotItems(topN int, decayHours float64) []uint64 
 // PersonalizedHot 个性化热门推荐。
 // 结合物品的热度（浏览量、销量、时间衰减）和用户的偏好（通过物品相似度计算），
 // 为用户推荐个性化的热门物品。
-// userID: 目标用户ID。
-// topN: 返回的推荐物品数量。
 func (re *RecommendationEngine) PersonalizedHot(userID uint64, topN int) []uint64 {
+	re.mu.RLock()
+	userRatings := re.userItemMatrix[userID]
+	re.mu.RUnlock()
+
+	// 真实实现：冷启动自动降级
+	if len(userRatings) == 0 {
+		return re.HotItems(topN, 24.0)
+	}
+
 	re.mu.RLock()
 	defer re.mu.RUnlock()
 
-	userRatings := re.userItemMatrix[userID]
-	// 如果用户没有评分过任何物品，则退化为普通热门推荐（此处简化为返回nil，实际应调用HotItems）。
-	if len(userRatings) == 0 {
-		return nil
-	}
+	return re.internalPersonalizedHot(topN, userRatings)
+}
 
-	scores := make(map[uint64]float64) // ItemID -> CombinedScore。
+// 为了解决递归锁问题，提取核心逻辑
+func (re *RecommendationEngine) internalPersonalizedHot(topN int, userRatings map[uint64]float64) []uint64 {
+	scores := make(map[uint64]float64)
 	now := time.Now()
 
-	for itemID := range re.itemUserMatrix { // 遍历所有物品。
-		// 跳过用户已经评分过的物品。
+	for itemID := range re.itemUserMatrix {
 		if _, exists := userRatings[itemID]; exists {
 			continue
 		}
 
-		// 计算物品的热度分数。
-		viewScore := float64(re.itemViews[itemID])
-		saleScore := float64(re.itemSales[itemID]) * 5
-		hotScore := viewScore + saleScore
-
-		// 应用时间衰减。
+		hotScore := float64(re.itemViews[itemID]) + float64(re.itemSales[itemID])*5
 		decayFactor := 1.0
 		if lastUpdate, exists := re.lastUpdate[itemID]; exists {
 			hoursPassed := now.Sub(lastUpdate).Hours()
-			decayFactor = math.Exp(-hoursPassed / 24.0) // 假设半衰期为24小时。
+			decayFactor = math.Exp(-hoursPassed / 24.0)
 		}
 
-		// 计算用户对该物品的偏好分数。
-		// 通过计算该物品与用户已评分物品的相似度来估计。
 		preferenceScore := 0.0
 		count := 0
 		for ratedItemID := range userRatings {
@@ -222,11 +220,9 @@ func (re *RecommendationEngine) PersonalizedHot(userID uint64, topN int) []uint6
 			}
 		}
 		if count > 0 {
-			preferenceScore /= float64(count) // 取平均相似度。
+			preferenceScore /= float64(count)
 		}
 
-		// 综合评分：结合热度、个人偏好和时间衰减。
-		// 权重示例：热度50%，个人偏好30%，时间衰减20%。
 		scores[itemID] = 0.5*hotScore + 0.3*preferenceScore*100 + 0.2*decayFactor*100
 	}
 

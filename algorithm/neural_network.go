@@ -22,33 +22,31 @@ type NeuralNetwork struct {
 
 // Layer 结构体代表神经网络中的一个层。
 type Layer struct {
-	weights [][]float64 // 权重矩阵，连接当前层神经元和下一层神经元。
-	bias    []float64   // 偏置向量，为下一层每个神经元增加一个偏移量。
-	output  []float64   // 当前层的输出值（在前向传播过程中计算）。
+	weights [][]float64 // 权重矩阵
+	bias    []float64   // 偏置向量
+	input   []float64   // 该层的输入 (用于反向传播)
+	output  []float64   // 该层的输出 (用于反向传播)
 }
 
 // NewNeuralNetwork 创建并返回一个新的 NeuralNetwork 实例。
-// layerSizes: 一个整数切片，定义了神经网络中每一层的神经元数量。
-// 例如，[2, 3, 1] 表示一个输入层有2个神经元，一个隐藏层有3个神经元，一个输出层有1个神经元。
 func NewNeuralNetwork(layerSizes []int) *NeuralNetwork {
 	nn := &NeuralNetwork{
-		layers: make([]*Layer, len(layerSizes)-1), // 层的数量是 (输入层到输出层) - 1。
+		layers: make([]*Layer, len(layerSizes)-1),
 	}
 
-	// 遍历并初始化每一层（除了输入层本身）。
 	for i := 0; i < len(layerSizes)-1; i++ {
 		nn.layers[i] = &Layer{
-			weights: make([][]float64, layerSizes[i]), // 权重矩阵的行数等于当前层神经元数量。
-			bias:    make([]float64, layerSizes[i+1]), // 偏置向量的长度等于下一层神经元数量。
-			output:  make([]float64, layerSizes[i+1]), // 输出向量的长度等于下一层神经元数量。
+			weights: make([][]float64, layerSizes[i]),
+			bias:    make([]float64, layerSizes[i+1]),
+			output:  make([]float64, layerSizes[i+1]),
 		}
 
-		// 随机初始化权重。
-		// 权重通常初始化为接近0的小随机数，以打破对称性，帮助模型学习。
 		for j := 0; j < layerSizes[i]; j++ {
 			nn.layers[i].weights[j] = make([]float64, layerSizes[i+1])
 			for k := 0; k < layerSizes[i+1]; k++ {
-				nn.layers[i].weights[j][k] = (rand.Float64() - 0.5) * 2 // 随机值范围在 [-1, 1]。
+				// Xavier/Glorot 初始化启发
+				stdDev := math.Sqrt(2.0 / float64(layerSizes[i]+layerSizes[i+1]))
+				nn.layers[i].weights[j][k] = (rand.Float64()*2 - 1) * stdDev
 			}
 		}
 	}
@@ -56,71 +54,88 @@ func NewNeuralNetwork(layerSizes []int) *NeuralNetwork {
 	return nn
 }
 
-// Forward 执行神经网络的前向传播过程。
-// input: 神经网络的输入特征向量。
-// 返回神经网络的输出结果。
+// Forward 执行前向传播并存储中间状态
 func (nn *NeuralNetwork) Forward(input []float64) []float64 {
-	nn.mu.RLock()         // 前向传播只需要读锁。
-	defer nn.mu.RUnlock() // 确保函数退出时解锁。
+	// 注意：内部训练使用时不需要重新加锁，但为了保持公开 API 的安全，这里做逻辑拆分
+	return nn.internalForward(input)
+}
 
-	current := input // 当前层的输入。
-
-	// 遍历每一层，计算其输出。
+func (nn *NeuralNetwork) internalForward(input []float64) []float64 {
+	current := input
 	for _, layer := range nn.layers {
-		next := make([]float64, len(layer.bias)) // 下一层的输入（当前层的输出）。
-
-		// 对下一层的每个神经元进行计算。
+		layer.input = current
+		next := make([]float64, len(layer.bias))
 		for j := 0; j < len(layer.bias); j++ {
-			sum := layer.bias[j] // 加上偏置。
-			// 累加当前层所有神经元的加权和。
+			sum := layer.bias[j]
 			for i := 0; i < len(current); i++ {
 				sum += current[i] * layer.weights[i][j]
 			}
-			next[j] = nn.sigmoid(sum) // 应用激活函数。
+			next[j] = nn.sigmoid(sum)
 		}
-
-		current = next // 将当前层的输出作为下一层的输入。
+		layer.output = next
+		current = next
 	}
-
-	return current // 返回最终输出层的输出。
+	return current
 }
 
 // sigmoid 是一个常用的激活函数。
-// 它将输入值压缩到 (0, 1) 的范围内，常用于输出层或隐藏层。
 func (nn *NeuralNetwork) sigmoid(x float64) float64 {
 	return 1.0 / (1.0 + math.Exp(-x))
 }
 
-// Train 训练神经网络模型，使用简化的反向传播算法。
-// 注意：此实现中的反向传播是高度简化的，仅用于演示目的。
-// 实际的神经网络训练涉及更复杂的梯度计算、链式法则和优化器（如梯度下降）。
-// 应用场景：复杂用户行为预测、推荐系统、图像识别等。
-// points: 训练数据集的特征点切片。
-// labels: 每个数据点对应的真实标签。
-// learningRate: 学习率，控制每次权重更新的步长。
-// iterations: 训练迭代次数（epochs）。
+// sigmoidDerivative 计算 Sigmoid 函数的导数: f'(x) = f(x) * (1 - f(x))
+func (nn *NeuralNetwork) sigmoidDerivative(output float64) float64 {
+	return output * (1.0 - output)
+}
+
+// Train 训练神经网络模型，使用真实的反向传播算法。
 func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate float64, iterations int) {
-	nn.mu.Lock()         // 训练过程需要加写锁。
-	defer nn.mu.Unlock() // 确保函数退出时解锁。
+	nn.mu.Lock()
+	defer nn.mu.Unlock()
 
-	for range iterations {
+	for iter := 0; iter < iterations; iter++ {
 		for i, p := range points {
-			// 前向传播：计算当前输入的网络输出。
-			output := nn.Forward(p.Data)
+			// 1. 前向传播
+			output := nn.internalForward(p.Data)
 
-			// 计算误差（这里是简单的差值，通常会使用损失函数）。
+			// 2. 反向传播：计算 Deltas (误差项)
+			deltas := make([][]float64, len(nn.layers))
+
+			// 输出层 Delta: (target - output) * sigmoid'(output)
 			target := float64(labels[i])
-			error := target - output[0] // 假设输出层只有一个神经元。
+			lastLayerIdx := len(nn.layers) - 1
+			outLayer := nn.layers[lastLayerIdx]
+			deltas[lastLayerIdx] = make([]float64, len(outLayer.output))
+			for j := 0; j < len(outLayer.output); j++ {
+				// 这里假设输出层只有一个神经元 (针对二分类)
+				err := target - output[j]
+				deltas[lastLayerIdx][j] = err * nn.sigmoidDerivative(outLayer.output[j])
+			}
 
-			// 简化的反向传播：
-			// 仅更新偏置项，且更新方式非常简单，未涉及权重更新和链式法则。
-			// 实际中，错误会从输出层反向传播到每一层，更新所有权重和偏置。
-			for j := 0; j < len(nn.layers); j++ {
-				layer := nn.layers[j]
-				for k := 0; k < len(layer.bias); k++ {
-					// 偏置的更新 = 学习率 * 误差。
-					// 这是一个非常简化的更新规则，实际中应使用误差关于偏置的梯度。
-					layer.bias[k] += learningRate * error
+			// 隐藏层 Deltas (从后往前算)
+			for l := lastLayerIdx - 1; l >= 0; l-- {
+				currLayer := nn.layers[l]
+				nextLayer := nn.layers[l+1]
+				deltas[l] = make([]float64, len(currLayer.output))
+				for j := 0; j < len(currLayer.output); j++ {
+					var err float64
+					for k := 0; k < len(nextLayer.bias); k++ {
+						// 误差反向传导：使用下一层的权重
+						err += deltas[l+1][k] * nextLayer.weights[j][k]
+					}
+					deltas[l][j] = err * nn.sigmoidDerivative(currLayer.output[j])
+				}
+			}
+
+			// 3. 更新权重和偏置
+			for l, layer := range nn.layers {
+				for j := 0; j < len(layer.bias); j++ {
+					// 更新权重: w = w + lr * delta * input
+					for k := 0; k < len(layer.input); k++ {
+						layer.weights[k][j] += learningRate * deltas[l][j] * layer.input[k]
+					}
+					// 更新偏置: b = b + lr * delta
+					layer.bias[j] += learningRate * deltas[l][j]
 				}
 			}
 		}
