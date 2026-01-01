@@ -14,7 +14,7 @@ type DynamicRiskEngine struct {
 }
 
 func NewDynamicRiskEngine(logger *slog.Logger) *DynamicRiskEngine {
-	engine := ruleengine.NewEngine()
+	engine := ruleengine.NewEngine(logger)
 	dre := &DynamicRiskEngine{
 		re:     engine,
 		logger: logger,
@@ -25,28 +25,34 @@ func NewDynamicRiskEngine(logger *slog.Logger) *DynamicRiskEngine {
 
 func (e *DynamicRiskEngine) initDefaultRules() {
 	// 规则 1: 黑名单拦截
-	_ = e.re.AddRule(ruleengine.Rule{
+	if err := e.re.AddRule(ruleengine.Rule{
 		ID:         "R001",
 		Name:       "Blacklist Check",
 		Expression: "user_id == 888 || client_ip == '1.2.3.4'",
 		Metadata:   map[string]any{"level": Reject, "code": "USER_IN_BLACKLIST"},
-	})
+	}); err != nil {
+		e.logger.Error("failed to add default rule R001", "error", err)
+	}
 
 	// 规则 2: 大额且未实名拦截
-	_ = e.re.AddRule(ruleengine.Rule{
+	if err := e.re.AddRule(ruleengine.Rule{
 		ID:         "R002",
 		Name:       "High Value Unverified",
 		Expression: "amount > 100000 && !is_real_name",
 		Metadata:   map[string]any{"level": Reject, "code": "HIGH_VALUE_NO_VERIFY"},
-	})
+	}); err != nil {
+		e.logger.Error("failed to add default rule R002", "error", err)
+	}
 
 	// 规则 3: 疑似欺诈行为审核
-	_ = e.re.AddRule(ruleengine.Rule{
+	if err := e.re.AddRule(ruleengine.Rule{
 		ID:         "R003",
 		Name:       "Suspicious Frequency",
 		Expression: "daily_count > 50",
 		Metadata:   map[string]any{"level": Review, "code": "HIGH_FREQUENCY"},
-	})
+	}); err != nil {
+		e.logger.Error("failed to add default rule R003", "error", err)
+	}
 }
 
 func (e *DynamicRiskEngine) Assess(ctx context.Context, action string, data map[string]any) (*Assessment, error) {
@@ -59,17 +65,21 @@ func (e *DynamicRiskEngine) Assess(ctx context.Context, action string, data map[
 	finalAssessment := &Assessment{Level: Pass, Code: "OK", Score: 0}
 
 	for _, hit := range hits {
-		levelStr, _ := hit.Metadata["level"].(Level)
+		levelStr, ok := hit.Metadata["level"].(Level)
+		if !ok {
+			continue
+		}
 		if levelStr == Reject {
+			code, _ := hit.Metadata["code"].(string)
 			return &Assessment{
 				Level:  Reject,
-				Code:   hit.Metadata["code"].(string),
+				Code:   code,
 				Reason: "Rule hit: " + hit.RuleID,
 			}, nil
 		}
 		if levelStr == Review {
 			finalAssessment.Level = Review
-			finalAssessment.Code = hit.Metadata["code"].(string)
+			finalAssessment.Code, _ = hit.Metadata["code"].(string)
 		}
 	}
 

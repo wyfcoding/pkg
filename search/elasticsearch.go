@@ -107,7 +107,11 @@ func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client,
 
 // Search 执行带全方位治理的搜索
 func (c *Client) Search(ctx context.Context, index string, query map[string]any, results any) error {
-	if allowed, _ := c.limiter.Allow(ctx, "es-search"); !allowed {
+	allowed, err := c.limiter.Allow(ctx, "es-search")
+	if err != nil {
+		c.logger.ErrorContext(ctx, "limiter error", "error", err)
+	}
+	if !allowed {
 		return fmt.Errorf("es rate limit exceeded")
 	}
 
@@ -115,11 +119,14 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 	start := time.Now()
 
 	// 熔断执行 (使用 pkg/breaker)
-	_, err := c.cb.Execute(func() (any, error) {
+	_, err = c.cb.Execute(func() (any, error) {
 		ctx, span := tracing.StartSpan(ctx, "ES.Search")
 		defer span.End()
 
-		queryJSON, _ := json.Marshal(query)
+		queryJSON, err := json.Marshal(query)
+		if err != nil {
+			return nil, fmt.Errorf("marshal query failed: %w", err)
+		}
 		tracing.AddTag(ctx, "db.system", "elasticsearch")
 		tracing.AddTag(ctx, "db.index", index)
 		tracing.AddTag(ctx, "db.statement", string(queryJSON))
@@ -134,7 +141,11 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 			tracing.SetError(ctx, err)
 			return nil, err
 		}
-		defer res.Body.Close()
+		defer func() {
+			if cerr := res.Body.Close(); cerr != nil {
+				c.logger.ErrorContext(ctx, "failed to close ES response body", "error", cerr)
+			}
+		}()
 
 		if res.IsError() {
 			c.record(index, operation, "fail", start)
@@ -159,7 +170,14 @@ func (c *Client) Bulk(ctx context.Context, body io.Reader) error {
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			c.logger.ErrorContext(ctx, "failed to close ES bulk response body", "error", cerr)
+		}
+	}()
+	if res.IsError() {
+		return fmt.Errorf("es bulk error: %s", res.Status())
+	}
 	return nil
 }
 

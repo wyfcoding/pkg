@@ -3,6 +3,7 @@ package ruleengine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/expr-lang/expr"
@@ -30,12 +31,17 @@ type Engine struct {
 	mu       sync.RWMutex
 	rules    map[string]*Rule
 	programs map[string]*vm.Program
+	logger   *slog.Logger
 }
 
-func NewEngine() *Engine {
+func NewEngine(logger *slog.Logger) *Engine {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Engine{
 		rules:    make(map[string]*Rule),
 		programs: make(map[string]*vm.Program),
+		logger:   logger,
 	}
 }
 
@@ -94,6 +100,8 @@ func (e *Engine) ExecuteAll(ctx context.Context, facts map[string]any) ([]*Resul
 	for id, program := range e.programs {
 		output, err := expr.Run(program, facts)
 		if err != nil {
+			// 按照项目要求，不忽略错误，至少输出结构化日志
+			e.logger.ErrorContext(ctx, "rule execution error", "rule_id", id, "error", err)
 			continue
 		}
 
