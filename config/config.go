@@ -291,7 +291,7 @@ func PrintWithMask(conf any) {
 		slog.Error("failed to marshal masked config", "error", err)
 		return
 	}
-	fmt.Printf("--- Current Effective Configuration ---\n%s\n---------------------------------------\n", string(maskedJSON))
+	slog.Info("Current effective configuration", "config", string(maskedJSON))
 }
 
 func mask(m map[string]any) {

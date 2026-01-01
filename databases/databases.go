@@ -3,6 +3,7 @@ package databases
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -40,7 +41,7 @@ func (db *DB) Close() error {
 	}
 	err = sqlDB.Close()
 	if err == nil {
-		fmt.Printf("Database connection closed: %s\n", db.name)
+		slog.Info("Database connection closed", "name", db.name)
 	}
 	return err
 }
