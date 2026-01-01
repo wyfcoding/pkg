@@ -13,7 +13,7 @@ type State string
 type Event string
 
 // Handler 状态转换处理函数
-type Handler func(ctx context.Context, from State, to State, args ...interface{}) error
+type Handler func(ctx context.Context, from State, to State, args ...any) error
 
 // Transition 状态转换定义
 type Transition struct {
@@ -69,7 +69,7 @@ func (m *Machine) Current() State {
 }
 
 // Trigger 触发事件
-func (m *Machine) Trigger(ctx context.Context, event Event, args ...interface{}) error {
+func (m *Machine) Trigger(ctx context.Context, event Event, args ...any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
