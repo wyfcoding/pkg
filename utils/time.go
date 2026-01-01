@@ -43,3 +43,28 @@ func StartOfDay(t time.Time) time.Time {
 func EndOfDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, t.Location())
 }
+
+// IsHoliday 判断给定日期是否为节假日（简化版，仅包含周末和固定日期的主要节假日）。
+func IsHoliday(t time.Time) bool {
+	// 1. 周末判断
+	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
+		return true
+	}
+
+	// 2. 固定日期节假日判断 (示例：元旦、劳动节、国庆节)
+	month := t.Month()
+	day := t.Day()
+
+	if month == time.January && day == 1 { // 元旦
+		return true
+	}
+	if month == time.May && day == 1 { // 劳动节
+		return true
+	}
+	if month == time.October && (day >= 1 && day <= 3) { // 国庆节 (前3天)
+		return true
+	}
+
+	// 注意：由于农历节假日每年变动，建议生产环境对接专门的日历服务。
+	return false
+}
