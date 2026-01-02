@@ -2,9 +2,12 @@
 package algorithm
 
 import (
+	"fmt"
 	"sync"
+	"time"
 
 	"github.com/shopspring/decimal"
+	"github.com/wyfcoding/pkg/idgen"
 )
 
 // Order 订单结构
@@ -303,7 +306,7 @@ func (me *MatchingEngine) Match(order *Order) []*Trade {
 					bestAsk.HiddenQty = bestAsk.HiddenQty.Sub(refreshQty)
 
 					// 刷新时间戳以失去当前价位的时间优先权（符合行业标准）
-					bestAsk.Timestamp = order.Timestamp + 1 // 模拟稍后
+					bestAsk.Timestamp = time.Now().UnixNano()
 
 					// 重新插入订单簿（先删后加）
 					me.orderBook.RemoveOrder(bestAsk.OrderID)
@@ -328,45 +331,44 @@ func (me *MatchingEngine) Match(order *Order) []*Trade {
 			}
 
 			// 创建交易记录
-			trade := &Trade{
-				TradeID:     generateTradeID(),
-				Symbol:      order.Symbol,
-				BuyOrderID:  bestBid.OrderID,
-				SellOrderID: order.OrderID,
-				BuyUserID:   bestBid.UserID,
-				SellUserID:  order.UserID,
-				Price:       bestBid.Price,
-				Quantity:    matchQty,
-				Timestamp:   order.Timestamp,
-			}
-			trades = append(trades, trade)
-
-			// 更新订单数量
-			order.Quantity = order.Quantity.Sub(matchQty)
-			bestBid.Quantity = bestBid.Quantity.Sub(matchQty)
-
-			// 如果买单已完全成交，检查是否为冰山单需要刷新
-			if bestBid.Quantity.Equal(decimal.Zero) {
-				if bestBid.IsIceberg && bestBid.HiddenQty.GreaterThan(decimal.Zero) {
-					// 刷新买方冰山单
-					refreshQty := bestBid.DisplayQty
-					if refreshQty.GreaterThan(bestBid.HiddenQty) {
-						refreshQty = bestBid.HiddenQty
-					}
-					bestBid.Quantity = refreshQty
-					bestBid.HiddenQty = bestBid.HiddenQty.Sub(refreshQty)
-
-					// 刷新时间戳以失去时间优先权
-					bestBid.Timestamp = order.Timestamp + 1
-
-					// 重新插入订单簿
-					me.orderBook.RemoveOrder(bestBid.OrderID)
-					me.orderBook.AddOrder(bestBid)
-				} else {
-					me.orderBook.RemoveOrder(bestBid.OrderID)
-				}
-			}
-		}
+								trade := &Trade{
+									TradeID:     generateTradeID(),
+									Symbol:      order.Symbol,
+									BuyOrderID:  bestBid.OrderID,
+									SellOrderID: order.OrderID,
+									BuyUserID:   bestBid.UserID,
+									SellUserID:  order.UserID,
+									Price:       bestBid.Price,
+									Quantity:    matchQty,
+									Timestamp:   time.Now().UnixNano(),
+								}
+								trades = append(trades, trade)
+			
+								// 更新订单数量
+								order.Quantity = order.Quantity.Sub(matchQty)
+								bestBid.Quantity = bestBid.Quantity.Sub(matchQty)
+			
+								// 如果买单已完全成交，检查是否为冰山单需要刷新
+								if bestBid.Quantity.Equal(decimal.Zero) {
+									if bestBid.IsIceberg && bestBid.HiddenQty.GreaterThan(decimal.Zero) {
+										// 刷新买方冰山单
+										refreshQty := bestBid.DisplayQty
+										if refreshQty.GreaterThan(bestBid.HiddenQty) {
+											refreshQty = bestBid.HiddenQty
+										}
+										bestBid.Quantity = refreshQty
+										bestBid.HiddenQty = bestBid.HiddenQty.Sub(refreshQty)
+			
+										// 刷新时间戳以失去时间优先权
+										bestBid.Timestamp = time.Now().UnixNano()
+			
+										// 重新插入订单簿
+										me.orderBook.RemoveOrder(bestBid.OrderID)
+										me.orderBook.AddOrder(bestBid)
+									} else {
+										me.orderBook.RemoveOrder(bestBid.OrderID)
+									}
+								}		}
 	}
 
 	// 如果订单还有剩余，添加到订单簿。
@@ -409,6 +411,5 @@ func (me *MatchingEngine) GetAsks(depth int) []*OrderBookLevel {
 
 // generateTradeID 生成交易 ID
 func generateTradeID() string {
-	// 实际应用中应使用雪花 ID 或 UUID
-	return ""
+	return fmt.Sprintf("TRD%d", idgen.GenID())
 }
