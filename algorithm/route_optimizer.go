@@ -89,18 +89,18 @@ func (ro *RouteOptimizer) ClarkeWrightVRP(start Location, destinations []Locatio
 	}
 	n := len(destinations)
 	routes := make([][]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		routes[i] = []int{i}
 	}
 
 	// 2. 计算 Savings：S(i,j) = d(0,i) + d(0,j) - d(i,j)
 	savings := make([]saving, 0, n*(n-1)/2)
 	distToStart := make([]float64, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		distToStart[i] = HaversineDistance(start.Lat, start.Lon, destinations[i].Lat, destinations[i].Lon)
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		for j := i + 1; j < n; j++ {
 			d_ij := HaversineDistance(destinations[i].Lat, destinations[i].Lon, destinations[j].Lat, destinations[j].Lon)
 			s := distToStart[i] + distToStart[j] - d_ij

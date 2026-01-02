@@ -38,7 +38,7 @@ func (svm *SVM) Train(points []*SVMPoint, labels []int, learningRate float64, it
 	dim := len(svm.weights)
 	lambda := 0.01 // 正则化参数
 
-	for iter := 0; iter < iterations; iter++ {
+	for range iterations {
 		for i, p := range points {
 			// 将标签从 0/1 转换为 -1/1
 			label := float64(labels[i])
@@ -48,7 +48,7 @@ func (svm *SVM) Train(points []*SVMPoint, labels []int, learningRate float64, it
 
 			// 计算 y * (w * x + b)
 			dotProduct := svm.bias
-			for j := 0; j < dim; j++ {
+			for j := range dim {
 				dotProduct += svm.weights[j] * p.Data[j]
 			}
 
@@ -56,14 +56,14 @@ func (svm *SVM) Train(points []*SVMPoint, labels []int, learningRate float64, it
 			// 如果 label * pred < 1, 说明该点在间隔内或分类错误
 			if label*dotProduct < 1 {
 				// 更新权重: w = w + lr * (label * x - 2 * lambda * w)
-				for j := 0; j < dim; j++ {
+				for j := range dim {
 					svm.weights[j] += learningRate * (label*p.Data[j] - 2*lambda*svm.weights[j])
 				}
 				// 更新偏置
 				svm.bias += learningRate * label
 			} else {
 				// 如果分类正确且在间隔外，仅应用正则化项（权重衰减）
-				for j := 0; j < dim; j++ {
+				for j := range dim {
 					svm.weights[j] += learningRate * (-2 * lambda * svm.weights[j])
 				}
 			}

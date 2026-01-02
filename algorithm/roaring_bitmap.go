@@ -76,7 +76,7 @@ func (rb *RoaringBitmap) And(other *RoaringBitmap) *RoaringBitmap {
 	for high, c1 := range rb.chunks {
 		if c2, ok := other.chunks[high]; ok {
 			resContainer := &bitmapContainer{data: make([]uint64, 1024)}
-			for i := 0; i < 1024; i++ {
+			for i := range 1024 {
 				resContainer.data[i] = c1.data[i] & c2.data[i]
 			}
 			resContainer.recalculateCard()
@@ -101,7 +101,7 @@ func (rb *RoaringBitmap) Or(other *RoaringBitmap) *RoaringBitmap {
 	// 合并 other
 	for h, c2 := range other.chunks {
 		if c1, ok := result.chunks[h]; ok {
-			for i := 0; i < 1024; i++ {
+			for i := range 1024 {
 				c1.data[i] |= c2.data[i]
 			}
 			c1.recalculateCard()

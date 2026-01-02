@@ -93,7 +93,7 @@ func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate flo
 	nn.mu.Lock()
 	defer nn.mu.Unlock()
 
-	for iter := 0; iter < iterations; iter++ {
+	for range iterations {
 		for i, p := range points {
 			// 1. 前向传播
 			output := nn.internalForward(p.Data)

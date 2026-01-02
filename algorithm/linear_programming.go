@@ -128,7 +128,7 @@ func (lp *LinearProgramming) SimplexMethod() []float64 {
 		for i := range rows {
 			if i != pivotRow {
 				factor := tableau[i][pivotCol]
-				for j := 0; j < cols; j++ {
+				for j := range cols {
 					tableau[i][j] -= factor * tableau[pivotRow][j]
 				}
 			}
