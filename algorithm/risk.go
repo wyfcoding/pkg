@@ -278,3 +278,38 @@ func (rc *RiskCalculator) calculateVariance(data []decimal.Decimal) (decimal.Dec
 
 	return varSum.Div(decimal.NewFromInt(int64(len(data)))), nil
 }
+
+// EvaluateFraudScore 根据多准则决策模型计算反欺诈风险评分。
+// factors: 各维度的风险原始分 (0-1)。
+// weights: 各维度的重要性权重 (之和应为 1)。
+// 返回 0-1 之间的最终风险评分。
+func (rc *RiskCalculator) EvaluateFraudScore(factors map[string]float64, weights map[string]float64) float64 {
+	if len(factors) == 0 {
+		return 0.0
+	}
+
+	totalScore := 0.0
+	weightSum := 0.0
+
+	for key, score := range factors {
+		w, ok := weights[key]
+		if !ok {
+			w = 1.0 / float64(len(factors)) // 默认等权重
+		}
+		totalScore += score * w
+		weightSum += w
+	}
+
+	if weightSum > 0 {
+		totalScore /= weightSum
+	}
+
+	// 归一化到 0-1 范围
+	if totalScore > 1.0 {
+		totalScore = 1.0
+	} else if totalScore < 0 {
+		totalScore = 0
+	}
+
+	return totalScore
+}
