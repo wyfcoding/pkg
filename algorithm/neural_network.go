@@ -88,56 +88,65 @@ func (nn *NeuralNetwork) sigmoidDerivative(output float64) float64 {
 	return output * (1.0 - output)
 }
 
-// Train 训练神经网络模型，使用真实的反向传播算法。
+// Train 训练神经网络模型，使用标准反向传播 (Backpropagation) 与随机梯度下降 (SGD)。
 func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate float64, iterations int) {
 	nn.mu.Lock()
 	defer nn.mu.Unlock()
 
-	for range iterations {
+	for iter := 0; iter < iterations; iter++ {
+		totalLoss := 0.0
 		for i, p := range points {
 			// 1. 前向传播
 			output := nn.internalForward(p.Data)
-
-			// 2. 反向传播：计算 Deltas (误差项)
-			deltas := make([][]float64, len(nn.layers))
-
-			// 输出层 Delta: (target - output) * sigmoid'(output)
 			target := float64(labels[i])
+
+			// 2. 计算输出层误差与 Delta
 			lastLayerIdx := len(nn.layers) - 1
 			outLayer := nn.layers[lastLayerIdx]
+			deltas := make([][]float64, len(nn.layers))
+			
 			deltas[lastLayerIdx] = make([]float64, len(outLayer.output))
 			for j := 0; j < len(outLayer.output); j++ {
-				// 这里假设输出层只有一个神经元 (针对二分类)
-				err := target - output[j]
+				// 均方误差 (MSE) 导数: (output - target)
+				err := output[j] - target 
+				totalLoss += 0.5 * err * err
+				// 输出层 Delta = err * f'(net)
 				deltas[lastLayerIdx][j] = err * nn.sigmoidDerivative(outLayer.output[j])
 			}
 
-			// 隐藏层 Deltas (从后往前算)
+			// 3. 隐藏层误差反向传播 (从后往前)
 			for l := lastLayerIdx - 1; l >= 0; l-- {
 				currLayer := nn.layers[l]
 				nextLayer := nn.layers[l+1]
 				deltas[l] = make([]float64, len(currLayer.output))
+				
 				for j := 0; j < len(currLayer.output); j++ {
 					var err float64
 					for k := 0; k < len(nextLayer.bias); k++ {
-						// 误差反向传导：使用下一层的权重
+						// 误差项 = Sum(下一层 Delta * 下一层权重)
 						err += deltas[l+1][k] * nextLayer.weights[j][k]
 					}
+					// 隐藏层 Delta = err * f'(net)
 					deltas[l][j] = err * nn.sigmoidDerivative(currLayer.output[j])
 				}
 			}
 
-			// 3. 更新权重和偏置
+			// 4. 执行参数更新 (权重 w 和 偏置 b)
 			for l, layer := range nn.layers {
 				for j := 0; j < len(layer.bias); j++ {
-					// 更新权重: w = w + lr * delta * input
+					// 梯度下降: w = w - lr * gradient
+					// 其中 gradient = delta * input
 					for k := 0; k < len(layer.input); k++ {
-						layer.weights[k][j] += learningRate * deltas[l][j] * layer.input[k]
+						layer.weights[k][j] -= learningRate * deltas[l][j] * layer.input[k]
 					}
-					// 更新偏置: b = b + lr * delta
-					layer.bias[j] += learningRate * deltas[l][j]
+					layer.bias[j] -= learningRate * deltas[l][j]
 				}
 			}
+		}
+		
+		// 顶级架构记录：可以在此处记录每轮迭代的 loss
+		if iter%10 == 0 {
+			// slog.Debug("NN training epoch finished", "iteration", iter, "loss", totalLoss/float64(len(points)))
 		}
 	}
 }
