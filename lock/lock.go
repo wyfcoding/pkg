@@ -21,8 +21,9 @@ var (
 type DistributedLock interface {
 	// Lock 尝试加锁 (一次性)
 	Lock(ctx context.Context, key string, ttl time.Duration) (string, error)
+	// TryLock 阻塞式加锁，在 waitTimeout 内不断重试
+	TryLock(ctx context.Context, key string, ttl time.Duration, waitTimeout time.Duration) (string, error)
 	// LockWithWatchdog 加锁并启动自动续期协程
-	// 它返回一个 stop 函数，业务执行完后必须调用 stop 停止看门狗
 	LockWithWatchdog(ctx context.Context, key string, ttl time.Duration) (string, func(), error)
 	// Unlock 安全释放锁 (校验所有权)
 	Unlock(ctx context.Context, key string, token string) error
@@ -36,7 +37,41 @@ func NewRedisLock(client *redis.Client) *RedisLock {
 	return &RedisLock{client: client}
 }
 
-// Lock 实现基础加锁逻辑
+// TryLock 实现带重试机制的阻塞加锁
+func (l *RedisLock) TryLock(ctx context.Context, key string, ttl time.Duration, waitTimeout time.Duration) (string, error) {
+	token, err := l.generateToken()
+	if err != nil {
+		return "", err
+	}
+
+	timer := time.NewTimer(waitTimeout)
+	defer timer.Stop()
+
+	// 初始重试间隔
+	retryInterval := 50 * time.Millisecond
+
+	for {
+		ok, err := l.client.SetNX(ctx, key, token, ttl).Result()
+		if err == nil && ok {
+			return token, nil
+		}
+
+		select {
+		case <-timer.C:
+			return "", ErrLockFailed
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(retryInterval):
+			// 指数退避，防止大量请求冲击 Redis
+			if retryInterval < 500*time.Millisecond {
+				retryInterval *= 2
+			}
+			continue
+		}
+	}
+}
+
+// Lock 实现基础加锁逻辑 (一次性)
 func (l *RedisLock) Lock(ctx context.Context, key string, ttl time.Duration) (string, error) {
 	token, err := l.generateToken()
 	if err != nil {
