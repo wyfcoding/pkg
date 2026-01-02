@@ -104,11 +104,11 @@ func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate flo
 			lastLayerIdx := len(nn.layers) - 1
 			outLayer := nn.layers[lastLayerIdx]
 			deltas := make([][]float64, len(nn.layers))
-			
+
 			deltas[lastLayerIdx] = make([]float64, len(outLayer.output))
 			for j := 0; j < len(outLayer.output); j++ {
 				// 均方误差 (MSE) 导数: (output - target)
-				err := output[j] - target 
+				err := output[j] - target
 				totalLoss += 0.5 * err * err
 				// 输出层 Delta = err * f'(net)
 				deltas[lastLayerIdx][j] = err * nn.sigmoidDerivative(outLayer.output[j])
@@ -119,7 +119,7 @@ func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate flo
 				currLayer := nn.layers[l]
 				nextLayer := nn.layers[l+1]
 				deltas[l] = make([]float64, len(currLayer.output))
-				
+
 				for j := 0; j < len(currLayer.output); j++ {
 					var err float64
 					for k := 0; k < len(nextLayer.bias); k++ {
@@ -143,7 +143,7 @@ func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate flo
 				}
 			}
 		}
-		
+
 		// 顶级架构记录：可以在此处记录每轮迭代的 loss
 		if iter%10 == 0 {
 			// slog.Debug("NN training epoch finished", "iteration", iter, "loss", totalLoss/float64(len(points)))

@@ -91,7 +91,7 @@ func (lp *LinearProgramming) Solve() ([]float64, float64, error) {
 		row := -1
 		for i := 0; i < lp.m; i++ {
 			if lp.tableau[i][j] == 1.0 {
-				if row != -1 { 
+				if row != -1 {
 					row = -2 // 非基变量
 					break
 				}

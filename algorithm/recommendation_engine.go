@@ -356,7 +356,7 @@ func (re *RecommendationEngine) RecommendWithScores(userID uint64, topN int) map
 	defer re.mu.RUnlock()
 
 	userRatings := re.userItemMatrix[userID]
-	
+
 	// 1. 尝试 User-Based CF 预测
 	similarities := make(map[uint64]float64)
 	for otherUserID := range re.userItemMatrix {

@@ -404,14 +404,14 @@ func (t *RBTree) LevelOrderTraversal() []*Order {
 	if t.Root == nil {
 		return nil
 	}
-	
+
 	result := make([]*Order, 0, t.Size)
 	queue := []*RBNode{t.Root}
-	
+
 	for len(queue) > 0 {
 		node := queue[0]
 		queue = queue[1:]
-		
+
 		result = append(result, node.Order)
 		if node.Left != nil {
 			queue = append(queue, node.Left)

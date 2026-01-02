@@ -18,7 +18,7 @@ type SVM struct {
 	mu      sync.RWMutex
 	kernel  string  // "linear" 或 "rbf"
 	gamma   float64 // RBF 专用参数
-	
+
 	// 用于核函数计算的训练支持向量
 	supportPoints [][]float64
 	alphas        []float64
