@@ -27,53 +27,49 @@ func NewNaiveBayes() *NaiveBayes {
 }
 
 // Train 训练朴素贝叶斯分类器模型。
-// 它根据给定的文档和对应的标签，计算各类别和特征的概率。
-// 应用场景：商品评论分类、内容审核、垃圾邮件识别等。
-// documents: 训练数据集，每个文档是一个词语（特征）切片。
-// labels: 每个文档对应的类别标签。
 func (nb *NaiveBayes) Train(documents [][]string, labels []string) {
-	nb.mu.Lock()         // 训练过程需要加写锁。
-	defer nb.mu.Unlock() // 确保函数退出时解锁。
+	nb.mu.Lock()
+	defer nb.mu.Unlock()
 
-	totalDocs := len(documents) // 训练文档总数。
+	totalDocs := len(documents)
+	globalVocabulary := make(map[string]bool)
 
-	// 步骤1: 计算每个类别的文档数量，进而计算类别的先验概率 P(C)。
+	// 步骤1: 计算类别先验概率并构建全局词汇表
 	for _, label := range labels {
 		nb.classCount[label]++
 	}
-
 	for label, count := range nb.classCount {
 		nb.classes[label] = float64(count) / float64(totalDocs)
 	}
 
-	// 步骤2: 统计每个特征（词）在每个类别中出现的次数。
+	// 步骤2: 统计各类别下的词频并汇总全局词汇
 	for i, doc := range documents {
 		label := labels[i]
-
 		if nb.featureCount[label] == nil {
 			nb.featureCount[label] = make(map[string]int)
 		}
-
 		for _, word := range doc {
 			nb.featureCount[label][word]++
+			globalVocabulary[word] = true
 		}
 	}
 
-	// 步骤3: 根据统计结果，计算每个特征在给定类别下的条件概率 P(F | C)。
-	// 为了避免零概率问题（即某个词在训练集中未出现，导致其概率为0），这里使用了拉普拉斯平滑。
+	// 步骤3: 使用全局词汇量进行标准拉普拉斯平滑计算 P(F | C)
+	vocabularySize := len(globalVocabulary)
+	if vocabularySize == 0 {
+		vocabularySize = 1 // 避免除以零
+	}
+
 	for label := range nb.classCount {
 		nb.features[label] = make(map[string]float64)
-
-		totalWords := 0 // 当前类别下所有词的总数。
+		totalWords := 0
 		for _, count := range nb.featureCount[label] {
 			totalWords += count
 		}
-		// 词汇表大小，用于拉普拉斯平滑，这里简化的使用了当前类别下不同词的数量。
-		// 更严谨的拉普拉斯平滑应使用整个训练集中的所有不同词的数量（词汇表大小）。
-		vocabularySize := len(nb.featureCount[label])
 
-		for word, count := range nb.featureCount[label] {
-			// 拉普拉斯平滑公式: P(F|C) = (Count(F,C) + 1) / (Count(C) + VocabularySize)
+		for word := range globalVocabulary {
+			count := nb.featureCount[label][word]
+			// 使用全局 vocabularySize 保证平滑一致性
 			nb.features[label][word] = float64(count+1) / float64(totalWords+vocabularySize)
 		}
 	}

@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"math"
 	"math/rand/v2" // 使用 Go 1.22+ 提供的新的 rand/v2 包。
 	"sync"
 )
@@ -43,17 +42,16 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 		bootstrapLabels := make([]int, len(labels))
 
 		for j := range points {
-			// 随机选择一个索引。
-			idx := int(math.Floor(rand.Float64() * float64(len(points))))
+			// 随机选择一个索引 (有放回采样)
+			idx := rand.IntN(len(points))
 			bootstrapPoints[j] = points[idx]
 			bootstrapLabels[j] = labels[idx]
 		}
 
 		// 步骤2: 训练决策树。
 		// 为每个Bootstrap数据集训练一个决策树。
-		// 这里假设 DecisionTree 已经存在于 algorithm 包中。
-		// DecisionTree 的参数（例如 maxDepth=10, minSample=5）需要根据具体问题调整。
-		tree := NewDecisionTree(10, 5)             // 创建一个新的决策树实例。
+		// 修正：补全 NewDecisionTree 的参数 (maxDepth, minSample, criterion)
+		tree := NewDecisionTree(10, 5, "gini")
 		tree.Fit(bootstrapPoints, bootstrapLabels) // 使用Bootstrap样本训练决策树。
 		rf.trees[i] = tree                         // 将训练好的决策树添加到森林中。
 	}
