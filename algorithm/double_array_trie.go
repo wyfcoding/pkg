@@ -145,21 +145,7 @@ func (dat *DoubleArrayTrie) ExactMatch(key string) bool {
 		return false
 	}
 
-	p := 0 // root index
-
-	// 遍历 key + 结束符
-	// 注意：Build 逻辑需要配合这里。为了简化，我们假设 Build 时已经处理了结构。
-	// 下面的逻辑是基于标准 DAT 跳转：next = base[curr] + code; if check[next] == curr -> ok
-
-	// 由于我们的 Build 逻辑并未显式处理 '\0' 结束符的自动追加，
-	// 这里我们需要调整 Build 逻辑或匹配逻辑。
-	// 为了代码健壮性，我们采用更通用的做法：
-	// 在 Build 时，对于每个 key，我们也插入一个特殊边（例如 code=0）来标记结束。
-
-	// 暂不支持直接运行，因为上面的 Build 逻辑省略了叶子节点处理细节。
-	// 鉴于 DAT 实现的复杂性，这里提供的是一个核心骨架。
-	// 实际生产中建议：输入 keys 时，手动给每个 key 加一个 # 结尾。
-
+	p := 0
 	for _, ch := range key {
 		code := int(ch)
 		base := dat.base[p]
@@ -171,17 +157,53 @@ func (dat *DoubleArrayTrie) ExactMatch(key string) bool {
 		p = next
 	}
 
-	// 最终检查：是否存在 code=0 的结束符转移
+	// 最终检查结束符转移
 	base := dat.base[p]
 	next := base + 0
-	if next < len(dat.check) && dat.check[next] == p {
-		return true
-	}
-
-	return false
+	return next < len(dat.check) && dat.check[next] == p
 }
 
-// resize 扩容数组
+// CommonPrefixSearch 寻找给定 key 的所有公共前缀匹配。
+// 例如：key="apple", 词典包含 "a", "app", "apple"，则返回这三个词。
+func (dat *DoubleArrayTrie) CommonPrefixSearch(key string) []string {
+	dat.mu.RLock()
+	defer dat.mu.RUnlock()
+
+	if len(dat.base) == 0 {
+		return nil
+	}
+
+	var results []string
+	p := 0 // root
+
+	for i, ch := range key {
+		// 1. 检查是否存在以当前节点结尾的完整词 (code=0)
+		base := dat.base[p]
+		endIdx := base + 0
+		if endIdx < len(dat.check) && dat.check[endIdx] == p {
+			results = append(results, key[:i])
+		}
+
+		// 2. 继续向下跳转
+		code := int(ch)
+		next := base + code
+		if next >= len(dat.check) || dat.check[next] != p {
+			return results
+		}
+		p = next
+	}
+
+	// 最终检查：key 自身是否也是一个完整词
+	base := dat.base[p]
+	endIdx := base + 0
+	if endIdx < len(dat.check) && dat.check[endIdx] == p {
+		results = append(results, key)
+	}
+
+	return results
+}
+
+// ... (existing helper methods stay same)
 func (dat *DoubleArrayTrie) resize(newSize int) {
 	newBase := make([]int, newSize)
 	newCheck := make([]int, newSize)
