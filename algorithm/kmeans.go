@@ -116,13 +116,13 @@ func (km *KMeans) Fit(points []*KMeansPoint) {
 
 		for j := 0; j < km.k; j++ {
 			count := 0
-			for d := 0; d < dim; d++ {
+			for d := range dim {
 				km.centroids[j][d] = 0
 			}
 
 			for _, p := range km.points {
 				if p.Label == j {
-					for d := 0; d < dim; d++ {
+					for d := range dim {
 						km.centroids[j][d] += p.Data[d]
 					}
 					count++
@@ -130,7 +130,7 @@ func (km *KMeans) Fit(points []*KMeansPoint) {
 			}
 
 			if count > 0 {
-				for d := 0; d < dim; d++ {
+				for d := range dim {
 					km.centroids[j][d] /= float64(count)
 				}
 			}

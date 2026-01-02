@@ -120,12 +120,12 @@ func (lp *LinearProgramming) SimplexMethod() []float64 {
 		// 3. 枢轴转动 (Pivoting)
 		pivotVal := tableau[pivotRow][pivotCol]
 		// 归一化枢轴行
-		for j := 0; j < cols; j++ {
+		for j := range cols {
 			tableau[pivotRow][j] /= pivotVal
 		}
 
 		// 消除其他行
-		for i := 0; i < rows; i++ {
+		for i := range rows {
 			if i != pivotRow {
 				factor := tableau[i][pivotCol]
 				for j := 0; j < cols; j++ {

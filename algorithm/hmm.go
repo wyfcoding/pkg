@@ -125,7 +125,7 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	maxProb := -1e20
 	maxIdx := 0
 
-	for j := 0; j < m; j++ {
+	for j := range m {
 		if dp[n-1][j] > maxProb {
 			maxProb = dp[n-1][j]
 			maxIdx = j
