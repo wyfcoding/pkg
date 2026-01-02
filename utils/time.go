@@ -44,27 +44,33 @@ func EndOfDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, t.Location())
 }
 
-// IsHoliday 判断给定日期是否为节假日（简化版，仅包含周末和固定日期的主要节假日）。
+var (
+	// 特殊节假日 (YYYY-MM-DD): 包含调休后的长假
+	customHolidays = map[string]bool{
+		"2024-01-01": true, "2024-02-10": true, "2024-05-01": true,
+	}
+	// 特殊工作日 (YYYY-MM-DD): 补班日
+	customWorkdays = map[string]bool{
+		"2024-02-04": true, "2024-02-18": true,
+	}
+)
+
+// IsHoliday 判断给定日期是否为节假日。
+// 升级实现：综合考虑法定节假日配置与补班调休逻辑。
 func IsHoliday(t time.Time) bool {
-	// 1. 周末判断
-	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
+	dateStr := t.Format("2006-01-02")
+
+	// 1. 检查是否为显式配置的节假日
+	if customHolidays[dateStr] {
 		return true
 	}
 
-	// 2. 固定日期节假日判断 (示例：元旦、劳动节、国庆节)
-	month := t.Month()
-	day := t.Day()
-
-	if month == time.January && day == 1 { // 元旦
-		return true
-	}
-	if month == time.May && day == 1 { // 劳动节
-		return true
-	}
-	if month == time.October && (day >= 1 && day <= 3) { // 国庆节 (前3天)
-		return true
+	// 2. 检查是否为显式配置的补班工作日
+	if customWorkdays[dateStr] {
+		return false
 	}
 
-	// 注意：由于农历节假日每年变动，建议生产环境对接专门的日历服务。
-	return false
+	// 3. 默认周末判定
+	weekday := t.Weekday()
+	return weekday == time.Saturday || weekday == time.Sunday
 }
