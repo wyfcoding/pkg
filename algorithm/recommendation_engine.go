@@ -350,6 +350,70 @@ func (re *RecommendationEngine) itemSimilarity(item1, item2 uint64) float64 {
 	return dotProduct / (math.Sqrt(norm1) * math.Sqrt(norm2)) // 余弦相似度公式。
 }
 
+// RecommendWithScores 综合多种 CF 算法，为用户生成带评分的推荐列表。
+func (re *RecommendationEngine) RecommendWithScores(userID uint64, topN int) map[uint64]float64 {
+	re.mu.RLock()
+	defer re.mu.RUnlock()
+
+	userRatings := re.userItemMatrix[userID]
+	
+	// 1. 尝试 User-Based CF 预测
+	similarities := make(map[uint64]float64)
+	for otherUserID := range re.userItemMatrix {
+		if otherUserID != userID {
+			sim := re.cosineSimilarity(userID, otherUserID)
+			if sim > 0.1 { // 相似度门槛
+				similarities[otherUserID] = sim
+			}
+		}
+	}
+
+	predictions := make(map[uint64]float64)
+	for otherUserID, similarity := range similarities {
+		for itemID, rating := range re.userItemMatrix[otherUserID] {
+			if _, exists := userRatings[itemID]; exists {
+				continue
+			}
+			predictions[itemID] += similarity * rating
+		}
+	}
+
+	// 2. 结合 Item-Based 补充 (如果 User-Based 结果较少)
+	if len(predictions) < topN {
+		for ratedItemID := range userRatings {
+			for candidateItemID := range re.itemUserMatrix {
+				if _, exists := userRatings[candidateItemID]; exists {
+					continue
+				}
+				if _, exists := predictions[candidateItemID]; exists {
+					continue // 已由 User-Based 覆盖
+				}
+				sim := re.itemSimilarity(ratedItemID, candidateItemID)
+				if sim > 0.2 {
+					predictions[candidateItemID] += sim * userRatings[ratedItemID]
+				}
+			}
+		}
+	}
+
+	// 返回 TopN 的分数映射
+	type itemScore struct {
+		id    uint64
+		score float64
+	}
+	items := make([]itemScore, 0, len(predictions))
+	for id, s := range predictions {
+		items = append(items, itemScore{id, s})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].score > items[j].score })
+
+	result := make(map[uint64]float64)
+	for i := 0; i < len(items) && i < topN; i++ {
+		result[items[i].id] = items[i].score
+	}
+	return result
+}
+
 // topNItems 是一个辅助函数，用于从一个物品得分map中，选出得分最高的TopN物品ID。
 func (re *RecommendationEngine) topNItems(scores map[uint64]float64, topN int) []uint64 {
 	type itemScore struct {
