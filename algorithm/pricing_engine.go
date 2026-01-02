@@ -184,29 +184,19 @@ func (pe *PricingEngine) EstimateElasticityFromHistory(price int64, historicalDa
 }
 
 // OptimalPrice 计算实现利润最大化的最优价格。
-// 假设利润 = (价格 - 成本) * 销量，且销量与价格之间存在线性关系。
-// 这个简化模型通过求导并令导数为0来找到理论上的最优价格。
-// cost: 商品的单位成本（单位：分）。
-// baseDemand: 在基础价格下的基础需求量。
-// 返回计算出的最优价格（单位：分）。
-func (pe *PricingEngine) OptimalPrice(cost int64, baseDemand int64) int64 {
-	// 假设销量 Q = baseDemand * (1 + elasticity * (price - basePrice) / basePrice)
-	// 利润 P = (price - cost) * Q
-	// 对 P 关于 price 求导，并令导数等于0，可以得到最优价格的表达式。
-	// 公式推导简化后：OptimalPrice = (cost * elasticity * basePrice - basePrice * baseDemand) / (2 * elasticity * basePrice - baseDemand)
-
-	numerator := float64(cost)*pe.elasticity*float64(pe.basePrice) - float64(pe.basePrice)*float64(baseDemand)
-	denominator := 2*pe.elasticity*float64(pe.basePrice) - float64(baseDemand)
-
-	if denominator == 0 {
-		return pe.basePrice // 避免除以零，返回基础价格。
+// 升级实现：基于需求预测函数和黄金分割搜索寻找全局最优利润点。
+func (pe *PricingEngine) OptimalPrice(cost int64, historicalData []DemandData) int64 {
+	if len(historicalData) < 2 {
+		return pe.basePrice
 	}
 
-	optimalPrice := min(
-		// 限制最优价格在最小和最高价格之间。
-		max(int64(numerator/denominator), pe.minPrice), pe.maxPrice)
+	// 定义基于历史数据回归的需求函数
+	demandFunc := func(p int64) int64 {
+		return pe.PredictDemand(p, historicalData)
+	}
 
-	return optimalPrice
+	// 调用鲁棒的搜索算法
+	return pe.OptimalPriceForProfit(cost, demandFunc)
 }
 
 // SurgePrice 实现高峰定价策略（类似Uber的动态定价）。
