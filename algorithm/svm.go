@@ -29,66 +29,53 @@ func NewSVM(dim int) *SVM {
 	}
 }
 
-// Train 训练SVM模型。
-// 升级实现：使用带 L2 正则化的合页损失 (Hinge Loss) 随机梯度下降 (SGD)。
-func (svm *SVM) Train(points []*SVMPoint, labels []int, learningRate float64, iterations int) {
-	svm.mu.Lock()
-	defer svm.mu.Unlock()
+// Train 使用随机梯度下降 (SGD) 训练支持向量机模型。
+// 最小化 Hinge Loss + L2 正则化项: J(w) = 1/2 * ||w||^2 + C * sum(max(0, 1 - y*(w*x + b)))
+func (s *SVM) Train(points [][]float64, labels []int, epochs int, lr float64, lambda float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	dim := len(svm.weights)
-	lambda := 0.01 // 正则化参数
+	dim := len(points[0])
+	s.weights = make([]float64, dim)
+	s.bias = 0.0
 
-	for range iterations {
-		for i, p := range points {
-			// 将标签从 0/1 转换为 -1/1
-			label := float64(labels[i])
-			if label == 0 {
-				label = -1
+	for epoch := 0; epoch < epochs; epoch++ {
+		for i, x := range points {
+			y := float64(labels[i])
+			// 判定是否命中 Hinge Loss 区域
+			prediction := s.bias
+			for j := 0; j < dim; j++ {
+				prediction += s.weights[j] * x[j]
 			}
 
-			// 计算 y * (w * x + b)
-			dotProduct := svm.bias
-			for j := range dim {
-				dotProduct += svm.weights[j] * p.Data[j]
-			}
-
-			// 合页损失梯度下降更新规则
-			// 如果 label * pred < 1, 说明该点在间隔内或分类错误
-			if label*dotProduct < 1 {
-				// 更新权重: w = w + lr * (label * x - 2 * lambda * w)
-				for j := range dim {
-					svm.weights[j] += learningRate * (label*p.Data[j] - 2*lambda*svm.weights[j])
+			if y*prediction < 1 {
+				// 更新权重 (梯度包含正则项和 Loss 项)
+				for j := 0; j < dim; j++ {
+					s.weights[j] = s.weights[j] - lr*(lambda*s.weights[j]-y*x[j])
 				}
-				// 更新偏置
-				svm.bias += learningRate * label
+				s.bias += lr * y
 			} else {
-				// 如果分类正确且在间隔外，仅应用正则化项（权重衰减）
-				for j := range dim {
-					svm.weights[j] += learningRate * (-2 * lambda * svm.weights[j])
+				// 仅更新权重中的正则项部分
+				for j := 0; j < dim; j++ {
+					s.weights[j] = s.weights[j] - lr*(lambda*s.weights[j])
 				}
 			}
 		}
 	}
 }
 
-// Predict 使用训练好的SVM模型对新的数据点进行预测。
-// data: 待预测数据点的特征向量。
-// 返回预测的类别标签（0或1）。
-func (svm *SVM) Predict(data []float64) int {
-	svm.mu.RLock()         // 预测过程只需要读锁。
-	defer svm.mu.RUnlock() // 确保函数退出时解锁。
+// Predict 使用训练好的 SVM 模型进行分类。
+func (s *SVM) Predict(x []float64) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	// 计算预测值。
-	pred := svm.bias
-	for i := range data {
-		pred += svm.weights[i] * data[i]
+	result := s.bias
+	for i, val := range s.weights {
+		result += val * x[i]
 	}
 
-	// 根据预测值的正负判断类别。
-	// 如果预测值 >= 0，则预测为类别1。
-	// 如果预测值 < 0，则预测为类别0。
-	if pred >= 0 {
+	if result >= 0 {
 		return 1
 	}
-	return 0
+	return -1
 }
