@@ -76,60 +76,125 @@ func (ro *RouteOptimizer) OptimizeRoute(start Location, destinations []Location)
 	}
 }
 
-// OptimizeBatchRoutes 优化多辆车的路线 (简化的 VRP)。
-// 使用 K-Means (简化版) 对地点进行聚类，然后对每个聚类进行 TSP。
-func (ro *RouteOptimizer) OptimizeBatchRoutes(start Location, destinations []Location, vehicles int) []Route {
+// ClarkeWrightVRP 使用 Savings 算法优化带载重限制的多车路线 (CVRP)。
+func (ro *RouteOptimizer) ClarkeWrightVRP(start Location, destinations []Location, capacity float64) []Route {
 	if len(destinations) == 0 {
-		return []Route{}
+		return nil
 	}
-	if vehicles <= 0 {
-		vehicles = 1
+
+	// 1. 初始化：每辆车只服务一个目的地 (start -> dest -> start)
+	type saving struct {
+		i, j int
+		val  float64
 	}
-	if len(destinations) <= vehicles {
-		// 简单情况：每辆车分配一个或少数几个目的地
-		routes := make([]Route, 0)
-		for _, dest := range destinations {
-			dist := haversineDistance(start.Lat, start.Lon, dest.Lat, start.Lon)
-			routes = append(routes, Route{
-				Locations: []Location{start, dest},
-				Distance:  dist,
-			})
+	n := len(destinations)
+	routes := make([][]int, n)
+	for i := 0; i < n; i++ {
+		routes[i] = []int{i}
+	}
+
+	// 2. 计算 Savings：S(i,j) = d(0,i) + d(0,j) - d(i,j)
+	savings := make([]saving, 0, n*(n-1)/2)
+	distToStart := make([]float64, n)
+	for i := 0; i < n; i++ {
+		distToStart[i] = haversineDistance(start.Lat, start.Lon, destinations[i].Lat, destinations[i].Lon)
+	}
+
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			d_ij := haversineDistance(destinations[i].Lat, destinations[i].Lon, destinations[j].Lat, destinations[j].Lon)
+			s := distToStart[i] + distToStart[j] - d_ij
+			if s > 0 {
+				savings = append(savings, saving{i, j, s})
+			}
 		}
-		return routes
 	}
 
-	// 1. 基于与起点的角度对目的地进行聚类 (简化的扫描算法)
-	// 计算每个目的地的角度
-	type destWithAngle struct {
-		Location
-		angle float64
-	}
-	dests := make([]destWithAngle, len(destinations))
-	for i, d := range destinations {
-		angle := math.Atan2(d.Lat-start.Lat, d.Lon-start.Lon)
-		dests[i] = destWithAngle{d, angle}
-	}
-
-	// 按角度排序
-	sort.Slice(dests, func(i, j int) bool {
-		return dests[i].angle < dests[j].angle
+	// 按节省值降序排列
+	sort.Slice(savings, func(i, j int) bool {
+		return savings[i].val > savings[j].val
 	})
 
-	// 分块
-	chunkSize := (len(dests) + vehicles - 1) / vehicles
-	routes := make([]Route, 0)
-
-	for i := 0; i < len(dests); i += chunkSize {
-		end := min(i+chunkSize, len(dests))
-
-		chunk := make([]Location, end-i)
-		for j := range chunk {
-			chunk[j] = dests[i+j].Location
+	// 3. 合并路径逻辑
+	findRouteInfo := func(nodeIdx int) (int, int) { 
+		for rIdx, r := range routes {
+			for pIdx, node := range r {
+				if node == nodeIdx {
+					pos := -1 // 默认在中间
+					if pIdx == 0 {
+						pos = 0 // 头部
+					} else if pIdx == len(r)-1 {
+						pos = 1 // 尾部
+					}
+					return rIdx, pos
+				}
+			}
 		}
-
-		// 优化该分块的路径
-		routes = append(routes, ro.OptimizeRoute(start, chunk))
+		return -1, -1
 	}
 
-	return routes
+	getRouteDemand := func(r []int) float64 {
+		sum := 0.0
+		for _, idx := range r {
+			sum += destinations[idx].Demand
+		}
+		return sum
+	}
+
+	for _, s := range savings {
+		r1Idx, pos1 := findRouteInfo(s.i)
+		r2Idx, pos2 := findRouteInfo(s.j)
+
+		if r1Idx == -1 || r2Idx == -1 || r1Idx == r2Idx {
+			continue
+		}
+
+		// 只有当两个节点分别位于各自路径的端点时才能合并
+		if pos1 != -1 && pos2 != -1 {
+			if getRouteDemand(routes[r1Idx])+getRouteDemand(routes[r2Idx]) <= capacity {
+				// 执行合并逻辑
+				var newRoute []int
+				if pos1 == 1 && pos2 == 0 { // 路径1尾部连路径2头部
+					newRoute = append(routes[r1Idx], routes[r2Idx]...)
+				} else if pos1 == 0 && pos2 == 1 { // 路径2尾部连路径1头部
+					newRoute = append(routes[r2Idx], routes[r1Idx]...)
+				} else if pos1 == 0 && pos2 == 0 { // 翻转路径1，头部连头部
+					for i := len(routes[r1Idx]) - 1; i >= 0; i-- {
+						newRoute = append(newRoute, routes[r1Idx][i])
+					}
+					newRoute = append(newRoute, routes[r2Idx]...)
+				} else if pos1 == 1 && pos2 == 1 { // 路径1尾部连路径2尾部（翻转路径2）
+					newRoute = append([]int{}, routes[r1Idx]...)
+					for i := len(routes[r2Idx]) - 1; i >= 0; i-- {
+						newRoute = append(newRoute, routes[r2Idx][i])
+					}
+				}
+
+				if newRoute != nil {
+					routes[r1Idx] = newRoute
+					// 移除已合并的路径2
+					routes = append(routes[:r2Idx], routes[r2Idx+1:]...)
+				}
+			}
+		}
+	}
+
+	// 4. 构建最终 Route 对象
+	finalRoutes := make([]Route, len(routes))
+	for i, r := range routes {
+		locs := []Location{start}
+		dist := 0.0
+		curr := start
+		for _, nodeIdx := range r {
+			dest := destinations[nodeIdx]
+			locs = append(locs, dest)
+			dist += haversineDistance(curr.Lat, curr.Lon, dest.Lat, dest.Lon)
+			curr = dest
+		}
+		// 回到原点
+		dist += haversineDistance(curr.Lat, curr.Lon, start.Lat, start.Lon)
+		finalRoutes[i] = Route{Locations: locs, Distance: dist}
+	}
+
+	return finalRoutes
 }
