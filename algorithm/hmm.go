@@ -91,7 +91,7 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 
 	dp := make([][]float64, n)
 	path := make([][]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		dp[i] = make([]float64, m)
 		path[i] = make([]int, m)
 	}

@@ -102,7 +102,7 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 func (g *SonyflakeGenerator) Generate() int64 {
 	// 真实实现：处理时钟回拨导致的失败，进行有限重试
 	maxRetries := 3
-	for i := 0; i < maxRetries; i++ {
+	for i := range maxRetries {
 		id, err := g.sf.NextID()
 		if err == nil {
 			return int64(id)

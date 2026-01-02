@@ -95,7 +95,7 @@ func (dt *DecisionTree) buildTree(points []*DTPoint, labels []int, depth int) *T
 	bestThreshold := 0.0
 
 	dim := len(points[0].Data)
-	for feature := 0; feature < dim; feature++ {
+	for feature := range dim {
 		// 提取该特征的所有可能切分点
 		values := make([]float64, numSamples)
 		for i, p := range points {

@@ -116,7 +116,7 @@ func (ro *RouteOptimizer) ClarkeWrightVRP(start Location, destinations []Locatio
 	})
 
 	// 3. 合并路径逻辑
-	findRouteInfo := func(nodeIdx int) (int, int) { 
+	findRouteInfo := func(nodeIdx int) (int, int) {
 		for rIdx, r := range routes {
 			for pIdx, node := range r {
 				if node == nodeIdx {
