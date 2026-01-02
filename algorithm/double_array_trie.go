@@ -136,10 +136,14 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 	return nil
 }
 
-// ExactMatch 精确匹配
+// ExactMatch 执行双数组 Trie 的精确匹配。
 func (dat *DoubleArrayTrie) ExactMatch(key string) bool {
 	dat.mu.RLock()
 	defer dat.mu.RUnlock()
+
+	if len(dat.base) == 0 {
+		return false
+	}
 
 	p := 0 // root index
 
@@ -158,9 +162,6 @@ func (dat *DoubleArrayTrie) ExactMatch(key string) bool {
 
 	for _, ch := range key {
 		code := int(ch)
-		if p >= len(dat.base) {
-			return false
-		}
 		base := dat.base[p]
 		next := base + code
 
@@ -170,7 +171,7 @@ func (dat *DoubleArrayTrie) ExactMatch(key string) bool {
 		p = next
 	}
 
-	// 检查是否有结束标记 (假设结束符为 0)
+	// 最终检查：是否存在 code=0 的结束符转移
 	base := dat.base[p]
 	next := base + 0
 	if next < len(dat.check) && dat.check[next] == p {
@@ -218,6 +219,9 @@ func newTrieNode() *trieNode {
 func (n *trieNode) insert(key string) {
 	node := n
 	for _, ch := range key {
+		if ch == 0 {
+			continue // rune(0) is reserved
+		}
 		if node.children[ch] == nil {
 			node.children[ch] = newTrieNode()
 		}

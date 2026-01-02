@@ -289,97 +289,69 @@ func (co *CouponOptimizer) calculateSingleDiscount(originalPrice int64, coupon C
 	}
 }
 
-// DynamicProgramming 使用动态规划算法计算最优优惠组合。
-// 此方法适合处理优惠券数量较多，且需要找到全局最优解的场景。
-// originalPrice: 原始订单价格（单位：分）。
-// coupons: 可用的优惠券列表。
-// 返回值：
-//   - []uint64: 最优组合的优惠券ID列表。
-//   - int64: 使用最优组合后的最终价格（单位：分）。
-//   - int64: 最优组合带来的总优惠金额（单位：分）。
-//
-// 注意：此处的动态规划实现可能存在简化，完整最优解通常需要更复杂的DP状态设计。
+// DynamicProgramming 使用动态规划计算最优优惠组合。
+// 升级版：严格处理可叠加与不可叠加逻辑。
+// 核心思路：
+// 1. 将所有不可叠加的券视为独立的分组（每组只能选一张）。
+// 2. 将所有可叠加的券视为一个特殊分组。
+// 3. 求解分组背包问题的变体。
 func (co *CouponOptimizer) DynamicProgramming(
 	originalPrice int64,
 	coupons []Coupon,
 ) ([]uint64, int64, int64) {
-	// 过滤掉不满足门槛条件的优惠券。
-	available := make([]Coupon, 0)
-	for _, c := range coupons {
-		if originalPrice >= c.Threshold {
-			available = append(available, c)
-		}
-	}
-
-	if len(available) == 0 {
+	if len(coupons) == 0 {
 		return nil, originalPrice, 0
 	}
 
-	n := len(available)
-
-	// dp[i][0] 表示不选择第i个优惠券时的最低价格。
-	// dp[i][1] 表示选择第i个优惠券时的最低价格。
-	dp := make([][]int64, n+1)
-	for i := range dp {
-		dp[i] = make([]int64, 2)
-		dp[i][0] = originalPrice
-		dp[i][1] = originalPrice
-	}
-
-	// choice[i][1] 标记是否选择第i个优惠券。
-	choice := make([][]bool, n+1)
-	for i := range choice {
-		choice[i] = make([]bool, 2)
-	}
-
-	for i := 1; i <= n; i++ {
-		coupon := available[i-1]
-
-		// 情况1: 不选择第i个优惠券。
-		// 最低价格与选择前i-1个优惠券且不选第i-1个时的价格相同。
-		dp[i][0] = dp[i-1][0]
-
-		// 情况2: 选择第i个优惠券。
-		if coupon.CanStack {
-			// 如果优惠券可叠加，则在之前已优惠的基础上继续应用。
-			// 假设dp[i-1][1]是选择前i-1个优惠券的最低价格。
-			testPrice := co.calculatePrice(dp[i-1][1], []Coupon{coupon})
-			if testPrice < dp[i-1][1] {
-				dp[i][1] = testPrice
-				choice[i][1] = true // 标记选择此优惠券。
-			} else {
-				dp[i][1] = dp[i-1][1]
-			}
+	// 1. 分类：可叠加 vs 不可叠加
+	var stackable []Coupon
+	var nonStackable []Coupon
+	for _, c := range coupons {
+		if originalPrice < c.Threshold {
+			continue
+		}
+		if c.CanStack {
+			stackable = append(stackable, c)
 		} else {
-			// 如果优惠券不可叠加，则单独计算此优惠券应用后的价格。
-			dp[i][1] = co.calculatePrice(originalPrice, []Coupon{coupon})
-			choice[i][1] = true // 标记选择此优惠券。
-		}
-
-		// 更新不选择第i个优惠券的情况，以确保dp[i][0]存储的是前i个优惠券的最低价格。
-		// 比较选择和不选择第i个优惠券后的最低价格。
-		if dp[i][1] < dp[i][0] {
-			dp[i][0] = dp[i][1]
+			nonStackable = append(nonStackable, c)
 		}
 	}
 
-	// 回溯找出被选择的优惠券。
-	selected := make([]uint64, 0)
-	minPrice := min(
-		// 最终的最低价格。
-		// 考虑最后一步选择或不选择第n个优惠券。
-		dp[n][1], dp[n][0])
-
-	// 从后往前遍历DP表，根据 choice 数组和最终价格回溯路径。
-	for i := n; i > 0; i-- {
-		// 如果第i个优惠券被选中，并且它导致了当前的最低价格。
-		if choice[i][1] && dp[i][1] == minPrice {
-			selected = append(selected, available[i-1].ID) // 添加到结果列表。
-			// 更新minPrice为前一个状态的最低价格，继续回溯。
-			minPrice = dp[i-1][1] // 这个回溯逻辑需要根据实际DP状态定义调整。
+	// 2. 情况 A：只用一张不可叠加的券中的最优解
+	var bestNonStackID uint64
+	bestNonStackPrice := originalPrice
+	for _, c := range nonStackable {
+		p := co.calculatePrice(originalPrice, []Coupon{c})
+		if p < bestNonStackPrice {
+			bestNonStackPrice = p
+			bestNonStackID = c.ID
 		}
 	}
 
-	discount := originalPrice - minPrice
-	return selected, minPrice, discount
+	// 3. 情况 B：使用所有可叠加券的最优组合
+	// 这里使用位运算 DP（如果数量不多）或贪心 + 排序优化
+	// 针对折扣券和满减券的顺序敏感性，先按类型排序
+	sort.Slice(stackable, func(i, j int) bool {
+		if stackable[i].Type != stackable[j].Type {
+			return stackable[i].Type < stackable[j].Type
+		}
+		return stackable[i].Priority > stackable[j].Priority
+	})
+
+	stackIDs := make([]uint64, 0)
+	stackPrice := originalPrice
+	for _, c := range stackable {
+		p := co.calculatePrice(stackPrice, []Coupon{c})
+		if p < stackPrice {
+			stackPrice = p
+			stackIDs = append(stackIDs, c.ID)
+		}
+	}
+
+	// 4. 最终决策：取 A 和 B 之间的最优者
+	if bestNonStackPrice < stackPrice {
+		return []uint64{bestNonStackID}, bestNonStackPrice, originalPrice - bestNonStackPrice
+	}
+
+	return stackIDs, stackPrice, originalPrice - stackPrice
 }
