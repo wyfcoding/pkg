@@ -11,21 +11,27 @@ type SVMPoint struct {
 	Data []float64
 }
 
-// SVM 结构体实现了简化的支持向量机（Support Vector Machine）分类器。
-// SVM 是一种二分类模型，它旨在找到一个超平面，将不同类别的样本尽可能大地分开。
-// 此处实现的训练方法是简化的梯度下降，而非经典的SMO（Sequential Minimal Optimization）算法。
+// SVM 结构体实现了支持向量机分类器，支持线性与 RBF 核。
 type SVM struct {
-	weights []float64    // 权重向量，定义了分类超平面的法向量。
-	bias    float64      // 偏置项，定义了超平面与原点的距离。
-	mu      sync.RWMutex // 读写锁，用于在训练和预测时的并发安全。
+	weights []float64
+	bias    float64
+	mu      sync.RWMutex
+	kernel  string  // "linear" 或 "rbf"
+	gamma   float64 // RBF 专用参数
+	
+	// 用于核函数计算的训练支持向量
+	supportPoints [][]float64
+	alphas        []float64
 }
 
-// NewSVM 创建并返回一个新的 SVM 实例。
-// dim: 输入特征的维度。
-func NewSVM(dim int) *SVM {
+// NewSVM 创建一个新的 SVM 实例。
+func NewSVM(kernel string, gamma float64) *SVM {
+	if kernel == "" {
+		kernel = "linear"
+	}
 	return &SVM{
-		weights: make([]float64, dim), // 初始化权重向量为零。
-		bias:    0,                    // 初始化偏置项为零。
+		kernel: kernel,
+		gamma:  gamma,
 	}
 }
 
