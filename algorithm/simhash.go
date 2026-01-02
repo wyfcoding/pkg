@@ -2,8 +2,11 @@ package algorithm
 
 import (
 	"hash/fnv"
+	"regexp"
 	"strings"
 )
+
+var wordRegex = regexp.MustCompile(`\w+`)
 
 // SimHash 局部敏感哈希算法实现
 // 适用于：文本去重、相似文档发现。
@@ -17,21 +20,28 @@ func NewSimHash() *SimHash {
 
 // Calculate 计算文本的 SimHash 值
 func (s *SimHash) Calculate(text string) uint64 {
-	// 1. 分词 (简化处理：按空格或简单的字符分割)
-	words := strings.Fields(text)
+	// 1. 分词与清洗
+	// 使用正则提取所有单词，并转为小写以忽略大小写差异
+	words := wordRegex.FindAllString(strings.ToLower(text), -1)
 	if len(words) == 0 {
 		return 0
 	}
 
-	// 2. 初始化加权向量
+	// 2. 构造 N-grams (Bi-grams) 增强上下文特征
+	tokens := make([]string, 0, len(words)*2)
+	tokens = append(tokens, words...)
+	for i := 0; i < len(words)-1; i++ {
+		tokens = append(tokens, words[i]+"_"+words[i+1])
+	}
+
+	// 3. 初始化加权向量
 	v := make([]int, s.hashBits)
 
-	for _, word := range words {
-		// 计算单词的传统哈希值
-		h := fnvHash(word)
+	for _, token := range tokens {
+		// 计算词元（包含单词和双词组）的哈希值
+		h := fnvHash(token)
 
-		// 3. 加权
-		// 如果对应位为1，权重+1；为0，权重-1
+		// 4. 加权
 		for i := 0; i < s.hashBits; i++ {
 			if (h >> uint(i) & 1) == 1 {
 				v[i]++
@@ -41,7 +51,7 @@ func (s *SimHash) Calculate(text string) uint64 {
 		}
 	}
 
-	// 4. 降维 (降维回 0/1)
+	// 5. 降维 (转换回 0/1 位串)
 	var result uint64
 	for i := 0; i < s.hashBits; i++ {
 		if v[i] > 0 {
