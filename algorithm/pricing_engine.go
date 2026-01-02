@@ -396,17 +396,11 @@ func (pe *PricingEngine) CompetitivePricing(competitorPrices []int64, strategy s
 }
 
 // PredictDemand 预测在给定价格下的商品需求量。
-// 此处使用简化的线性回归模型进行预测。
-// price: 待预测价格（单位：分）。
-// historicalData: 历史价格和需求量数据。
-// 返回预测的需求量。
+// 使用最小二乘线性回归模型预测：y = a + b*x，其中 y=需求量, x=价格。
 func (pe *PricingEngine) PredictDemand(price int64, historicalData []DemandData) int64 {
-	if len(historicalData) == 0 {
-		return 0 // 没有历史数据，无法预测。
+	if len(historicalData) < 2 {
+		return 0 // 数据不足以进行回归分析
 	}
-
-	// 使用简单的线性回归模型预测：y = a + b*x，其中 y=需求量, x=价格。
-	// 计算回归系数 a 和 b。
 
 	n := float64(len(historicalData))
 	var sumX, sumY, sumXY, sumX2 float64
@@ -420,17 +414,21 @@ func (pe *PricingEngine) PredictDemand(price int64, historicalData []DemandData)
 		sumX2 += x * x
 	}
 
-	// 计算回归系数 b。
-	// b = (n*Sum(XY) - Sum(X)*Sum(Y)) / (n*Sum(X^2) - Sum(X)^2)
-	b := (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
-	// 计算回归系数 a。
-	// a = (Sum(Y) - b*Sum(X)) / n
+	// 计算分母
+	denominator := n*sumX2 - sumX*sumX
+	if denominator == 0 {
+		// 如果所有历史价格都相同，无法计算斜率，退化为平均需求
+		return int64(sumY / n)
+	}
+
+	// 计算回归系数 b 和 a
+	b := (n*sumXY - sumX*sumY) / denominator
 	a := (sumY - b*sumX) / n
 
 	// 预测需求。
 	predictedDemand := a + b*float64(price)
 
-	// 需求量不能为负。
+	// 真实化处理：需求量不能为负，且不应超过历史最高需求的合理倍数
 	if predictedDemand < 0 {
 		predictedDemand = 0
 	}
