@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"log/slog"
 	"sort"
 	"sync"
 )
@@ -10,27 +9,69 @@ import (
 // 后缀数组是一个字符串所有后缀的排序数组，它在字符串匹配、模式查找等领域有广泛应用。
 // 相较于后缀树，后缀数组在空间效率上通常更优。
 type SuffixArray struct {
-	text string       // 原始字符串。
-	sa   []int        // 后缀数组，存储排序后的后缀的起始索引。
-	rank []int        // rank[i] 表示后缀 text[i:] 在所有后缀中的排名。
-	mu   sync.RWMutex // 读写锁，用于保护后缀数组的并发访问。
+	text   string       // 原始字符串。
+	sa     []int        // 后缀数组
+	rank   []int        // 排名数组
+	height []int        // LCP 数组：height[i] 表示 sa[i] 和 sa[i-1] 后缀的最长公共前缀
+	mu     sync.RWMutex // 读写锁
 }
 
 // NewSuffixArray 创建并返回一个新的 SuffixArray 实例。
-// text: 用于构建后缀数组的原始字符串。
 func NewSuffixArray(text string) *SuffixArray {
-	slog.Debug("Building SuffixArray", "text_len", len(text))
+	n := len(text)
 	sa := &SuffixArray{
-		text: text,
-		sa:   make([]int, len(text)),
-		rank: make([]int, len(text)),
+		text:   text,
+		sa:     make([]int, n),
+		rank:   make([]int, n),
+		height: make([]int, n),
 	}
-	sa.build() // 构建后缀数组。
+	sa.build()
+	sa.computeLCP()
 	return sa
 }
 
-// build 构建后缀数组。
-// 此处使用倍增法（Doubling Algorithm）来构建后缀数组，时间复杂度为 O(N log N)。
+// ... (build() logic remains same)
+
+// computeLCP 使用 Kasai 算法在 O(N) 时间内计算 LCP 数组。
+func (sa *SuffixArray) computeLCP() {
+	n := len(sa.text)
+	k := 0
+	for i := 0; i < n; i++ {
+		if sa.rank[i] == 0 {
+			sa.height[0] = 0
+			continue
+		}
+		if k > 0 {
+			k--
+		}
+		j := sa.sa[sa.rank[i]-1]
+		for i+k < n && j+k < n && sa.text[i+k] == sa.text[j+k] {
+			k++
+		}
+		sa.height[sa.rank[i]] = k
+	}
+}
+
+// LongestRepeatedSubstring 寻找最长重复子串 (真实应用场景)。
+func (sa *SuffixArray) LongestRepeatedSubstring() string {
+	sa.mu.RLock()
+	defer sa.mu.RUnlock()
+
+	maxLCP := 0
+	idx := -1
+	for i, h := range sa.height {
+		if h > maxLCP {
+			maxLCP = h
+			idx = i
+		}
+	}
+
+	if idx == -1 {
+		return ""
+	}
+	return sa.text[sa.sa[idx] : sa.sa[idx]+maxLCP]
+}
+
 func (sa *SuffixArray) build() {
 	n := len(sa.text)
 	// 初始化：sa[i] = i，rank[i] = text[i] 的ASCII值。
