@@ -52,7 +52,7 @@ func (ro *RouteOptimizer) OptimizeRoute(start Location, destinations []Location)
 				continue
 			}
 
-			dist := haversineDistance(current.Lat, current.Lon, dest.Lat, dest.Lon)
+			dist := HaversineDistance(current.Lat, current.Lon, dest.Lat, dest.Lon)
 			if dist < nearestDist {
 				nearestDist = dist
 				nearestLoc = dest
@@ -97,12 +97,12 @@ func (ro *RouteOptimizer) ClarkeWrightVRP(start Location, destinations []Locatio
 	savings := make([]saving, 0, n*(n-1)/2)
 	distToStart := make([]float64, n)
 	for i := 0; i < n; i++ {
-		distToStart[i] = haversineDistance(start.Lat, start.Lon, destinations[i].Lat, destinations[i].Lon)
+		distToStart[i] = HaversineDistance(start.Lat, start.Lon, destinations[i].Lat, destinations[i].Lon)
 	}
 
 	for i := 0; i < n; i++ {
 		for j := i + 1; j < n; j++ {
-			d_ij := haversineDistance(destinations[i].Lat, destinations[i].Lon, destinations[j].Lat, destinations[j].Lon)
+			d_ij := HaversineDistance(destinations[i].Lat, destinations[i].Lon, destinations[j].Lat, destinations[j].Lon)
 			s := distToStart[i] + distToStart[j] - d_ij
 			if s > 0 {
 				savings = append(savings, saving{i, j, s})
@@ -188,11 +188,11 @@ func (ro *RouteOptimizer) ClarkeWrightVRP(start Location, destinations []Locatio
 		for _, nodeIdx := range r {
 			dest := destinations[nodeIdx]
 			locs = append(locs, dest)
-			dist += haversineDistance(curr.Lat, curr.Lon, dest.Lat, dest.Lon)
+			dist += HaversineDistance(curr.Lat, curr.Lon, dest.Lat, dest.Lon)
 			curr = dest
 		}
 		// 回到原点
-		dist += haversineDistance(curr.Lat, curr.Lon, start.Lat, start.Lon)
+		dist += HaversineDistance(curr.Lat, curr.Lon, start.Lat, start.Lon)
 		finalRoutes[i] = Route{Locations: locs, Distance: dist}
 	}
 

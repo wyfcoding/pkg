@@ -82,7 +82,7 @@ func (wa *WarehouseAllocator) AllocateOptimal(
 		}
 
 		// 计算用户到仓库的距离。
-		distance := haversineDistance(userLat, userLon, warehouseInfo.Lat, warehouseInfo.Lon)
+		distance := HaversineDistance(userLat, userLon, warehouseInfo.Lat, warehouseInfo.Lon)
 
 		// 计算该仓库对当前订单的可用总库存和平均配送成本。
 		var totalStock int32
@@ -204,7 +204,7 @@ func (wa *WarehouseAllocator) AllocateByDistance(
 			break
 		}
 
-		distance := haversineDistance(userLat, userLon, warehouseInfo.Lat, warehouseInfo.Lon)
+		distance := HaversineDistance(userLat, userLon, warehouseInfo.Lat, warehouseInfo.Lon)
 		distances = append(distances, warehouseDist{warehouseID, distance})
 	}
 
@@ -263,11 +263,11 @@ func (wa *WarehouseAllocator) AllocateByDistance(
 	return results
 }
 
-// haversineDistance 计算两个地理坐标点之间的Haversine距离。
+// HaversineDistance 计算两个地理坐标点之间的 Haversine 距离。
 // lat1, lon1: 第一个点的纬度、经度。
 // lat2, lon2: 第二个点的纬度、经度。
 // 返回两个点之间的距离（单位：米）。
-func haversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
+func HaversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	const earthRadius = 6371000.0 // 地球平均半径（米）。
 
 	// 将角度转换为弧度。

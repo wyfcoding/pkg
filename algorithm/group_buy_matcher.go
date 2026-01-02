@@ -134,8 +134,8 @@ func (m *GroupBuyMatcher) matchNearest(
 		// 按照用户到拼团组的距离升序排序。
 		sort.Slice(sameRegion, func(i, j int) bool {
 			// haversineDistance 函数未在此文件中定义，假定其在其他地方可用。
-			distI := haversineDistance(userLat, userLon, sameRegion[i].Lat, sameRegion[i].Lon)
-			distJ := haversineDistance(userLat, userLon, sameRegion[j].Lat, sameRegion[j].Lon)
+			distI := HaversineDistance(userLat, userLon, sameRegion[i].Lat, sameRegion[i].Lon)
+			distJ := HaversineDistance(userLat, userLon, sameRegion[j].Lat, sameRegion[j].Lon)
 			return distI < distJ
 		})
 		return &sameRegion[0]
@@ -145,8 +145,8 @@ func (m *GroupBuyMatcher) matchNearest(
 	if len(otherRegion) > 0 {
 		// 按照用户到拼团组的距离升序排序。
 		sort.Slice(otherRegion, func(i, j int) bool {
-			distI := haversineDistance(userLat, userLon, otherRegion[i].Lat, otherRegion[i].Lon)
-			distJ := haversineDistance(userLat, userLon, otherRegion[j].Lat, otherRegion[j].Lon)
+			distI := HaversineDistance(userLat, userLon, otherRegion[i].Lat, otherRegion[i].Lon)
+			distJ := HaversineDistance(userLat, userLon, otherRegion[j].Lat, otherRegion[j].Lon)
 			return distI < distJ
 		})
 		return &otherRegion[0]
@@ -232,7 +232,7 @@ func (m *GroupBuyMatcher) SmartMatch(
 			regionScore = 1.0 // 同地区直接给满分。
 		} else {
 			// haversineDistance 函数未在此文件中定义，假定其在其他地方可用。
-			distance := haversineDistance(userLat, userLon, g.Lat, g.Lon)
+			distance := HaversineDistance(userLat, userLon, g.Lat, g.Lon)
 			// 使用 1.0 / (1.0 + distance/10000.0) 这种函数，确保距离越近，分值越高，且在[0,1]区间。
 			regionScore = 1.0 / (1.0 + distance/10000.0)
 		}
