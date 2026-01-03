@@ -115,3 +115,15 @@ func GetTraceID(ctx context.Context) string {
 	}
 	return ""
 }
+
+// InjectContext 将当前上下文中的追踪信息注入到 Map 中
+func InjectContext(ctx context.Context) map[string]string {
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	return carrier
+}
+
+// ExtractContext 从 Map 中提取追踪信息并返回新的上下文
+func ExtractContext(ctx context.Context, carrier map[string]string) context.Context {
+	return otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(carrier))
+}

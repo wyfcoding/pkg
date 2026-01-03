@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/wyfcoding/pkg/tracing"
 	"gorm.io/gorm"
 )
 
@@ -38,8 +39,9 @@ const (
 type OutboxMessage struct {
 	gorm.Model
 	Topic      string        `gorm:"column:topic;type:varchar(255);not null;index" json:"topic"` // 消息主题
-	Key        string        `gorm:"column:key;type:varchar(255);index" json:"key"`              // 消息键 (用于 Kafka 分区)
+	Key        string        `gorm:"column:key;type:varchar(255);index" json:"key"`              // 消息键
 	Payload    []byte        `gorm:"column:payload;type:blob;not null" json:"payload"`           // 消息体
+	Metadata   string        `gorm:"column:metadata;type:text" json:"metadata"`                  // [新增] 存储 Trace 上下文 (JSON)
 	Status     MessageStatus `gorm:"column:status;type:tinyint;default:0;index" json:"status"`   // 状态
 	RetryCount int           `gorm:"column:retry_count;type:int;default:0" json:"retry_count"`   // 已重试次数
 	MaxRetries int           `gorm:"column:max_retries;type:int;default:5" json:"max_retries"`   // 最大重试次数
@@ -72,23 +74,28 @@ func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
 }
 
 // PublishInTx 在现有的事务中持久化消息
-// 这是 Outbox 模式的核心：将消息存入数据库的操作必须作为业务事务的一部分。
-func (m *Manager) PublishInTx(tx *gorm.DB, topic string, key string, payload any) error {
+// 深度优化：自动提取追踪上下文并保存
+func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, key string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
+	// 提取当前 Trace 上下文
+	metadataMap := tracing.InjectContext(ctx)
+	metadataJSON, _ := json.Marshal(metadataMap)
+
 	msg := &OutboxMessage{
 		Topic:     topic,
 		Key:       key,
 		Payload:   data,
+		Metadata:  string(metadataJSON),
 		Status:    StatusPending,
 		NextRetry: time.Now(),
 	}
 
 	if err := tx.Create(msg).Error; err != nil {
-		m.logger.Error("failed to save outbox message", "topic", topic, "error", err)
+		m.logger.ErrorContext(ctx, "failed to save outbox message", "topic", topic, "error", err)
 		return err
 	}
 
@@ -147,7 +154,6 @@ func (p *Processor) Stop() {
 // process 执行一次扫描与投递
 func (p *Processor) process() {
 	var messages []OutboxMessage
-	// 查找待处理或重试时间已到的消息
 	err := p.mgr.db.Where("status = ? AND next_retry <= ? AND retry_count < max_retries", StatusPending, time.Now()).
 		Limit(p.batchSize).
 		Order("id ASC").
@@ -163,8 +169,22 @@ func (p *Processor) process() {
 }
 
 // send 执行单条消息发送并更新状态
+// 深度优化：恢复并传递追踪上下文
 func (p *Processor) send(msg OutboxMessage) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 1. 恢复追踪上下文
+	ctx := context.Background()
+	if msg.Metadata != "" {
+		var carrier map[string]string
+		if err := json.Unmarshal([]byte(msg.Metadata), &carrier); err == nil {
+			ctx = tracing.ExtractContext(ctx, carrier)
+		}
+	}
+
+	// 2. 开启子 Span 标识异步发送
+	ctx, span := tracing.StartSpan(ctx, "Outbox.Processor.Send")
+	defer span.End()
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	err := p.pusher(ctx, msg.Topic, msg.Key, msg.Payload)
@@ -177,7 +197,7 @@ func (p *Processor) send(msg OutboxMessage) {
 		return
 	}
 
-	// 发送失败：增加重试次数，计算下次重试时间（指数退避策略）
+	// 发送失败：增加重试次数，计算下次重试时间
 	backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour)
 
 	updates := map[string]any{
@@ -188,9 +208,9 @@ func (p *Processor) send(msg OutboxMessage) {
 
 	if msg.RetryCount+1 >= msg.MaxRetries {
 		updates["status"] = StatusFailed
-		p.mgr.logger.Error("outbox message failed permanently", "id", msg.ID, "topic", msg.Topic)
+		p.mgr.logger.ErrorContext(ctx, "outbox message failed permanently", "id", msg.ID, "topic", msg.Topic)
 	} else {
-		p.mgr.logger.Warn("outbox message send failed, retrying later", "id", msg.ID, "error", err, "next_retry", updates["next_retry"])
+		p.mgr.logger.WarnContext(ctx, "outbox message send failed, retrying later", "id", msg.ID, "error", err, "next_retry", updates["next_retry"])
 	}
 
 	p.mgr.db.Model(&msg).Updates(updates)
