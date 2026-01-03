@@ -164,6 +164,78 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 	return err
 }
 
+// Index 创建或更新文档
+func (c *Client) Index(ctx context.Context, index string, documentID string, document any) error {
+	operation := "index"
+	start := time.Now()
+
+	_, err := c.cb.Execute(func() (any, error) {
+		ctx, span := tracing.StartSpan(ctx, "ES.Index")
+		defer span.End()
+
+		data, err := json.Marshal(document)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := c.es.Index(
+			index,
+			bytes.NewReader(data),
+			c.es.Index.WithContext(ctx),
+			c.es.Index.WithDocumentID(documentID),
+		)
+		if err != nil {
+			c.record(index, operation, "error", start)
+			tracing.SetError(ctx, err)
+			return nil, err
+		}
+		defer res.Body.Close()
+
+		if res.IsError() {
+			c.record(index, operation, "fail", start)
+			return nil, fmt.Errorf("es index error: %s", res.Status())
+		}
+
+		c.record(index, operation, "success", start)
+		return nil, nil
+	})
+
+	return err
+}
+
+// Delete 删除文档
+func (c *Client) Delete(ctx context.Context, index string, documentID string) error {
+	operation := "delete"
+	start := time.Now()
+
+	_, err := c.cb.Execute(func() (any, error) {
+		ctx, span := tracing.StartSpan(ctx, "ES.Delete")
+		defer span.End()
+
+		res, err := c.es.Delete(
+			index,
+			documentID,
+			c.es.Delete.WithContext(ctx),
+		)
+		if err != nil {
+			c.record(index, operation, "error", start)
+			tracing.SetError(ctx, err)
+			return nil, err
+		}
+		defer res.Body.Close()
+
+		if res.IsError() && res.StatusCode != 404 {
+			c.record(index, operation, "fail", start)
+			return nil, fmt.Errorf("es delete error: %s", res.Status())
+		}
+
+		c.record(index, operation, "success", start)
+		return nil, nil
+	})
+
+	return err
+}
+
 // Bulk 批量操作接口
 func (c *Client) Bulk(ctx context.Context, body io.Reader) error {
 	res, err := c.es.Bulk(body, c.es.Bulk.WithContext(ctx))
