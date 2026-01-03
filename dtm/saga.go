@@ -22,11 +22,11 @@ type Saga struct {
 // NewSaga 创建一个新的 Saga 事务
 func NewSaga(ctx context.Context, server string, gid string) *Saga {
 	saga := dtmgrpc.NewSagaGrpc(server, gid)
-	
+
 	// 自动从 Context 注入 Trace 信息
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
-		// DTM 允许在自定义数据中携带 Trace 
+		// DTM 允许在自定义数据中携带 Trace
 		saga.CustomData = fmt.Sprintf(`{"trace_id":"%s"}`, spanCtx.TraceID().String())
 	}
 
@@ -49,13 +49,13 @@ func (s *Saga) Add(action, compensate string, payload proto.Message) *Saga {
 func (s *Saga) Submit() error {
 	logger := logging.Default()
 	logger.InfoContext(s.ctx, "submitting saga transaction", "gid", s.gid, "server", s.server)
-	
+
 	err := s.saga.Submit()
 	if err != nil {
 		logger.ErrorContext(s.ctx, "saga submission failed", "gid", s.gid, "error", err)
 		return fmt.Errorf("saga submit error: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -67,4 +67,3 @@ func Barrier(ctx context.Context, db *sql.DB, fn func(*sql.Tx) error) error {
 	}
 	return barrier.CallWithDB(db, fn)
 }
-

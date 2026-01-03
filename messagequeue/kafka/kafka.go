@@ -15,6 +15,20 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+var (
+	defaultProducer *Producer
+)
+
+// DefaultProducer 返回全局默认生产者实例
+func DefaultProducer() *Producer {
+	return defaultProducer
+}
+
+// SetDefaultProducer 设置全局默认生产者实例
+func SetDefaultProducer(p *Producer) {
+	defaultProducer = p
+}
+
 type Handler func(ctx context.Context, msg kafkago.Message) error
 
 type Producer struct {

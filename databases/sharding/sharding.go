@@ -11,6 +11,20 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	defaultManager *Manager
+)
+
+// Default 返回全局默认分片管理器实例
+func Default() *Manager {
+	return defaultManager
+}
+
+// SetDefault 设置全局默认分片管理器实例
+func SetDefault(m *Manager) {
+	defaultManager = m
+}
+
 // Manager 管理多个分片
 type Manager struct {
 	shards     map[int]*databases.DB

@@ -18,6 +18,20 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+var (
+	defaultCache *RedisCache
+)
+
+// Default 返回全局默认缓存实例
+func Default() *RedisCache {
+	return defaultCache
+}
+
+// SetDefault 设置全局默认缓存实例 (通常由构建框架调用)
+func SetDefault(c *RedisCache) {
+	defaultCache = c
+}
+
 // ErrCacheMiss 缓存未命中错误
 var ErrCacheMiss = errors.New("cache: key not found")
 

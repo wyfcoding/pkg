@@ -149,6 +149,14 @@ func Init(cfg config.SnowflakeConfig) error {
 	return err
 }
 
+// Default 返回全局默认生成器实例
+func Default() Generator {
+	if defaultGenerator == nil {
+		_ = Init(config.SnowflakeConfig{MachineID: 1})
+	}
+	return defaultGenerator
+}
+
 // GenID 使用默认生成器生成唯一 ID。
 // 如果默认生成器尚未初始化，它会使用默认配置（MachineID为1）进行一次回退初始化。
 func GenID() uint64 {

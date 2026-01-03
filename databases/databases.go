@@ -20,6 +20,20 @@ import (
 	"gorm.io/plugin/opentelemetry/tracing"
 )
 
+var (
+	defaultDB *DB
+)
+
+// Default 返回全局默认数据库实例
+func Default() *DB {
+	return defaultDB
+}
+
+// SetDefault 设置全局默认数据库实例 (通常由构建框架调用)
+func SetDefault(db *DB) {
+	defaultDB = db
+}
+
 // DB 包装了 GORM 实例及其治理组件
 type DB struct {
 	*gorm.DB

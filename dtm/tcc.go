@@ -49,4 +49,3 @@ func (t *Tcc) Execute(fn func(*dtmgrpc.TccGrpc) error) error {
 func CallBranch(tcc *dtmgrpc.TccGrpc, payload proto.Message, try, confirm, cancel string) error {
 	return tcc.CallBranch(payload, try, confirm, cancel, &emptypb.Empty{})
 }
-

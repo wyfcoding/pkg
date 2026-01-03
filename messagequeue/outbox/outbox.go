@@ -10,6 +10,20 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	defaultManager *Manager
+)
+
+// Default 返回全局默认管理器实例
+func Default() *Manager {
+	return defaultManager
+}
+
+// SetDefault 设置全局默认管理器实例
+func SetDefault(m *Manager) {
+	defaultManager = m
+}
+
 // MessageStatus 消息状态
 type MessageStatus int8
 
