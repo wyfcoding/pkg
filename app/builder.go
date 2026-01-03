@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"time"
 
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/middleware"
+	"github.com/wyfcoding/pkg/response"
 	"github.com/wyfcoding/pkg/server"
 	"github.com/wyfcoding/pkg/tracing"
 
@@ -240,6 +242,33 @@ func (b *Builder) Build() *App {
 	if b.registerGin != nil {
 		httpAddr := fmt.Sprintf("%s:%d", cfg.Server.HTTP.Addr, cfg.Server.HTTP.Port)
 		ginEngine := server.NewDefaultGinEngine(logger.Logger, b.ginMiddleware...)
+
+		// --- 自动注册标准运维接口 (核心架构增强：减少样板代码) ---
+		sys := ginEngine.Group("/sys")
+		{
+			sys.GET("/health", func(c *gin.Context) {
+				response.SuccessWithRawData(c, gin.H{
+					"status":    "UP",
+					"service":   b.serviceName,
+					"timestamp": time.Now().Unix(),
+				})
+			})
+			sys.GET("/ready", func(c *gin.Context) {
+				response.SuccessWithRawData(c, gin.H{"status": "READY"})
+			})
+		}
+
+		// 自动暴露指标接口
+		if cfg.Metrics.Enabled && metricsInstance != nil {
+			path := cfg.Metrics.Path
+			if path == "" {
+				path = "/metrics"
+			}
+			ginEngine.GET(path, gin.WrapH(metricsInstance.Handler()))
+			logger.Logger.Info("Metrics endpoint registered", "path", path)
+		}
+		// -------------------------------------------------------
+
 		b.registerGin.(func(*gin.Engine, any))(ginEngine, serviceInstance)
 		ginSrv := server.NewGinServer(ginEngine, httpAddr, logger.Logger)
 		servers = append(servers, ginSrv)

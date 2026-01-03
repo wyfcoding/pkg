@@ -84,11 +84,100 @@ func (c *MeasuredConn) Exec(ctx context.Context, query string, args ...any) erro
 }
 
 func (c *MeasuredConn) recordMetrics(start time.Time, err error) {
+
 	duration := time.Since(start).Seconds()
+
 	status := "success"
+
 	if err != nil {
+
 		status = "error"
+
 	}
+
 	chOps.WithLabelValues(c.db, status).Inc()
+
 	chDuration.WithLabelValues(c.db).Observe(duration)
+
+}
+
+// BatchWriter 提供了批量写入 ClickHouse 的能力。
+
+type BatchWriter struct {
+	conn driver.Conn
+
+	query string
+
+	batchSize int
+
+	timeout time.Duration
+}
+
+// NewBatchWriter 创建一个新的批量写入器。
+
+func NewBatchWriter(conn driver.Conn, query string, batchSize int, timeout time.Duration) *BatchWriter {
+
+	return &BatchWriter{
+
+		conn: conn,
+
+		query: query,
+
+		batchSize: batchSize,
+
+		timeout: timeout,
+	}
+
+}
+
+// Write 批量写入数据。
+
+func (w *BatchWriter) Write(ctx context.Context, data [][]any) error {
+
+	if len(data) == 0 {
+
+		return nil
+
+	}
+
+	batch, err := w.conn.PrepareBatch(ctx, w.query)
+
+	if err != nil {
+
+		return fmt.Errorf("failed to prepare batch: %w", err)
+
+	}
+
+	for _, row := range data {
+
+		if err := batch.Append(row...); err != nil {
+
+			return fmt.Errorf("failed to append row: %w", err)
+
+		}
+
+	}
+
+	start := time.Now()
+
+	err = batch.Send()
+
+	// 记录指标
+
+	duration := time.Since(start).Seconds()
+
+	status := "success"
+
+	if err != nil {
+
+		status = "error"
+
+	}
+
+	chOps.WithLabelValues("batch", status).Inc()
+
+	chDuration.WithLabelValues("batch").Observe(duration)
+
+	return err
+
 }
