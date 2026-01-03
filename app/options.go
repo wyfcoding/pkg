@@ -10,8 +10,16 @@ type Option func(*options)
 // options 是应用程序的内部配置结构体。
 // 它包含了应用程序运行时所需的所有可配置项。
 type options struct {
-	servers  []server.Server // 应用程序管理的服务器列表（例如，HTTP服务器、gRPC服务器）。
-	cleanups []func()        // 应用程序关闭时需要执行的清理函数列表（例如，关闭数据库连接、停止Kafka消费者）。
+	servers        []server.Server // 应用程序管理的服务器列表（例如，HTTP服务器、gRPC服务器）。
+	cleanups       []func()        // 应用程序关闭时需要执行的清理函数列表（例如，关闭数据库连接、停止Kafka消费者）。
+	healthCheckers []func() error  // 自定义健康检查探测器
+}
+
+// WithHealthChecker 注册一个自定义健康检查函数，用于服务的就绪状态检查。
+func WithHealthChecker(checker func() error) Option {
+	return func(o *options) {
+		o.healthCheckers = append(o.healthCheckers, checker)
+	}
 }
 
 // WithServer 是一个Option函数，用于向应用程序添加一个或多个 `server.Server` 实例。

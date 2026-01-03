@@ -32,6 +32,9 @@ type Builder struct {
 
 	metricsPort string // Metrics 端口
 
+	// healthCheckers 用于收集自定义健康检查。
+	healthCheckers []func() error
+
 	// grpcInterceptors 用于收集gRPC一元拦截器。
 	grpcInterceptors []grpc.UnaryServerInterceptor
 	// ginMiddleware 用于收集Gin中间件。
@@ -74,6 +77,12 @@ func (b *Builder) WithService(init func(any, *metrics.Metrics) (any, func(), err
 // WithMetrics 在指定端口上启用 Prometheus 指标服务器。
 func (b *Builder) WithMetrics(port string) *Builder {
 	b.metricsPort = port
+	return b
+}
+
+// WithHealthChecker 添加一个自定义健康检查函数。
+func (b *Builder) WithHealthChecker(checker func() error) *Builder {
+	b.healthCheckers = append(b.healthCheckers, checker)
 	return b
 }
 
@@ -254,6 +263,15 @@ func (b *Builder) Build() *App {
 				})
 			})
 			sys.GET("/ready", func(c *gin.Context) {
+				for _, checker := range b.healthCheckers {
+					if err := checker(); err != nil {
+						c.JSON(503, gin.H{
+							"status": "NOT_READY",
+							"error":  err.Error(),
+						})
+						return
+					}
+				}
 				response.SuccessWithRawData(c, gin.H{"status": "READY"})
 			})
 		}
@@ -273,6 +291,12 @@ func (b *Builder) Build() *App {
 		ginSrv := server.NewGinServer(ginEngine, httpAddr, logger.Logger)
 		servers = append(servers, ginSrv)
 	}
+
+	// 将健康检查器传给 App 实例以便其他可能的内部监控使用
+	for _, checker := range b.healthCheckers {
+		b.appOpts = append(b.appOpts, WithHealthChecker(checker))
+	}
+
 	// 将创建好的服务器实例添加到 App 的生命周期管理中。
 	b.appOpts = append(b.appOpts, WithServer(servers...))
 

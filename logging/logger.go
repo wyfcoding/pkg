@@ -12,6 +12,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 	"gorm.io/gorm/logger" // GORM的日志接口
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace" // OpenTelemetry追踪
 )
 
@@ -276,15 +277,23 @@ func (l *GormLogger) Error(ctx context.Context, msg string, data ...any) {
 	l.logger.ErrorContext(ctx, fmt.Sprintf(msg, data...))
 }
 
-// Trace 实现了gorm logger.Interface的Trace方法，用于记录SQL查询的详细信息，包括耗时、SQL语句和错误。
-// 慢查询会以Warn级别记录，错误查询以Error级别记录，普通查询以Debug级别记录。
+// Trace 实现了gorm logger.Interface的Trace方法
 func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
-	elapsed := time.Since(begin) // 计算SQL执行耗时
-	sql, rows := fc()            // 获取SQL语句和影响的行数
+	elapsed := time.Since(begin)
+	sql, rows := fc()
+
+	// 顶级可观测性优化：将 SQL 注入到分布式追踪的 Span 属性中
+	span := trace.SpanFromContext(ctx)
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.String("db.statement", sql),
+			attribute.Int64("db.rows_affected", rows),
+		)
+	}
 
 	fields := []any{
-		slog.String("sql", sql),           // SQL语句
-		slog.Duration("elapsed", elapsed), // 执行耗时
+		slog.String("sql", sql),
+		slog.Duration("elapsed", elapsed),
 	}
 	if rows != -1 { // 检查是否返回了影响行数
 		fields = append(fields, slog.Int64("rows", rows)) // 影响行数

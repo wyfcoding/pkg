@@ -82,6 +82,11 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 		return nil, err
 	}
 
+	// 2. 注入领域事件自动化插件 (顶级架构增强)
+	if err := rawDB.Use(&EventPlugin{}); err != nil {
+		return nil, err
+	}
+
 	sqlDB, err := rawDB.DB()
 	if err != nil {
 		return nil, err
