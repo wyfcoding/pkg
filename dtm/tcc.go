@@ -3,6 +3,7 @@ package dtm
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/dtm-labs/client/dtmgrpc"
 	"github.com/wyfcoding/pkg/logging"
@@ -29,6 +30,7 @@ func NewTcc(ctx context.Context, server string, gid string) *Tcc {
 // Execute 执行 TCC 事务
 func (t *Tcc) Execute(fn func(*dtmgrpc.TccGrpc) error) error {
 	logger := logging.Default()
+	start := time.Now()
 	logger.InfoContext(t.ctx, "executing tcc transaction", "gid", t.gid, "server", t.server)
 
 	// 使用 dtmgrpc 的 TccGlobalTransaction，它会自动创建并提交/回滚事务
@@ -36,11 +38,13 @@ func (t *Tcc) Execute(fn func(*dtmgrpc.TccGrpc) error) error {
 		return fn(tcc)
 	})
 
+	duration := time.Since(start)
 	if err != nil {
-		logger.ErrorContext(t.ctx, "tcc transaction failed", "gid", t.gid, "error", err)
+		logger.ErrorContext(t.ctx, "tcc transaction failed", "gid", t.gid, "error", err, "duration", duration)
 		return fmt.Errorf("tcc transaction error: %w", err)
 	}
 
+	logger.InfoContext(t.ctx, "tcc transaction successful", "gid", t.gid, "duration", duration)
 	return nil
 }
 
