@@ -9,6 +9,7 @@ import (
 
 	"github.com/wyfcoding/pkg/tracing"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -35,13 +36,12 @@ const (
 )
 
 // OutboxMessage 离群消息实体模型
-// 必须与业务表在同一个数据库中，以便利用本地事务。
 type OutboxMessage struct {
 	gorm.Model
 	Topic      string        `gorm:"column:topic;type:varchar(255);not null;index" json:"topic"` // 消息主题
 	Key        string        `gorm:"column:key;type:varchar(255);index" json:"key"`              // 消息键
 	Payload    []byte        `gorm:"column:payload;type:blob;not null" json:"payload"`           // 消息体
-	Metadata   string        `gorm:"column:metadata;type:text" json:"metadata"`                  // [新增] 存储 Trace 上下文 (JSON)
+	Metadata   string        `gorm:"column:metadata;type:text" json:"metadata"`                  // 存储 Trace 上下文 (JSON)
 	Status     MessageStatus `gorm:"column:status;type:tinyint;default:0;index" json:"status"`   // 状态
 	RetryCount int           `gorm:"column:retry_count;type:int;default:0" json:"retry_count"`   // 已重试次数
 	MaxRetries int           `gorm:"column:max_retries;type:int;default:5" json:"max_retries"`   // 最大重试次数
@@ -54,7 +54,7 @@ func (OutboxMessage) TableName() string {
 	return "sys_outbox_messages"
 }
 
-// Pusher 消息推送接口，屏蔽底层 MQ 实现 (如 Kafka, RabbitMQ)
+// Pusher 消息推送接口
 type Pusher interface {
 	Push(ctx context.Context, topic string, key string, payload []byte) error
 }
@@ -74,14 +74,12 @@ func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
 }
 
 // PublishInTx 在现有的事务中持久化消息
-// 深度优化：自动提取追踪上下文并保存
 func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, key string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
-	// 提取当前 Trace 上下文
 	metadataMap := tracing.InjectContext(ctx)
 	metadataJSON, _ := json.Marshal(metadataMap)
 
@@ -102,43 +100,46 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 	return nil
 }
 
-// Processor 离群消息处理器，负责异步发送消息
+// Processor 离群消息处理器，负责异步发送消息与自清理
 type Processor struct {
-	mgr       *Manager
-	pusher    func(ctx context.Context, topic string, key string, payload []byte) error // 发送函数
-	batchSize int
-	interval  time.Duration
-	stopChan  chan struct{}
+	mgr           *Manager
+	pusher        func(ctx context.Context, topic string, key string, payload []byte) error
+	batchSize     int
+	interval      time.Duration
+	retentionDays int // [新增] 数据保留天数
+	stopChan      chan struct{}
 }
 
 // NewProcessor 创建处理器
 func NewProcessor(mgr *Manager, pusher func(ctx context.Context, topic string, key string, payload []byte) error, batchSize int, interval time.Duration) *Processor {
-	if batchSize <= 0 {
-		batchSize = 100
-	}
-	if interval <= 0 {
-		interval = 5 * time.Second
-	}
+	if batchSize <= 0 { batchSize = 100 }
+	if interval <= 0 { interval = 5 * time.Second }
 	return &Processor{
-		mgr:       mgr,
-		pusher:    pusher,
-		batchSize: batchSize,
-		interval:  interval,
-		stopChan:  make(chan struct{}),
+		mgr:           mgr,
+		pusher:        pusher,
+		batchSize:     batchSize,
+		interval:      interval,
+		retentionDays: 7, // 默认保留 7 天
+		stopChan:      make(chan struct{}),
 	}
 }
 
-// Start 启动后台扫描任务
+// Start 启动后台任务
 func (p *Processor) Start() {
 	p.mgr.logger.Info("outbox processor started")
 	ticker := time.NewTicker(p.interval)
+	cleanupTicker := time.NewTicker(24 * time.Hour) // 每天清理一次
+
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
 				p.process()
+			case <-cleanupTicker.C:
+				p.cleanup()
 			case <-p.stopChan:
 				ticker.Stop()
+				cleanupTicker.Stop()
 				return
 			}
 		}
@@ -148,30 +149,43 @@ func (p *Processor) Start() {
 // Stop 停止处理器
 func (p *Processor) Stop() {
 	close(p.stopChan)
-	p.mgr.logger.Info("outbox processor stopped")
 }
 
-// process 执行一次扫描与投递
+// process 执行消息投递 (带集群安全并发控制)
 func (p *Processor) process() {
-	var messages []OutboxMessage
-	err := p.mgr.db.Where("status = ? AND next_retry <= ? AND retry_count < max_retries", StatusPending, time.Now()).
-		Limit(p.batchSize).
-		Order("id ASC").
-		Find(&messages).Error
-	if err != nil {
-		p.mgr.logger.Error("failed to fetch outbox messages", "error", err)
-		return
-	}
+	// 核心架构决策：使用事务 + SKIP LOCKED 确保多实例不抢占同一批消息
+	// 这样即便有 100 个节点在扫描，它们也不会抓取重复的 ID。
+	err := p.mgr.db.Transaction(func(tx *gorm.DB) error {
+		var messages []OutboxMessage
+		
+		// 1. 抓取待处理消息并加锁
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("status = ? AND next_retry <= ? AND retry_count < max_retries", StatusPending, time.Now()).
+			Limit(p.batchSize).
+			Order("id ASC").
+			Find(&messages).Error
+		if err != nil {
+			return err
+		}
 
-	for _, msg := range messages {
-		p.send(msg)
+		if len(messages) == 0 {
+			return nil
+		}
+
+		// 2. 依次投递
+		for _, msg := range messages {
+			p.send(tx, msg)
+		}
+		return nil
+	})
+
+	if err != nil {
+		p.mgr.logger.Error("outbox batch process failed", "error", err)
 	}
 }
 
-// send 执行单条消息发送并更新状态
-// 深度优化：恢复并传递追踪上下文
-func (p *Processor) send(msg OutboxMessage) {
-	// 1. 恢复追踪上下文
+// send 执行单条消息发送并更新状态 (在事务内执行状态更新以保证一致性)
+func (p *Processor) send(tx *gorm.DB, msg OutboxMessage) {
 	ctx := context.Background()
 	if msg.Metadata != "" {
 		var carrier map[string]string
@@ -180,38 +194,44 @@ func (p *Processor) send(msg OutboxMessage) {
 		}
 	}
 
-	// 2. 开启子 Span 标识异步发送
-	ctx, span := tracing.StartSpan(ctx, "Outbox.Processor.Send")
+	ctx, span := tracing.StartSpan(ctx, "Outbox.Send")
 	defer span.End()
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	err := p.pusher(ctx, msg.Topic, msg.Key, msg.Payload)
-	if err == nil {
-		// 发送成功：标记为已发送
-		p.mgr.db.Model(&msg).Updates(map[string]any{
-			"status":      StatusSent,
-			"retry_count": msg.RetryCount + 1,
-		})
-		return
-	}
-
-	// 发送失败：增加重试次数，计算下次重试时间
-	backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour)
-
+	err := p.pusher(sendCtx, msg.Topic, msg.Key, msg.Payload)
+	
 	updates := map[string]any{
 		"retry_count": msg.RetryCount + 1,
-		"next_retry":  time.Now().Add(backoff),
-		"last_error":  err.Error(),
 	}
 
-	if msg.RetryCount+1 >= msg.MaxRetries {
-		updates["status"] = StatusFailed
-		p.mgr.logger.ErrorContext(ctx, "outbox message failed permanently", "id", msg.ID, "topic", msg.Topic)
+	if err == nil {
+		updates["status"] = StatusSent
 	} else {
-		p.mgr.logger.WarnContext(ctx, "outbox message send failed, retrying later", "id", msg.ID, "error", err, "next_retry", updates["next_retry"])
+		backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour)
+		updates["next_retry"] = time.Now().Add(backoff)
+		updates["last_error"] = err.Error()
+		
+		if msg.RetryCount+1 >= msg.MaxRetries {
+			updates["status"] = StatusFailed
+			p.mgr.logger.ErrorContext(ctx, "outbox message failed permanently", "id", msg.ID, "topic", msg.Topic)
+		} else {
+			p.mgr.logger.WarnContext(ctx, "outbox message send failed, retrying", "id", msg.ID, "error", err)
+		}
 	}
 
-	p.mgr.db.Model(&msg).Updates(updates)
+	// 更新消息状态 (注意此处使用外部传入的事务 tx)
+	tx.Model(&msg).Updates(updates)
+}
+
+// cleanup 定期清理旧数据，防止表膨胀
+func (p *Processor) cleanup() {
+	deadline := time.Now().AddDate(0, 0, -p.retentionDays)
+	result := p.mgr.db.Where("status = ? AND updated_at < ?", StatusSent, deadline).Delete(&OutboxMessage{})
+	if result.Error != nil {
+		p.mgr.logger.Error("failed to cleanup old outbox messages", "error", result.Error)
+	} else if result.RowsAffected > 0 {
+		p.mgr.logger.Info("outbox cleanup finished", "rows_deleted", result.RowsAffected)
+	}
 }
