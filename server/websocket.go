@@ -1,0 +1,194 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true }, // 生产环境应严格校验域
+}
+
+// Client 表示一个 WebSocket 客户端连接
+type Client struct {
+	conn    *websocket.Conn
+	send    chan []byte
+	manager *WSManager
+	topics  map[string]struct{} // 该客户端订阅的主题
+	mu      sync.Mutex
+	userID  string
+}
+
+// WSManager 管理所有活跃的 WebSocket 连接
+type WSManager struct {
+	clients    map[*Client]bool
+	broadcast  chan BroadcastMessage
+	register   chan *Client
+	unregister chan *Client
+	mu         sync.RWMutex
+	logger     *slog.Logger
+}
+
+type BroadcastMessage struct {
+	Topic   string
+	Payload []byte
+}
+
+func NewWSManager(logger *slog.Logger) *WSManager {
+	return &WSManager{
+		clients:    make(map[*Client]bool),
+		broadcast:  make(chan BroadcastMessage),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		logger:     logger.With("module", "websocket_manager"),
+	}
+}
+
+func (m *WSManager) Run(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case client := <-m.register:
+			m.mu.Lock()
+			m.clients[client] = true
+			m.mu.Unlock()
+			m.logger.Debug("client registered", "addr", client.conn.RemoteAddr())
+		case client := <-m.unregister:
+			m.mu.Lock()
+			if _, ok := m.clients[client]; ok {
+				delete(m.clients, client)
+				close(client.send)
+			}
+			m.mu.Unlock()
+			m.logger.Debug("client unregistered", "addr", client.conn.RemoteAddr())
+		case message := <-m.broadcast:
+			m.mu.RLock()
+			for client := range m.clients {
+				client.mu.Lock()
+				// 检查客户端是否订阅了该主题
+				if _, ok := client.topics[message.Topic]; ok {
+					select {
+					case client.send <- message.Payload:
+					default:
+						// 如果缓冲区满了，主动断开客户端以防止阻塞整个广播
+						m.logger.Warn("client buffer full, dropping", "addr", client.conn.RemoteAddr())
+						go func(c *Client) { m.unregister <- c }(client)
+					}
+				}
+				client.mu.Unlock()
+			}
+			m.mu.RUnlock()
+		}
+	}
+}
+
+// Broadcast 对外发布的广播接口
+func (m *WSManager) Broadcast(topic string, payload any) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		m.logger.Error("failed to marshal broadcast data", "error", err)
+		return
+	}
+	m.broadcast <- BroadcastMessage{Topic: topic, Payload: data}
+}
+
+// ServeHTTP 处理 WebSocket 升级请求
+func (m *WSManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		m.logger.Error("websocket upgrade failed", "error", err)
+		return
+	}
+
+	client := &Client{
+		conn:    conn,
+		send:    make(chan []byte, 256),
+		manager: m,
+		topics:  make(map[string]struct{}),
+	}
+
+	m.register <- client
+
+	// 启动写协程
+	go client.writePump()
+	// 启动读协程 (处理订阅/心跳)
+	go client.readPump()
+}
+
+func (c *Client) readPump() {
+	defer func() {
+		c.manager.unregister <- c
+		c.conn.Close()
+	}()
+
+	c.conn.SetReadLimit(512)
+	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	for {
+		_, message, err := c.conn.ReadMessage()
+		if err != nil {
+			break
+		}
+
+		// 解析客户端命令 (如: {"op": "subscribe", "topic": "BTC/USDT"})
+		var cmd struct {
+			Op    string `json:"op"`
+			Topic string `json:"topic"`
+		}
+		if err := json.Unmarshal(message, &cmd); err == nil {
+			c.mu.Lock()
+			switch cmd.Op {
+			case "subscribe":
+				c.topics[cmd.Topic] = struct{}{}
+			case "unsubscribe":
+				delete(c.topics, cmd.Topic)
+			}
+			c.mu.Unlock()
+		}
+	}
+}
+
+func (c *Client) writePump() {
+	ticker := time.NewTicker(54 * time.Second)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if !ok {
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+
+			if err := w.Close(); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}
