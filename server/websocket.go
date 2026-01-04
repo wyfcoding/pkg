@@ -22,7 +22,6 @@ type Client struct {
 	manager *WSManager
 	topics  map[string]struct{} // 该客户端订阅的主题
 	mu      sync.Mutex
-	userID  string
 }
 
 // WSManager 管理所有活跃的 WebSocket 连接

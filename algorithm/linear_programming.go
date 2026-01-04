@@ -31,8 +31,8 @@ func NewLinearProgramming(objective []float64, constraints [][]float64, bounds [
 	}
 
 	// 填充约束部分
-	for i := 0; i < m; i++ {
-		for j := 0; j < n; j++ {
+	for i := range m {
+		for j := range n {
 			t[i][j] = constraints[i][j]
 		}
 		t[i][n+i] = 1.0 // 松弛变量
@@ -40,7 +40,7 @@ func NewLinearProgramming(objective []float64, constraints [][]float64, bounds [
 	}
 
 	// 填充目标函数部分 (Max Z, 转化为 Z - cx = 0)
-	for j := 0; j < n; j++ {
+	for j := range n {
 		t[m][j] = -objective[j]
 	}
 

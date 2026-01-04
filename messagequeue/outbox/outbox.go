@@ -12,9 +12,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var (
-	defaultManager *Manager
-)
+var defaultManager *Manager
 
 // Default 返回全局默认管理器实例
 func Default() *Manager {
@@ -112,8 +110,12 @@ type Processor struct {
 
 // NewProcessor 创建处理器
 func NewProcessor(mgr *Manager, pusher func(ctx context.Context, topic string, key string, payload []byte) error, batchSize int, interval time.Duration) *Processor {
-	if batchSize <= 0 { batchSize = 100 }
-	if interval <= 0 { interval = 5 * time.Second }
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
 	return &Processor{
 		mgr:           mgr,
 		pusher:        pusher,
@@ -157,7 +159,7 @@ func (p *Processor) process() {
 	// 这样即便有 100 个节点在扫描，它们也不会抓取重复的 ID。
 	err := p.mgr.db.Transaction(func(tx *gorm.DB) error {
 		var messages []OutboxMessage
-		
+
 		// 1. 抓取待处理消息并加锁
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where("status = ? AND next_retry <= ? AND retry_count < max_retries", StatusPending, time.Now()).
@@ -178,7 +180,6 @@ func (p *Processor) process() {
 		}
 		return nil
 	})
-
 	if err != nil {
 		p.mgr.logger.Error("outbox batch process failed", "error", err)
 	}
@@ -201,7 +202,7 @@ func (p *Processor) send(tx *gorm.DB, msg OutboxMessage) {
 	defer cancel()
 
 	err := p.pusher(sendCtx, msg.Topic, msg.Key, msg.Payload)
-	
+
 	updates := map[string]any{
 		"retry_count": msg.RetryCount + 1,
 	}
@@ -212,7 +213,7 @@ func (p *Processor) send(tx *gorm.DB, msg OutboxMessage) {
 		backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour)
 		updates["next_retry"] = time.Now().Add(backoff)
 		updates["last_error"] = err.Error()
-		
+
 		if msg.RetryCount+1 >= msg.MaxRetries {
 			updates["status"] = StatusFailed
 			p.mgr.logger.ErrorContext(ctx, "outbox message failed permanently", "id", msg.ID, "topic", msg.Topic)

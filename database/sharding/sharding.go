@@ -11,9 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	defaultManager *Manager
-)
+var defaultManager *Manager
 
 // Default 返回全局默认分片管理器实例
 func Default() *Manager {

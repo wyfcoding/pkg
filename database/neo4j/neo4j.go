@@ -34,13 +34,13 @@ func init() {
 
 // Client 是 Neo4j 驱动的封装。
 type Client struct {
-	driver neo4j.DriverWithContext
+	driver neo4j.Driver
 	dbName string
 }
 
 // NewClient 创建一个新的 Neo4j 客户端。
 func NewClient(cfg config.Neo4jConfig) (*Client, error) {
-	driver, err := neo4j.NewDriverWithContext(
+	driver, err := neo4j.NewDriver(
 		cfg.URI,
 		neo4j.BasicAuth(cfg.Username, cfg.Password, ""),
 	)
@@ -68,7 +68,7 @@ func (c *Client) Close(ctx context.Context) error {
 }
 
 // Session 执行具有指标监控的 Neo4j 会话操作。
-func (c *Client) Session(ctx context.Context, accessMode neo4j.AccessMode, work func(neo4j.SessionWithContext) error) error {
+func (c *Client) Session(ctx context.Context, accessMode neo4j.AccessMode, work func(neo4j.Session) error) error {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		DatabaseName: c.dbName,
 		AccessMode:   accessMode,

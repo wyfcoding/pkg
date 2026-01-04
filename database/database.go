@@ -1,7 +1,6 @@
 package database
 
 import (
-	"sync"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -17,10 +16,7 @@ import (
 	"gorm.io/plugin/opentelemetry/tracing"
 )
 
-var (
-	defaultDB *DB
-	dbOnce    sync.Once
-)
+var defaultDB *DB
 
 // DB 封装了 GORM 实例，增加了单例管理和熔断/指标支持
 type DB struct {
@@ -58,7 +54,7 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 
 	// 初始化 GORM，使用统一的日志封装
 	gormDB, err := gorm.Open(dialer, &gorm.Config{
-		Logger: logging.NewGormLogger(logger, 200*time.Millisecond),
+		Logger:      logging.NewGormLogger(logger, 200*time.Millisecond),
 		PrepareStmt: true,
 	})
 	if err != nil {

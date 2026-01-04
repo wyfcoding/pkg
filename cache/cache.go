@@ -18,9 +18,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-var (
-	defaultCache *RedisCache
-)
+var defaultCache *RedisCache
 
 // Default 返回全局默认缓存实例
 func Default() *RedisCache {

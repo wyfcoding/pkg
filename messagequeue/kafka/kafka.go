@@ -15,9 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-var (
-	defaultProducer *Producer
-)
+var defaultProducer *Producer
 
 // DefaultProducer 返回全局默认生产者实例
 func DefaultProducer() *Producer {

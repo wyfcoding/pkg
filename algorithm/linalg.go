@@ -29,11 +29,11 @@ func NewMatrixFromData(data [][]float64) (*Matrix, error) {
 	}
 	c := len(data[0])
 	m := NewMatrix(r, c)
-	for i := 0; i < r; i++ {
+	for i := range r {
 		if len(data[i]) != c {
 			return nil, errors.New("columns dimension mismatch")
 		}
-		for j := 0; j < c; j++ {
+		for j := range c {
 			m.Set(i, j, data[i][j])
 		}
 	}
@@ -87,7 +87,7 @@ func (m *Matrix) Cholesky() (*Matrix, error) {
 	n := m.Rows
 	l := NewMatrix(n, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		for j := 0; j <= i; j++ {
 			sum := 0.0
 			for k := 0; k < j; k++ {

@@ -18,10 +18,6 @@ type SVM struct {
 	mu      sync.RWMutex
 	kernel  string  // "linear" 或 "rbf"
 	gamma   float64 // RBF 专用参数
-
-	// 用于核函数计算的训练支持向量
-	supportPoints [][]float64
-	alphas        []float64
 }
 
 // NewSVM 创建一个新的 SVM 实例。
@@ -45,24 +41,24 @@ func (s *SVM) Train(points [][]float64, labels []int, epochs int, lr float64, la
 	s.weights = make([]float64, dim)
 	s.bias = 0.0
 
-	for epoch := 0; epoch < epochs; epoch++ {
+	for range epochs {
 		for i, x := range points {
 			y := float64(labels[i])
 			// 判定是否命中 Hinge Loss 区域
 			prediction := s.bias
-			for j := 0; j < dim; j++ {
+			for j := range dim {
 				prediction += s.weights[j] * x[j]
 			}
 
 			if y*prediction < 1 {
 				// 更新权重 (梯度包含正则项和 Loss 项)
-				for j := 0; j < dim; j++ {
+				for j := range dim {
 					s.weights[j] = s.weights[j] - lr*(lambda*s.weights[j]-y*x[j])
 				}
 				s.bias += lr * y
 			} else {
 				// 仅更新权重中的正则项部分
-				for j := 0; j < dim; j++ {
+				for j := range dim {
 					s.weights[j] = s.weights[j] - lr*(lambda*s.weights[j])
 				}
 			}

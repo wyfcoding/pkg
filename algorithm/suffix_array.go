@@ -36,7 +36,7 @@ func NewSuffixArray(text string) *SuffixArray {
 func (sa *SuffixArray) computeLCP() {
 	n := len(sa.text)
 	k := 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if sa.rank[i] == 0 {
 			sa.height[0] = 0
 			continue

@@ -72,7 +72,6 @@ func (s *GormEventStore) Save(ctx context.Context, aggregateID string, events []
 			Where("aggregate_id = ?", aggregateID).
 			Select("COALESCE(MAX(version), 0)").
 			Scan(&currentVersion).Error
-
 		if err != nil {
 			return err
 		}
@@ -146,7 +145,6 @@ func (s *GormEventStore) LoadFromVersion(ctx context.Context, aggregateID string
 		Where("aggregate_id = ? AND version >= ?", aggregateID, fromVersion).
 		Order("version ASC").
 		Find(&models).Error
-
 	if err != nil {
 		return nil, err
 	}
