@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"log/slog"
 	"math"
 	"math/rand/v2" // 使用 Go 1.22+ 提供的新的 rand/v2 包。
 	"sync"
@@ -146,7 +147,7 @@ func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate flo
 
 		// 顶级架构记录：可以在此处记录每轮迭代的 loss
 		if iter%10 == 0 {
-			// slog.Debug("NN training epoch finished", "iteration", iter, "loss", totalLoss/float64(len(points)))
+			slog.Debug("NN training epoch finished", "iteration", iter, "loss", totalLoss/float64(len(points)))
 		}
 	}
 }

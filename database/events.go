@@ -90,7 +90,7 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 		}
 		// 在当前事务中保存到 outbox 表
 		if err := db.Session(&gorm.Session{NewDB: true}).Table("sys_outbox_messages").Create(record).Error; err != nil {
-			db.AddError(err)
+			_ = db.AddError(err)
 		}
 	}
 
