@@ -119,6 +119,25 @@ func Unauthenticated(msg string) *Error {
 	return New(ErrUnauthenticated, 401, msg, "", nil)
 }
 
+// Wrap 包装现有错误并捕获堆栈
+func Wrap(err error, errType ErrorType, msg string) *Error {
+	if err == nil {
+		return nil
+	}
+	// 如果已经是 *Error 类型，则保持其原始类型和堆栈，仅更新 Message 和 Cause
+	if e, ok := FromError(err); ok {
+		e.Cause = err
+		e.Message = msg
+		return e
+	}
+	return New(errType, int(errType), msg, "", err)
+}
+
+// WrapInternal 快速包装内部服务器错误
+func WrapInternal(err error, msg string) *Error {
+	return Wrap(err, ErrInternal, msg)
+}
+
 // --- 协议转换 ---
 
 // HTTPStatus 自动映射 HTTP 状态码

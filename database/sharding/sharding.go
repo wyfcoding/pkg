@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/wyfcoding/pkg/config"
-	"github.com/wyfcoding/pkg/databases"
+	"github.com/wyfcoding/pkg/database"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"gorm.io/gorm"
@@ -27,7 +27,7 @@ func SetDefault(m *Manager) {
 
 // Manager 管理多个分片
 type Manager struct {
-	shards     map[int]*databases.DB
+	shards     map[int]*database.DB
 	shardCount int
 	mu         sync.RWMutex
 }
@@ -37,9 +37,9 @@ func NewManager(configs []config.DatabaseConfig, cbCfg config.CircuitBreakerConf
 		return nil, fmt.Errorf("no database configs provided")
 	}
 
-	shards := make(map[int]*databases.DB)
+	shards := make(map[int]*database.DB)
 	for i, cfg := range configs {
-		db, err := databases.NewDB(cfg, cbCfg, logger, m)
+		db, err := database.NewDB(cfg, cbCfg, logger, m)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to shard %d: %w", i, err)
 		}

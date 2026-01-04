@@ -6,6 +6,31 @@ import (
 	"github.com/wyfcoding/pkg/eventsourcing"
 )
 
+var (
+	defaultEventBus        EventBus
+	defaultEventSubscriber EventSubscriber
+)
+
+// DefaultBus 返回全局默认事件总线
+func DefaultBus() EventBus {
+	return defaultEventBus
+}
+
+// SetDefaultBus 设置全局默认事件总线
+func SetDefaultBus(b EventBus) {
+	defaultEventBus = b
+}
+
+// DefaultSubscriber 返回全局默认事件订阅者
+func DefaultSubscriber() EventSubscriber {
+	return defaultEventSubscriber
+}
+
+// SetDefaultSubscriber 设置全局默认事件订阅者
+func SetDefaultSubscriber(s EventSubscriber) {
+	defaultEventSubscriber = s
+}
+
 // EventBus 事件总线接口
 // 用于在服务间或模块间异步发布领域事件
 type EventBus interface {
