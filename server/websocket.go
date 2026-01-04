@@ -89,14 +89,19 @@ func (m *WSManager) Run(ctx context.Context) {
 	}
 }
 
-// Broadcast 对外发布的广播接口
+// Broadcast 对外发布的广播接口 (会自动序列化 payload)
 func (m *WSManager) Broadcast(topic string, payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		m.logger.Error("failed to marshal broadcast data", "error", err)
 		return
 	}
-	m.broadcast <- BroadcastMessage{Topic: topic, Payload: data}
+	m.BroadcastRaw(topic, data)
+}
+
+// BroadcastRaw 广播原始字节数据 (高性能入口，不进行重复序列化)
+func (m *WSManager) BroadcastRaw(topic string, payload []byte) {
+	m.broadcast <- BroadcastMessage{Topic: topic, Payload: payload}
 }
 
 // ServeHTTP 处理 WebSocket 升级请求
