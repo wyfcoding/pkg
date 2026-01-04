@@ -13,6 +13,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/neo4j/neo4j-go-driver/v6 v6.0.0
 	github.com/prometheus/client_golang v1.23.2
