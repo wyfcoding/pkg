@@ -7,6 +7,7 @@
       6. 禁止生成任何测试文件（*_test.go）和文档文件（md、doc 等），生成代码时优先可编译的生产化骨架。
       7. 必须使用最新稳定版本库，不使用过时 API。
       8. 修改或生成代码文件可以直接执行（无需用户确认），但每次生成须在文件头或变更说明中列出关键改动与假设。
+      9. 使用DDD、整洁架构、CQRS、EDA、Event Sourcing。
 
       ——【调用链与网关架构（必须严格遵守）】——
       1. 对外入口基于 Envoy（Envoy-based Ingress）；整个请求链路必须符合：
@@ -22,13 +23,13 @@
       - application：用例逻辑、DTO、事务边界与补偿策略。
       - infrastructure：仓储实现、数据库、缓存、消息队列、第三方适配层。
       - interfaces：Gin HTTP handler / gRPC handler、入参出参转换、校验与中间件接入。
-      - 如果 goapi 已生成对应的 gRPC / Proto 类型，则 internal **不再重复定义**。
-      - internal可直接 import goapi 类型。
+      - 如果 go-api 已生成对应的 gRPC / Proto 类型，则 internal **不再重复定义**。
+      - internal可直接 import go-api 类型。
 
       ——【目录结构要求】——
       cmd/{service}/main.go（启动、依赖注入、优雅关停）
-      api/v1/{service}/（proto、跨服务常量、错误码）
-      goapi/v1/{service}/（pb.go / grpc.pb.go）
+      api/{service}/（proto、跨服务常量、错误码）
+      go-api/{service}/（pb.go / grpc.pb.go）
       configs/{service}/config.toml（TOML，含占位符与注释）
       deployments/{service}/：
         - Dockerfile：独立，每服务构建
@@ -56,15 +57,13 @@
       - 所有 GORM 模型文件需包含字段的中文注释，说明业务含义与约束。
 
       ——【技术栈要求】——
-      Go（最新稳定版） / Gin（服务内 HTTP） / GORM / MySQL / Redis / gRPC / Kafka / Docker / Kubernetes / Istio / Envoy / Etcd /
-      Elasticsearch / Logstash / Kibana / Prometheus / Grafana / Jaeger / MinIO / ClickHouse / MongoDB / Neo4j / Hadoop / Spark / Flink / Hive / HBase / Hudi /
-      LLM 推理与模型服务（按需接入）等。
+      Go / Gin（服务内 HTTP） / GORM / MySQL / Redis / gRPC / Kafka / Docker / Kubernetes / Istio / Envoy / Etcd / Elasticsearch / Logstash / Kibana / Prometheus / Grafana / Jaeger / MinIO / ClickHouse / MongoDB / Neo4j / Hadoop / Spark / Flink / Hive / HBase / Hudi / Jenkins / LLM 推理与模型服务等。
 
       ——【微服务生成顺序】——
       1. **单微服务粒度**：每次以单个微服务完整生成，完成后再生成下一个。
       2. **严格顺序**：
-         1) **api/v1/{service}/**：proto 文件、跨服务常量、错误码
-         2) **goapi/v1/{service}/**：生成 pb.go / grpc.pb.go
+         1) **api/{service}/**：proto 文件、跨服务常量、错误码
+         2) **go-api/{service}/**：生成 pb.go / grpc.pb.go
          3) **cmd/{service}/main.go**：依赖注入、启动、优雅关停
          4) **internal/{service}/**：
             - domain：实体、聚合、值对象、领域服务、仓储接口
@@ -97,7 +96,7 @@
 
       ——【高级算法与数据结构】——
       - 可以使用任何高级算法或竞赛/ACM 算法；对于性能敏感模块（撮合、回测、定价、做市），必须在注释中说明并发模型、内存与延迟优化点与复杂度分析。
-      - 若实现专有数据结构（例如跳表、并发环形队列、内存订单簿），应放在 pkg/algos 或 internal/{service}/infrastructure 下并有完整测试（虽不生成测试文件，但应包含示例验证代码）。
+      - 若实现专有数据结构（例如跳表、并发环形队列、内存订单簿），应放在 pkg/algos 或 internal/{service}/infrastructure 下并有完整测试。
 
       ——【业务逻辑要求】——
       - 每个微服务必须至少包含一个端到端业务示例（请求校验 -> 领域逻辑 -> 仓储操作 -> 事件派发 -> 下游消费），并在注释中说明流程与边界条件。
@@ -122,3 +121,106 @@
 
       ——【语言要求】——
       - 回答与注释必须使用中文，所有日志必须为英文。
+
+      【一、整体代码风格】
+      1. 所有 Go 代码必须通过 gofmt 格式化。
+      2. 每行代码建议不超过 120 列，必要时合理换行。
+      3. 运算符与操作数之间必须有空格（如 a + b），数组下标、函数参数不额外加空格。
+      4. import 使用 goimports 自动整理，并分三组：
+         - 标准库
+         - 项目内部包
+         - 第三方包
+      5. import 路径必须完整，禁止使用相对路径（如 ../xxx）。
+
+      【二、错误处理规范】
+      1. 所有返回的 error 必须被显式处理，禁止无视。
+      2. error 必须作为函数返回值的最后一个。
+      3. 错误处理应“尽早返回”，不要写在 else 分支中。
+      4. 禁止使用 panic 处理业务错误。
+      5. panic 仅允许用于：
+         - 程序无法继续运行的致命错误
+         - init / 全局初始化失败
+         - 明确的不变量断言
+      6. defer + recover 仅用于兜底保护，不允许吞掉 panic。
+
+      【三、注释规范】
+      1. 所有导出内容必须有注释，包括：
+         - package
+         - struct
+         - interface
+         - function / method
+         - const / var / type
+      2. 注释必须写在声明前一行，使用完整语句描述用途。
+      3. 禁止保留无意义、过期或注释掉的代码。
+
+      【四、命名规范】
+      【包名】
+      - 全小写
+      - 与目录名一致
+      - 简短、有明确语义
+      - 禁止使用 util / common / base 等无意义名称
+
+      【文件名】
+      - 全小写
+      - 使用下划线分隔（如 user_service.go）
+
+      【结构体】
+      - 使用名词或名词短语
+      - 驼峰命名
+      - 避免 Data / Info / Obj 等泛化名称
+
+      【接口】
+      - 与能力语义一致
+      - 单方法接口使用 -er 后缀（Reader / Writer）
+
+      【变量 / 常量】
+      - 驼峰命名
+      - 根据可见性控制首字母大小写
+      - 专有名词遵循 Go 惯例（URL / ID / HTTP）
+
+      【函数 / 方法】
+      - 驼峰命名
+      - 名称应体现行为语义
+      - 自动生成代码可适当放宽
+
+      【五、控制结构规范】
+      1. if：
+         - 支持初始化语句
+         - 布尔值直接判断，禁止 == true / == false
+      2. for：
+         - 使用短变量声明
+      3. range：
+         - 不使用的返回值用 _ 忽略
+      4. switch：
+         - 必须包含 default 分支
+      5. return：
+         - 错误尽早返回，减少嵌套
+      6. goto：
+         - 禁止在业务代码中使用
+
+      【六、函数设计规范】
+      1. 函数参数数量 ≤ 5，超过必须重构。
+      2. 不推荐使用命名返回值，除非有明确必要。
+      3. 优先值传递。
+      4. map / slice / chan / interface 禁止再传指针。
+
+      【七、defer 与资源管理】
+      1. 使用 defer 释放资源（文件、锁、连接）。
+      2. defer 必须在确认无错误后调用。
+      3. 禁止在循环中滥用 defer。
+
+      【八、方法接收器规范】
+      1. 接收器命名使用类型首字母的小写形式。
+      2. 禁止使用 this / self / me 等名称。
+      3. 同一类型的接收器命名必须统一。
+
+      【九、代码规模限制】
+      1. 单文件不超过 800 行。
+      2. 单函数不超过 80 行（含注释与空行）。
+      3. 超出必须拆分或重构。
+
+      【输出要求】
+      1. 所有输出代码默认已 gofmt。
+      2. 如进行优化，请说明关键修改点。
+      3. 不输出与规范无关的解释内容。
+      4. 以“可直接用于生产代码”的质量标准输出。
