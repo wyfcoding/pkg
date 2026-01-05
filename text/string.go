@@ -1,4 +1,4 @@
-package utils
+package text
 
 import (
 	"crypto/md5"   // 导入MD5哈希算法库。

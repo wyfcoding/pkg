@@ -8,7 +8,7 @@ import (
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/retry"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -99,8 +99,8 @@ func (f *ClientFactory) rateLimitInterceptor(limiter *rate.Limiter) grpc.UnaryCl
 
 func (f *ClientFactory) retryInterceptor(maxRetries int) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		return utils.Retry(ctx, func() error {
+		return retry.Retry(ctx, func() error {
 			return invoker(ctx, method, req, reply, cc, opts...)
-		}, utils.RetryConfig{MaxRetries: maxRetries})
+		}, retry.RetryConfig{MaxRetries: maxRetries})
 	}
 }

@@ -1,6 +1,6 @@
 // Package utils 提供了通用的工具函数集合。
 // 此文件实现了带指数退避和抖动的重试逻辑，用于提高系统在面对瞬时故障时的容错能力。
-package utils
+package retry
 
 import (
 	"context"

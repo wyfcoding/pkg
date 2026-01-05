@@ -1,4 +1,4 @@
-package utils
+package money
 
 import "fmt"
 
