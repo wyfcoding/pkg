@@ -1,4 +1,9 @@
-// Package logging 提供了统一的结构化日志（slog）封装，支持OpenTelemetry追踪上下文注入和GORM日志集成。
+// Package logging 提供了基于标准库 slog 深度定制的生产级日志系统。
+// 核心增强特性：
+// 1. 自动注入分布式追踪上下文（trace_id, span_id）。
+// 2. 支持日志文件按天或按大小自动滚动切割（Lumberjack）。
+// 3. 完美兼容 GORM v2 接口，实现 SQL 慢查询自动审计。
+// 4. 全量结构化输出，符合 ELK/Prometheus 采集标准。
 package logging
 
 import (
@@ -10,7 +15,7 @@ import (
 	"time"
 
 	"gopkg.in/natefinch/lumberjack.v2"
-	"gorm.io/gorm/logger" // GORM的日志接口
+	"gorm.io/gorm/logger"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace" // OpenTelemetry追踪
@@ -38,26 +43,26 @@ type Config struct {
 // Logger 结构体封装了原生的 `*slog.Logger`，并添加了服务名和模块名，方便在日志中区分来源。
 type Logger struct {
 	*slog.Logger
-	Service string // 服务名称
-	Module  string // 模块名称
+	Service string // 所属微服务名称
+	Module  string // 所属业务模块名称
 }
 
-// TraceHandler 是一个自定义的 `slog.Handler` 装饰器，用于从 `context.Context` 中提取并注入 `trace_id` 和 `span_id` 到日志记录中。
+// TraceHandler 是一个 Handler 中间件，负责从 Context 中提取链路追踪信息并扁平化到日志条目中。
 type TraceHandler struct {
 	slog.Handler
 }
 
-// Handle 方法实现了 `slog.Handler` 接口，在处理日志记录之前，
-// 会尝试从上下文获取OpenTelemetry的SpanContext，如果有效，则将trace_id和span_id添加到日志属性中。
+// Handle 实现日志条目的最终处理，自动补全链路追踪字段。
 func (h *TraceHandler) Handle(ctx context.Context, r slog.Record) error {
 	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.IsValid() { // 检查SpanContext是否有效，即是否存在正在进行的追踪
+	if spanCtx.IsValid() {
+		// 严格遵循规范字段命名：trace_id, span_id
 		r.AddAttrs(
-			slog.String("trace_id", spanCtx.TraceID().String()), // 注入追踪ID
-			slog.String("span_id", spanCtx.SpanID().String()),   // 注入Span ID
+			slog.String("trace_id", spanCtx.TraceID().String()),
+			slog.String("span_id", spanCtx.SpanID().String()),
 		)
 	}
-	return h.Handler.Handle(ctx, r) // 调用被装饰的原始Handler继续处理日志
+	return h.Handler.Handle(ctx, r)
 }
 
 // NewFromConfig 创建一个新的Logger实例。
