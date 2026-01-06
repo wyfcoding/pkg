@@ -1,8 +1,10 @@
+// Package clickhouse 提供了 ClickHouse 分析型数据库的客户端封装，支持连接池管理、Prometheus 指标监控及高效的批量写入能力。
 package clickhouse
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/wyfcoding/pkg/config"
@@ -13,6 +15,7 @@ import (
 )
 
 var (
+	// chOps 记录 ClickHouse 各类操作的次数
 	chOps = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "clickhouse_ops_total",
@@ -20,6 +23,7 @@ var (
 		},
 		[]string{"database", "status"},
 	)
+	// chDuration 记录 ClickHouse 操作的延迟分布
 	chDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "clickhouse_duration_seconds",
@@ -34,7 +38,8 @@ func init() {
 	prometheus.MustRegister(chOps, chDuration)
 }
 
-// NewClient 创建一个新的原生 ClickHouse 客户端。
+// NewClient 初始化并返回一个带有性能指标监控的 ClickHouse 驱动连接。
+// 流程：建立连接 -> 执行 Ping 校验 -> 包装监控层。
 func NewClient(cfg config.ClickHouseConfig) (driver.Conn, error) {
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{cfg.Addr},
@@ -60,15 +65,17 @@ func NewClient(cfg config.ClickHouseConfig) (driver.Conn, error) {
 		return nil, fmt.Errorf("failed to ping clickhouse: %w", err)
 	}
 
+	slog.Info("clickhouse client initialized successfully", "addr", cfg.Addr, "db", cfg.Database)
 	return &MeasuredConn{Conn: conn, db: cfg.Database}, nil
 }
 
-// MeasuredConn 包装 driver.Conn 以添加指标。
+// MeasuredConn 通过装饰器模式扩展原生驱动，自动采集 Prometheus 指标。
 type MeasuredConn struct {
 	driver.Conn
 	db string
 }
 
+// Query 执行 SQL 查询并记录耗时。
 func (c *MeasuredConn) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
 	start := time.Now()
 	rows, err := c.Conn.Query(ctx, query, args...)
@@ -76,6 +83,7 @@ func (c *MeasuredConn) Query(ctx context.Context, query string, args ...any) (dr
 	return rows, err
 }
 
+// Exec 执行非查询 SQL 并记录耗时。
 func (c *MeasuredConn) Exec(ctx context.Context, query string, args ...any) error {
 	start := time.Now()
 	err := c.Conn.Exec(ctx, query, args...)
@@ -85,46 +93,33 @@ func (c *MeasuredConn) Exec(ctx context.Context, query string, args ...any) erro
 
 func (c *MeasuredConn) recordMetrics(start time.Time, err error) {
 	duration := time.Since(start).Seconds()
-
 	status := "success"
-
 	if err != nil {
 		status = "error"
 	}
-
 	chOps.WithLabelValues(c.db, status).Inc()
-
 	chDuration.WithLabelValues(c.db).Observe(duration)
 }
 
-// BatchWriter 提供了批量写入 ClickHouse 的能力。
-
+// BatchWriter 封装了 ClickHouse 官方的高性能 Batch 接口，提供更易用的批量写入能力。
 type BatchWriter struct {
-	conn driver.Conn
-
-	query string
-
+	conn      driver.Conn
+	query     string
 	batchSize int
-
-	timeout time.Duration
+	timeout   time.Duration
 }
 
-// NewBatchWriter 创建一个新的批量写入器。
-
+// NewBatchWriter 构造一个新的批量写入执行器。
 func NewBatchWriter(conn driver.Conn, query string, batchSize int, timeout time.Duration) *BatchWriter {
 	return &BatchWriter{
-		conn: conn,
-
-		query: query,
-
+		conn:      conn,
+		query:     query,
 		batchSize: batchSize,
-
-		timeout: timeout,
+		timeout:   timeout,
 	}
 }
 
-// Write 批量写入数据。
-
+// Write 执行批次写入操作。
 func (w *BatchWriter) Write(ctx context.Context, data [][]any) error {
 	if len(data) == 0 {
 		return nil
@@ -142,22 +137,16 @@ func (w *BatchWriter) Write(ctx context.Context, data [][]any) error {
 	}
 
 	start := time.Now()
-
 	err = batch.Send()
 
-	// 记录指标
-
+	// 记录批次执行指标
 	duration := time.Since(start).Seconds()
-
 	status := "success"
-
 	if err != nil {
 		status = "error"
 	}
-
-	chOps.WithLabelValues("batch", status).Inc()
-
-	chDuration.WithLabelValues("batch").Observe(duration)
+	chOps.WithLabelValues("batch_write", status).Inc()
+	chDuration.WithLabelValues("batch_write").Observe(duration)
 
 	return err
 }

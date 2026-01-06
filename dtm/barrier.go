@@ -3,37 +3,42 @@ package dtm
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 
 	"gorm.io/gorm"
 )
 
-// CallWithGorm 辅助函数：将 interface{} 类型的 barrier 转为 *BranchBarrier 并执行 GORM 事务
-// 这里的 barrier 通常由 dtmgrpc.BarrierFromGrpc(ctx) 获取
-// 使用反射以避免直接引入 dtmcli 导致的依赖版本问题
+// CallWithGorm 是一项核心架构优化，旨在通过反射方式解耦 DTM 的具体实现。
+// 它将 interface{} 类型的 barrier 对象映射至 DTM 的事务屏障逻辑，并自动开启 GORM 事务。
+// 优势：避免了业务模块直接依赖 dtmcli 等底层库，减少了依赖冲突风险。
 func CallWithGorm(ctx context.Context, barrier any, db *gorm.DB, fn func(tx *gorm.DB) error) error {
 	val := reflect.ValueOf(barrier)
 	if !val.IsValid() || val.IsNil() {
-		return errors.New("barrier is nil")
+		slog.ErrorContext(ctx, "dtm barrier call failed: invalid or nil barrier object")
+		return errors.New("invalid dtm barrier")
 	}
 
 	method := val.MethodByName("CallWithGorm")
 	if !method.IsValid() {
-		return errors.New("barrier does not have CallWithGorm method")
+		slog.ErrorContext(ctx, "dtm barrier call failed: target object missing CallWithGorm method")
+		return errors.New("method callwithgorm not found")
 	}
 
-	// 准备参数: db, fn
+	// 准备反射参数：db (GORM 实例), fn (业务回调函数)
 	args := []reflect.Value{
 		reflect.ValueOf(db),
 		reflect.ValueOf(fn),
 	}
 
-	// 调用方法
+	// 执行动态调用
 	results := method.Call(args)
 
-	// 处理返回值: error
+	// 统一处理执行结果中的错误
 	if len(results) > 0 && !results[0].IsNil() {
-		return results[0].Interface().(error)
+		err := results[0].Interface().(error)
+		slog.WarnContext(ctx, "dtm barrier transaction reported error", "error", err)
+		return err
 	}
 
 	return nil

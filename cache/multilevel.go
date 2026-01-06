@@ -15,9 +15,9 @@ import (
 // MultiLevelCache 实现了多级缓存策略，结合了 L1（低延迟、零网络开销的本地内存）与 L2（高可用、数据共享的分布式 Redis）。
 // 关键特性：具备自动回填（Backfill）能力及全链路分布式追踪集成。
 type MultiLevelCache struct {
-	l1     Cache         // 本地一级缓存 (如 BigCache)
-	l2     Cache         // 分布式二级缓存 (如 RedisCache)
-	tracer trace.Tracer  // 分布式追踪器
+	l1     Cache           // 本地一级缓存 (如 BigCache)
+	l2     Cache           // 分布式二级缓存 (如 RedisCache)
+	tracer trace.Tracer    // 分布式追踪器
 	logger *logging.Logger // 结构化日志记录器
 }
 

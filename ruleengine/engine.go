@@ -13,9 +13,9 @@ import (
 
 // Result 定义了单条规则判定的结果。
 type Result struct {
-	RuleID   string         `json:"rule_id"`   // 触发判定的规则唯一 ID
-	Passed   bool           `json:"passed"`    // 规则表达式计算结果是否为 true
-	Metadata map[string]any `json:"metadata"`  // 规则关联的静态元数据 (如风险等级、拦截码)
+	RuleID   string         `json:"rule_id"`  // 触发判定的规则唯一 ID
+	Passed   bool           `json:"passed"`   // 规则表达式计算结果是否为 true
+	Metadata map[string]any `json:"metadata"` // 规则关联的静态元数据 (如风险等级、拦截码)
 }
 
 // Rule 描述了一条可执行的业务规则。

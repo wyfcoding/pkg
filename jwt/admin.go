@@ -2,28 +2,21 @@ package jwt
 
 import (
 	"errors"
+	"log/slog"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5" // 导入JWT库，版本v5。
+	"github.com/golang-jwt/jwt/v5"
 )
 
-// AdminClaims 定义了管理员JWT的自定义载荷结构。
+// AdminClaims 封装了管理后台专用令牌的 Payload 结构。
 type AdminClaims struct {
-	AdminID  uint64 `json:"admin_id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	AdminID  uint64 `json:"admin_id"` // 管理员唯一标识
+	Username string `json:"username"` // 登录用户名
+	Email    string `json:"email"`    // 绑定邮箱
 	jwt.RegisteredClaims
 }
 
-// GenerateAdminToken 生成一个用于管理员用户的JWT (JSON Web Token)。
-// 这个token包含了管理员的基本信息，并设置了签发者和过期时间，用于认证和授权。
-// adminID: 管理员用户的唯一ID。
-// username: 管理员的用户名。
-// email: 管理员的邮箱地址。
-// secret: 用于签名JWT的密钥。
-// issuer: JWT的签发者（例如，"your-service-name"）。
-// expireSeconds: JWT的过期时间，以秒为单位。
-// 返回值：生成的JWT字符串和可能发生的错误。
+// GenerateAdminToken 构造并签发一个管理员级别的 JWT 令牌。
 func GenerateAdminToken(adminID uint64, username, email, secret, issuer string, expireSeconds int64) (string, error) {
 	expireTime := time.Now().Add(time.Duration(expireSeconds) * time.Second)
 	claims := AdminClaims{
@@ -38,21 +31,17 @@ func GenerateAdminToken(adminID uint64, username, email, secret, issuer string, 
 		},
 	}
 
-	// 使用HS256签名方法和自定义Claims创建一个新的Token。
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	// 使用秘密密钥对Token进行签名，并返回签名的JWT字符串。
 	return token.SignedString([]byte(secret))
 }
 
-// ParseAdminToken 解析JWT字符串，并返回自定义的AdminClaims。
-// tokenString: 待解析的JWT字符串。
-// secretKey: 用于验证JWT签名的密钥。
-// 返回值：解析出的AdminClaims指针和可能发生的错误。
+// ParseAdminToken 解析并验证管理员 JWT 字符串。
 func ParseAdminToken(tokenString string, secretKey string) (*AdminClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (any, error) {
 		return []byte(secretKey), nil
 	})
 	if err != nil {
+		slog.Warn("admin jwt parse failed", "error", err)
 		if errors.Is(err, jwt.ErrTokenMalformed) {
 			return nil, ErrTokenMalformed
 		} else if errors.Is(err, jwt.ErrTokenExpired) || errors.Is(err, jwt.ErrTokenNotValidYet) {

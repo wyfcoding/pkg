@@ -3,6 +3,7 @@ package neo4j
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
@@ -32,13 +33,14 @@ func init() {
 	prometheus.MustRegister(neo4jOps, neo4jDuration)
 }
 
-// Client 是 Neo4j 驱动的封装。
+// Client 封装了 Neo4j 图数据库驱动，提供会话管理、自动指标采集及简化的查询接口。
 type Client struct {
-	driver neo4j.Driver
-	dbName string
+	driver neo4j.Driver // 底层原生驱动实例
+	dbName string       // 目标数据库名称
 }
 
-// NewClient 创建一个新的 Neo4j 客户端。
+// NewClient 初始化并返回一个功能增强的 Neo4j 客户端。
+// 流程：建立驱动实例 -> 执行连通性验证 -> 输出初始化日志。
 func NewClient(cfg config.Neo4jConfig) (*Client, error) {
 	driver, err := neo4j.NewDriver(
 		cfg.URI,
@@ -56,19 +58,23 @@ func NewClient(cfg config.Neo4jConfig) (*Client, error) {
 		return nil, fmt.Errorf("failed to verify neo4j connectivity: %w", err)
 	}
 
+	slog.Info("neo4j client initialized successfully", "uri", cfg.URI)
+
 	return &Client{
 		driver: driver,
-		dbName: "neo4j", // Default database name for Neo4j
+		dbName: "neo4j",
 	}, nil
 }
 
-// Close 关闭驱动程序。
+// Close 优雅关闭图数据库驱动资源。
 func (c *Client) Close(ctx context.Context) error {
 	return c.driver.Close(ctx)
 }
 
-// Session 执行具有指标监控的 Neo4j 会话操作。
+// Session 执行一个具备指标监控能力的数据库会话。
+// 参数 work: 包含具体业务逻辑的回调函数。
 func (c *Client) Session(ctx context.Context, accessMode neo4j.AccessMode, work func(neo4j.Session) error) error {
+
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		DatabaseName: c.dbName,
 		AccessMode:   accessMode,

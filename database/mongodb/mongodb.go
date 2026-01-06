@@ -35,20 +35,17 @@ func init() {
 	prometheus.MustRegister(mongoOps, mongoDuration)
 }
 
-// Config 结构体用于 MongoDB 数据库配置。
-// 它包含了连接MongoDB所需的所有参数。
-// 注意：此处的Config结构体与 pkg/config/config.go 中的 MongoDBConfig 结构体功能相似，
-// 但在不同的包中独立定义。
+// Config 封装了 MongoDB 驱动初始化所需的各类参数。
 type Config struct {
-	URI            string        `toml:"uri"`             // MongoDB的连接URI，例如 "mongodb://username:password@host:port/database"。
-	Database       string        `toml:"database"`        // 默认连接的数据库名称。
-	ConnectTimeout time.Duration `toml:"connect_timeout"` // 连接超时时间。
-	MinPoolSize    uint64        `toml:"min_pool_size"`   // 连接池中维护的最小连接数。
-	MaxPoolSize    uint64        `toml:"max_pool_size"`   // 连接池中维护的最大连接数。
+	URI            string        `toml:"uri"`             // 连接字符串 (例如: mongodb://user:pass@host:27017)
+	Database       string        `toml:"database"`        // 默认操作的数据库名称
+	ConnectTimeout time.Duration `toml:"connect_timeout"` // 连接建立超时阈值
+	MinPoolSize    uint64        `toml:"min_pool_size"`   // 最小空闲连接池规模
+	MaxPoolSize    uint64        `toml:"max_pool_size"`   // 最大并发连接数限制
 }
 
-// NewMongoClient 创建一个新的 MongoDB 客户端连接。
-// 它根据传入的配置建立连接，并返回 `*mongo.Client` 实例和一个用于关闭连接的清理函数。
+// NewMongoClient 初始化并返回一个功能增强的 MongoDB 客户端及其对应的清理闭包。
+// 架构设计：利用 CommandMonitor 自动采集每一次查询、写入的延迟与成功率。
 func NewMongoClient(conf *Config) (*mongo.Client, func(), error) {
 	// 创建一个带超时机制的上下文，用于连接操作。
 	ctx, cancel := context.WithTimeout(context.Background(), conf.ConnectTimeout)
@@ -79,11 +76,11 @@ func NewMongoClient(conf *Config) (*mongo.Client, func(), error) {
 	}
 
 	// 尝试Ping MongoDB的主节点以验证连接的可用性。
-	ctx, cancel = context.WithTimeout(context.Background(), conf.ConnectTimeout)
-	defer cancel() // 确保上下文在函数退出时被取消。
 	if err := client.Ping(ctx, readpref.Primary()); err != nil {
 		return nil, nil, fmt.Errorf("failed to ping mongodb: %w", err)
 	}
+
+	slog.Info("mongodb client initialized successfully", "db", conf.Database)
 
 	// 定义一个清理函数，用于在应用程序关闭时优雅地断开MongoDB连接。
 	cleanup := func() {
