@@ -1,4 +1,16 @@
-// Package algos 提供高性能/ACM/竞赛算法集合，包括撮合相关结构、图算法、DP、后缀结构、并发数据结构等
+// Package algorithm 提供高性能/ACM/竞赛算法集合。
+// 此文件实现了工业级撮合引擎核心逻辑，包含 LOB (Limit Order Book) 订单簿。
+//
+// 性能优化点：
+// 1. 内存优化：使用 sync.Pool 复用 Order 和 Trade 对象，显著降低高频撮合下的 GC 压力。
+// 2. 算法优化：基于红黑树（RBTree）实现价格档位排序，插入与删除复杂度为 O(log N)。
+// 3. 业务增强：支持冰山单（Iceberg Order）、只做 Maker（Post-Only）等高级指令。
+// 4. 并发模型：采用读写锁（RWMutex）保护订单簿状态，支持高并发查询。
+//
+// 复杂度分析：
+// - 订单提交 (Match): 平均 O(M * log N)，M 为成交笔数，N 为订单簿深度。
+// - 订单撤单 (RemoveOrder): O(log N)。
+// - 行情查询 (GetBids/Asks): O(D)，D 为请求的深度。
 package algorithm
 
 import (
@@ -10,54 +22,35 @@ import (
 	"github.com/wyfcoding/pkg/idgen"
 )
 
-// Order 订单结构
+// Order 订单结构，表示一个限价单或高级策略单
 type Order struct {
-	// 订单 ID
-	OrderID string
-	// 交易对
-	Symbol string
-	// 买卖方向：BUY 或 SELL
-	Side string
-	// 价格
-	Price decimal.Decimal
-	// 数量
-	Quantity decimal.Decimal
-	// 时间戳（用于时间优先）
-	Timestamp int64
-	// 用户 ID
-	// UserID 用户 ID
-	UserID string
-	// IsIceberg 是否为冰山单
-	IsIceberg bool
-	// DisplayQty 冰山单显性规模
-	DisplayQty decimal.Decimal
-	// HiddenQty 冰山单隐性规模（剩余未显示部分）
-	HiddenQty decimal.Decimal
-	// PostOnly 是否为只做 Maker（如果该报单会导致立即成交，则被撤单或拒绝）
-	PostOnly bool
-	// ResultChan 用于接收撮合结果（顶级优化：去中心化通知）
-	ResultChan chan any `json:"-"`
+	OrderID    string          // 订单 ID
+	Symbol     string          // 交易对名称
+	Side       string          // 方向 (BUY/SELL)
+	Price      decimal.Decimal // 委托价格
+	Quantity   decimal.Decimal // 委托数量
+	Timestamp  int64           // 纳秒级时间戳，用于时间优先排序
+	UserID     string          // 用户唯一标识
+	IsIceberg  bool            // 是否为冰山单
+	DisplayQty decimal.Decimal // 冰山单单次可见规模
+	HiddenQty  decimal.Decimal // 冰山单当前隐性规模
+	PostOnly   bool            // 是否为只做 Maker 策略
+	ResultChan chan any        `json:"-"` // 异步撮合结果反馈通道
 }
 
-// OrderBookLevel 订单簿层级
+// OrderBookLevel 订单簿档位，聚合了同一价格下的委托总量。
 type OrderBookLevel struct {
-	// 价格
-	Price decimal.Decimal
-	// 总数量
-	Quantity decimal.Decimal
-	// 订单列表
-	Orders []*Order
+	Price    decimal.Decimal `json:"price"`    // 档位价格
+	Quantity decimal.Decimal `json:"quantity"` // 该档位挂单总数量
+	Orders   []*Order        `json:"orders"`   // 该档位包含的具体订单列表
 }
 
-// OrderBook 订单簿（支持价格优先、时间优先）
+// OrderBook 订单簿核心结构，管理买卖双边挂单
 type OrderBook struct {
-	mu sync.RWMutex
-	// 买单（价格从高到低）
-	bids *RBTree
-	// 卖单（价格从低到高）
-	asks *RBTree
-	// 订单映射（用于快速查找）
-	orders map[string]*Order
+	mu     sync.RWMutex
+	bids   *RBTree           // 买单红黑树（价格从高到低）
+	asks   *RBTree           // 卖单红黑树（价格从低到高）
+	orders map[string]*Order // 订单索引映射，O(1) 查找
 }
 
 // NewOrderBook 创建订单簿

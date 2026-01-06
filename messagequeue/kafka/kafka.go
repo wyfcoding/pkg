@@ -27,23 +27,26 @@ func SetDefaultProducer(p *Producer) {
 	defaultProducer = p
 }
 
+// Handler 定义了消息处理函数的原型。
 type Handler func(ctx context.Context, msg kafkago.Message) error
 
+// Producer 封装了 Kafka 消息生产者，支持自动 DLQ（死信队列）路由、指标监控及分布式追踪。
 type Producer struct {
-	writer    *kafkago.Writer
-	dlqWriter *kafkago.Writer
-	logger    *logging.Logger
-	metrics   *metrics.Metrics
+	writer    *kafkago.Writer  // 主消息写入器
+	dlqWriter *kafkago.Writer  // 死信队列写入器，用于处理发送失败的消息
+	logger    *logging.Logger  // 日志记录器
+	metrics   *metrics.Metrics // 指标采集组件
 
-	// 归一化指标
-	producedTotal *prometheus.CounterVec
-	duration      *prometheus.HistogramVec
+	// 监控指标
+	producedTotal *prometheus.CounterVec   // 消息发送总量计数器 (按 topic 和 status 维度)
+	duration      *prometheus.HistogramVec // 消息发送耗时分布
 }
 
+// NewProducer 初始化并返回一个功能增强的 Kafka 生产者。
 func NewProducer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Producer {
 	w := &kafkago.Writer{
 		Addr:         kafkago.TCP(cfg.Brokers...),
-		Topic:        cfg.Topic, // 如果为空，则必须在 Message 中指定 Topic
+		Topic:        cfg.Topic,
 		Balancer:     &kafkago.Hash{},
 		WriteTimeout: cfg.WriteTimeout,
 		ReadTimeout:  cfg.ReadTimeout,
@@ -77,19 +80,17 @@ func NewProducer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metr
 	}
 }
 
-// Publish 发送到默认 Topic
+// Publish 将消息发送至默认配置的主题。
 func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 	return p.PublishToTopic(ctx, p.writer.Topic, key, value)
 }
 
-// PublishToTopic 发送到指定 Topic
+// PublishToTopic 将消息发送至指定主题，并自动注入链路追踪上下文。
 func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value []byte) error {
 	start := time.Now()
-	// 1. 使用 pkg/tracing 开启 Span
-	ctx, span := tracing.StartSpan(ctx, "Kafka.Publish", trace.WithSpanKind(trace.SpanKindProducer))
+	ctx, span := tracing.StartSpan(ctx, "kafka.publish", trace.WithSpanKind(trace.SpanKindProducer))
 	defer span.End()
 
-	// 2. 注入 Trace 上下文到消息头
 	headers := make([]kafkago.Header, 0)
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
@@ -113,7 +114,7 @@ func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value 
 		tracing.SetError(ctx, err)
 		p.logger.ErrorContext(ctx, "failed to publish message", "topic", topic, "error", err)
 		if dlqErr := p.dlqWriter.WriteMessages(ctx, msg); dlqErr != nil {
-			p.logger.ErrorContext(ctx, "failed to write to DLQ", "error", dlqErr)
+			p.logger.ErrorContext(ctx, "failed to write to dlq", "error", dlqErr)
 		}
 		return err
 	}
@@ -122,10 +123,11 @@ func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value 
 	return nil
 }
 
+// Close 优雅关闭主写入器及死信队列写入器。
 func (p *Producer) Close() error {
 	var err error
 	if dlqErr := p.dlqWriter.Close(); dlqErr != nil {
-		p.logger.Error("failed to close DLQ writer", "error", dlqErr)
+		p.logger.Error("failed to close dlq writer", "error", dlqErr)
 		err = dlqErr
 	}
 	if wErr := p.writer.Close(); wErr != nil {
@@ -135,13 +137,15 @@ func (p *Producer) Close() error {
 	return err
 }
 
+// Consumer 封装了 Kafka 消息消费者，支持自动提交、并发处理、指标监控及 Trace 传播。
 type Consumer struct {
-	reader  *kafkago.Reader
-	logger  *logging.Logger
-	metrics *metrics.Metrics
+	reader  *kafkago.Reader  // Kafka 读取器实例
+	logger  *logging.Logger  // 日志记录器
+	metrics *metrics.Metrics // 指标采集组件
 
-	consumedTotal *prometheus.CounterVec
-	consumeLag    *prometheus.HistogramVec
+	// 监控指标
+	consumedTotal *prometheus.CounterVec   // 消息消费总量计数器
+	consumeLag    *prometheus.HistogramVec // 消息消费延迟（从生产到消费的时间差）
 }
 
 func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Consumer {

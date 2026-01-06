@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,25 +13,24 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// RateLimitMiddleware 创建一个基于给定 Limiter 接口实现的 Gin 限流中间件。
-// 它适用于任何实现了 limiter.Limiter 接口的限流器（如基于本地内存或 Redis）。
+// RateLimitMiddleware 构造一个通用的 Gin 限流中间件。
+// 默认策略：使用客户端 IP 作为限流标识。
 func RateLimitMiddleware(l limiter.Limiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := c.ClientIP() // 默认使用 Client IP 作为限流 Key
+		key := c.ClientIP()
 
-		// 调用限流器的 Allow 方法检查请求是否允许通过
 		allowed, err := l.Allow(c.Request.Context(), key)
 		if err != nil {
-			// 如果限流检查过程中发生错误（例如 Redis 连接失败），
-			// 通常采取 "Fail Open" 策略，即允许请求通过，避免阻断业务，并记录错误日志。
-			// 这里简单地放行，生产环境建议添加日志记录。
+			// 遵循 Fail-Open 策略：限流组件故障时不阻断业务，但必须记录告警日志。
+			slog.ErrorContext(c.Request.Context(), "rate limiter internal error, fail-open applied", "key", key, "error", err)
 			c.Next()
 			return
 		}
 
 		if !allowed {
-			// 如果限流器拒绝请求，则返回 429 Too Many Requests
-			response.ErrorWithStatus(c, http.StatusTooManyRequests, "Too Many Requests", "Rate limit exceeded")
+			// 限流触发，记录审计日志
+			slog.WarnContext(c.Request.Context(), "request rejected by rate limiter", "key", key, "path", c.Request.URL.Path)
+			response.ErrorWithStatus(c, http.StatusTooManyRequests, "too many requests", "access rate limit exceeded")
 			c.Abort()
 			return
 		}

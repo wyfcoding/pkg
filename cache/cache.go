@@ -33,31 +33,32 @@ func SetDefault(c *RedisCache) {
 // ErrCacheMiss 缓存未命中错误
 var ErrCacheMiss = errors.New("cache: key not found")
 
-// Cache 工业级缓存接口
+// Cache 定义了工业级缓存的标准接口，支持基础操作、防击穿（GetOrSet）及优雅关闭。
 type Cache interface {
-	Get(ctx context.Context, key string, value any) error
-	Set(ctx context.Context, key string, value any, expiration time.Duration) error
-	Delete(ctx context.Context, keys ...string) error
-	Exists(ctx context.Context, key string) (bool, error)
-	// GetOrSet 解决缓存击穿的核心方法
-	GetOrSet(ctx context.Context, key string, value any, expiration time.Duration, fn func() (any, error)) error
-	Close() error
+	Get(ctx context.Context, key string, value any) error                                                        // 获取缓存，反序列化至 value
+	Set(ctx context.Context, key string, value any, expiration time.Duration) error                              // 设置缓存，支持过期时间
+	Delete(ctx context.Context, keys ...string) error                                                            // 删除一个或多个缓存键
+	Exists(ctx context.Context, key string) (bool, error)                                                        // 判断键是否存在
+	GetOrSet(ctx context.Context, key string, value any, expiration time.Duration, fn func() (any, error)) error // 解决缓存击穿的核心方法
+	Close() error                                                                                                // 关闭缓存客户端资源
 }
 
+// RedisCache 是基于 Redis 实现的具体缓存结构
 type RedisCache struct {
-	client  *redis.Client
-	cleanup func()
-	prefix  string
-	cb      *breaker.Breaker
-	sfg     singleflight.Group
-	logger  *logging.Logger
+	client  *redis.Client      // Redis 原生客户端
+	cleanup func()             // 资源清理回调函数
+	prefix  string             // 缓存 Key 的全局前缀
+	cb      *breaker.Breaker   // 关联的熔断器，保护 Redis 不被过载
+	sfg     singleflight.Group // 用于合并并发回源请求，防止击穿
+	logger  *logging.Logger    // 日志记录器
 
-	// 指标组件 (复用 pkg/metrics)
-	hits     *prometheus.CounterVec
-	misses   *prometheus.CounterVec
-	duration *prometheus.HistogramVec
+	// 监控指标组件
+	hits     *prometheus.CounterVec   // 命中次数计数器
+	misses   *prometheus.CounterVec   // 未命中次数计数器
+	duration *prometheus.HistogramVec // 操作耗时分布
 }
 
+// NewRedisCache 初始化并返回一个具备熔断和监控能力的 Redis 缓存实例。
 func NewRedisCache(cfg config.RedisConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*RedisCache, error) {
 	client, cleanup, err := redis_pkg.NewClient(&cfg, logger)
 	if err != nil {

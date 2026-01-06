@@ -12,14 +12,17 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// BigCache 实现了 Cache 接口，使用内存作为底层存储
+// BigCache 实现了 Cache 接口，利用底层分片内存技术提供高性能、零 GC 压力的本地缓存能力。
 type BigCache struct {
-	cache  *bigcache.BigCache
-	sfg    singleflight.Group
-	logger *logging.Logger
+	cache  *bigcache.BigCache // 底层 BigCache 实例
+	sfg    singleflight.Group // 用于合并并发的回源请求，防止击穿
+	logger *logging.Logger    // 日志记录器
 }
 
-// NewBigCache 创建本地高性能缓存
+// NewBigCache 初始化并返回一个新的本地高性能缓存实例。
+// 参数说明：
+//   - ttl: 条目的默认过期时间
+//   - maxMB: 缓存占用的内存硬件软上限 (MB)
 func NewBigCache(ttl time.Duration, maxMB int, logger *logging.Logger) (*BigCache, error) {
 	config := bigcache.DefaultConfig(ttl)
 	config.HardMaxCacheSize = maxMB
@@ -30,9 +33,11 @@ func NewBigCache(ttl time.Duration, maxMB int, logger *logging.Logger) (*BigCach
 		return nil, fmt.Errorf("failed to init bigcache: %w", err)
 	}
 
+	logger.Info("local bigcache initialized successfully", "max_mb", maxMB, "default_ttl", ttl.String())
 	return &BigCache{cache: cache, logger: logger}, nil
 }
 
+// Get 从本地内存中获取缓存数据并反序列化至 value 指针。
 func (c *BigCache) Get(ctx context.Context, key string, value any) error {
 	data, err := c.cache.Get(key)
 	if err != nil {

@@ -133,10 +133,11 @@ func (c *Client) readPump() {
 	}()
 
 	c.conn.SetReadLimit(512)
-	_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	if err := c.conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		return
+	}
 	c.conn.SetPongHandler(func(string) error {
-		_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
+		return c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
 	for {
@@ -173,9 +174,14 @@ func (c *Client) writePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
 			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					// 仅记录 debug，因为连接可能已经关闭
+					c.manager.logger.Debug("failed to write close message", "error", err)
+				}
 				return
 			}
 
@@ -191,7 +197,9 @@ func (c *Client) writePump() {
 				return
 			}
 		case <-ticker.C:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

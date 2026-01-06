@@ -4,6 +4,7 @@ package outbox
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -57,13 +58,13 @@ type Pusher interface {
 	Push(ctx context.Context, topic string, key string, payload []byte) error
 }
 
-// Manager 离群消息管理器
+// Manager 离群消息管理器，负责在业务事务中同步持久化消息记录。
 type Manager struct {
-	db     *gorm.DB
-	logger *slog.Logger
+	db     *gorm.DB     // 用于执行数据库操作的 GORM 实例
+	logger *slog.Logger // 日志记录器
 }
 
-// NewManager 创建 Outbox 管理器
+// NewManager 创建并返回一个新的 Outbox 管理器实例。
 func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
 	return &Manager{
 		db:     db,
@@ -71,15 +72,20 @@ func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
 	}
 }
 
-// PublishInTx 在现有的事务中持久化消息
+// PublishInTx 在现有的数据库事务中持久化一条待发送的消息。
+// 流程：序列化 Payload -> 注入 Trace 上下文 -> 写入数据库。
 func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, key string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal outbox payload: %w", err)
 	}
 
 	metadataMap := tracing.InjectContext(ctx)
-	metadataJSON, _ := json.Marshal(metadataMap)
+	metadataJSON, err := json.Marshal(metadataMap)
+	if err != nil {
+		// 元数据注入失败不应中断业务事务，仅记录警告
+		m.logger.WarnContext(ctx, "failed to marshal tracing metadata", "error", err)
+	}
 
 	msg := &OutboxMessage{
 		Topic:     topic,
@@ -98,14 +104,14 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 	return nil
 }
 
-// Processor 离群消息处理器，负责异步发送消息与自清理
+// Processor 离群消息处理器，负责扫描 Outbox 表并异步投递消息。
 type Processor struct {
-	mgr           *Manager
-	pusher        func(ctx context.Context, topic string, key string, payload []byte) error
-	batchSize     int
-	interval      time.Duration
-	retentionDays int // [新增] 数据保留天数
-	stopChan      chan struct{}
+	mgr           *Manager                                                                  // 关联的管理器
+	pusher        func(ctx context.Context, topic string, key string, payload []byte) error // 真正的底层发送函数 (如 Kafka Producer)
+	batchSize     int                                                                       // 单次处理的消息批次大小
+	interval      time.Duration                                                             // 轮询扫描的时间间隔
+	retentionDays int                                                                       // 已发送成功数据的保留天数（用于自清理）
+	stopChan      chan struct{}                                                             // 优雅停机信号通道
 }
 
 // NewProcessor 创建处理器

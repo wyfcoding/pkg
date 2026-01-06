@@ -1,3 +1,10 @@
+// Package algorithm 提供了高性能算法集合。
+// 此文件实现了一致性哈希 (Consistent Hashing) 算法，包含虚拟节点支持，常用于分布式缓存路由与负载均衡。
+//
+// 复杂度分析：
+// - 添加节点 (Add): O(K * log(N*K))，K 为虚拟节点倍数，N 为当前物理节点数。
+// - 获取节点 (Get): O(log(N*K))，采用二分查找加速寻址。
+// - 移除节点 (Remove): O(K * log(N*K))。
 package algorithm
 
 import (
@@ -8,21 +15,19 @@ import (
 	"sync"
 )
 
-// Hash 函数定义
+// Hash 定义哈希计算函数的类型原型。
 type Hash func(data []byte) uint32
 
-// ConsistentHash 一致性哈希算法实现
+// ConsistentHash 维护了一致性哈希环的状态。
 type ConsistentHash struct {
-	hash     Hash
-	replicas int            // 虚拟节点倍数
-	keys     []int          // 已排序的哈希环
-	hashMap  map[int]string // 虚拟节点哈希值到物理节点名称的映射
+	hash     Hash           // 哈希计算函数 (默认 CRC32)
+	replicas int            // 每个物理节点映射的虚拟节点倍数，用于平滑负载
+	keys     []int          // 排序后的哈希环，存储所有虚拟节点的哈希值
+	hashMap  map[int]string // 虚拟节点哈希值到物理节点标识的快速映射
 	mu       sync.RWMutex
 }
 
-// NewConsistentHash 创建一致性哈希实例
-// replicas: 每个物理节点对应的虚拟节点数量，用于解决数据倾斜问题
-// fn: 自定义哈希函数，若为 nil 则默认使用 CRC32
+// NewConsistentHash 初始化并返回一个新的哈希环实例。
 func NewConsistentHash(replicas int, fn Hash) *ConsistentHash {
 	ch := &ConsistentHash{
 		replicas: replicas,
@@ -32,28 +37,27 @@ func NewConsistentHash(replicas int, fn Hash) *ConsistentHash {
 	if ch.hash == nil {
 		ch.hash = crc32.ChecksumIEEE
 	}
-	slog.Info("ConsistentHash initialized", "replicas", replicas)
+	slog.Info("consistent_hash initialized", "replicas", replicas)
 	return ch
 }
 
-// Add 添加物理节点到哈希环
+// Add 将一个或多个物理节点加入哈希环。
 func (ch *ConsistentHash) Add(nodes ...string) {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 
 	for _, node := range nodes {
 		for i := 0; i < ch.replicas; i++ {
-			// 为每个虚拟节点计算哈希值
 			hash := int(ch.hash(fmt.Appendf(nil, "%d%s", i, node)))
 			ch.keys = append(ch.keys, hash)
 			ch.hashMap[hash] = node
 		}
-		slog.Info("Node added to ConsistentHash ring", "node", node, "virtual_nodes", ch.replicas)
+		slog.Info("node added to consistent_hash ring", "node", node, "virtual_nodes", ch.replicas)
 	}
-	sort.Ints(ch.keys) // 保持哈希环有序
+	sort.Ints(ch.keys)
 }
 
-// Get 根据 Key 获取最近的物理节点
+// Get 根据输入的键名查找其在哈希环上顺时针方向最近的物理节点。
 func (ch *ConsistentHash) Get(key string) string {
 	ch.mu.RLock()
 	defer ch.mu.RUnlock()
@@ -64,12 +68,10 @@ func (ch *ConsistentHash) Get(key string) string {
 
 	hash := int(ch.hash([]byte(key)))
 
-	// 通过二分查找在环上寻找第一个大于等于该哈希值的虚拟节点
 	idx := sort.Search(len(ch.keys), func(i int) bool {
 		return ch.keys[i] >= hash
 	})
 
-	// 若到了环的末尾，则返回环的第一个节点（体现“环”的特性）
 	if idx == len(ch.keys) {
 		idx = 0
 	}
@@ -77,19 +79,18 @@ func (ch *ConsistentHash) Get(key string) string {
 	return ch.hashMap[ch.keys[idx]]
 }
 
-// Remove 从哈希环中移除物理节点
+// Remove 将指定的物理节点及其所有虚拟节点从哈希环中安全移除。
 func (ch *ConsistentHash) Remove(node string) {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 
 	for i := 0; i < ch.replicas; i++ {
 		hash := int(ch.hash(fmt.Appendf(nil, "%d%s", i, node)))
-		// 从有序 keys 中移除
 		idx := sort.SearchInts(ch.keys, hash)
 		if idx < len(ch.keys) && ch.keys[idx] == hash {
 			ch.keys = append(ch.keys[:idx], ch.keys[idx+1:]...)
 		}
 		delete(ch.hashMap, hash)
 	}
-	slog.Info("Node removed from ConsistentHash ring", "node", node)
+	slog.Info("node removed from consistent_hash ring", "node", node)
 }

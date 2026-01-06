@@ -12,14 +12,15 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// MinIOClient 实现了 Storage 接口，对接 MinIO/S3 兼容存储。
+// MinIOClient 实现了 Storage 接口，是对接 MinIO 或 S3 兼容存储系统的具体驱动。
 type MinIOClient struct {
-	client *minio.Client
-	core   *minio.Core // 【修复】：引入 Core 客户端处理低级分片操作
-	bucket string
+	client *minio.Client // 高级对象操作客户端
+	core   *minio.Core   // 低级分片接口客户端，用于精确控制分片逻辑
+	bucket string        // 当前驱动绑定的存储桶名称
 }
 
-// NewMinIOClient 创建 MinIO 驱动实例
+// NewMinIOClient 构造一个新的 MinIO 存储驱动。
+// 流程：初始化客户端 -> 验证连接 -> 导出核心控制接口。
 func NewMinIOClient(endpoint, accessKeyID, secretAccessKey, bucket string, useSSL bool) (*MinIOClient, error) {
 	opts := &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
@@ -28,17 +29,17 @@ func NewMinIOClient(endpoint, accessKeyID, secretAccessKey, bucket string, useSS
 
 	client, err := minio.New(endpoint, opts)
 	if err != nil {
-		slog.Error("Failed to create minio client", "endpoint", endpoint, "error", err)
+		slog.Error("failed to create minio client", "endpoint", endpoint, "error", err)
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
 
 	core, err := minio.NewCore(endpoint, opts)
 	if err != nil {
-		slog.Error("Failed to create minio core client", "endpoint", endpoint, "error", err)
+		slog.Error("failed to create minio core client", "endpoint", endpoint, "error", err)
 		return nil, fmt.Errorf("failed to create minio core client: %w", err)
 	}
 
-	slog.Info("MinIOClient initialized", "endpoint", endpoint, "bucket", bucket)
+	slog.Info("minio_client initialized", "endpoint", endpoint, "bucket", bucket)
 
 	return &MinIOClient{
 		client: client,
@@ -47,16 +48,17 @@ func NewMinIOClient(endpoint, accessKeyID, secretAccessKey, bucket string, useSS
 	}, nil
 }
 
+// Upload 将数据流上传至绑定的存储桶。
 func (c *MinIOClient) Upload(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) error {
 	start := time.Now()
 	_, err := c.client.PutObject(ctx, c.bucket, objectName, reader, size, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
 	if err != nil {
-		slog.Error("MinIO upload failed", "object", objectName, "error", err)
+		slog.Error("minio upload failed", "object", objectName, "error", err)
 		return err
 	}
-	slog.Debug("MinIO upload successful", "object", objectName, "duration", time.Since(start))
+	slog.Debug("minio upload successful", "object", objectName, "duration", time.Since(start))
 	return nil
 }
 

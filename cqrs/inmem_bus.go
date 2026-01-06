@@ -3,12 +3,14 @@ package cqrs
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sync"
+	"time"
 )
 
-// InMemCommandBus 高性能内存命令总线实现
-// 优化：在注册时利用反射生成包装函数，分发时直接调用，避免运行时的反射查找开销
+// InMemCommandBus 高性能内存命令总线实现。
+// 优化策略：在注册阶段利用反射生成高效包装闭包，分发阶段实现 O(1) 直接调用，避免运行时反复反射损耗。
 type InMemCommandBus struct {
 	handlers map[string]func(context.Context, Command) error
 	mu       sync.RWMutex
@@ -58,20 +60,34 @@ func (b *InMemCommandBus) Register(cmdName string, handler any) {
 	b.handlers[cmdName] = wrapper
 }
 
-// Dispatch 分发命令
+// Dispatch 将命令分发至已注册的处理器。
+// 关键业务逻辑：输出分发耗时与状态日志。
 func (b *InMemCommandBus) Dispatch(ctx context.Context, cmd Command) error {
+	cmdName := cmd.CommandName()
+	start := time.Now()
+
 	b.mu.RLock()
-	handler, ok := b.handlers[cmd.CommandName()]
+	handler, ok := b.handlers[cmdName]
 	b.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("no handler registered for command: %s", cmd.CommandName())
+		slog.ErrorContext(ctx, "no command handler registered", "command", cmdName)
+		return fmt.Errorf("no handler registered for command: %s", cmdName)
 	}
 
-	return handler(ctx, cmd)
+	err := handler(ctx, cmd)
+	duration := time.Since(start)
+
+	if err != nil {
+		slog.ErrorContext(ctx, "command dispatch failed", "command", cmdName, "error", err, "duration", duration)
+	} else {
+		slog.InfoContext(ctx, "command dispatched successfully", "command", cmdName, "duration", duration)
+	}
+
+	return err
 }
 
-// InMemQueryBus 高性能内存查询总线实现
+// InMemQueryBus 高性能内存查询总线实现。
 type InMemQueryBus struct {
 	handlers map[string]func(context.Context, Query) (any, error)
 	mu       sync.RWMutex
@@ -127,15 +143,29 @@ func (b *InMemQueryBus) Register(queryName string, handler any) {
 	b.handlers[queryName] = wrapper
 }
 
-// Execute 执行查询
+// Execute 执行查询并返回结果。
+// 关键业务逻辑：记录查询执行情况。
 func (b *InMemQueryBus) Execute(ctx context.Context, query Query) (any, error) {
+	queryName := query.QueryName()
+	start := time.Now()
+
 	b.mu.RLock()
-	handler, ok := b.handlers[query.QueryName()]
+	handler, ok := b.handlers[queryName]
 	b.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("no handler registered for query: %s", query.QueryName())
+		slog.ErrorContext(ctx, "no query handler registered", "query", queryName)
+		return nil, fmt.Errorf("no handler registered for query: %s", queryName)
 	}
 
-	return handler(ctx, query)
+	res, err := handler(ctx, query)
+	duration := time.Since(start)
+
+	if err != nil {
+		slog.ErrorContext(ctx, "query execution failed", "query", queryName, "error", err, "duration", duration)
+	} else {
+		slog.DebugContext(ctx, "query executed successfully", "query", queryName, "duration", duration)
+	}
+
+	return res, err
 }

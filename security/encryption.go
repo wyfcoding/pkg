@@ -20,75 +20,76 @@ func GenerateRandomKey() ([]byte, error) {
 	return key, nil
 }
 
-// EncryptAES 使用AES-GCM模式加密给定的明文。
+// NewNonce 创建一个新的 nonce（只使用一次的随机数）。
+// GCM 的安全性严重依赖于 nonce 的唯一性，对于相同的密钥，绝不能重复使用 nonce。
+func NewNonce(gcm cipher.AEAD) ([]byte, error) {
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+	return nonce, nil
+}
+
+// EncryptAES 使用 AES-GCM 模式对给定的明文进行认证加密。
+// 流程：生成随机 Nonce -> 执行加密 -> 将 Nonce 作为密文前缀 -> Base64 编码。
 func EncryptAES(key []byte, plaintext string) (string, error) {
-	// 校验密钥长度
+	// ... (校验密钥长度保持不变) ...
 	if l := len(key); l != 16 && l != 24 && l != 32 {
 		return "", errors.New("invalid key length: must be 16, 24, or 32 bytes")
 	}
 
-	// 1. 基于给定的密钥创建一个新的AES密码块
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create cipher block: %w", err)
 	}
 
-	// 2. 基于密码块创建一个GCM（伽罗瓦/计数器模式）实例
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create gcm instance: %w", err)
 	}
 
-	// 3. 创建一个nonce（只使用一次的随机数）
-	// GCM的安全性严重依赖于nonce的唯一性，对于相同的密钥，绝不能重复使用nonce。
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
+	nonce, err := NewNonce(gcm)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	// 4. 执行加密
-	// Seal函数将nonce、明文、以及可选的附加认证数据(AAD)加密成密文。
-	// 这里我们将nonce作为密文的前缀，方便解密时提取。
+	// 执行 Seal 加密操作，将结果拼接在 nonce 之后
 	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
 
-	// 5. 将二进制密文编码为Base64字符串，使其更易于传输
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// DecryptAES 使用AES-GCM模式解密给定的密文。
-// 它期望密文是经过Base64编码的，并且nonce作为密文的初始部分。
+// DecryptAES 使用 AES-GCM 模式解密 Base64 编码的加密字符串。
+// 流程：Base64 解码 -> 提取 Nonce -> 执行认证解密。
 func DecryptAES(key []byte, cryptoText string) (string, error) {
-	// 1. 将Base64编码的密文解码为二进制数据
+	// 1. 执行 Base64 解码获取原始密文
 	ciphertext, err := base64.StdEncoding.DecodeString(cryptoText)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to decode base64: %w", err)
 	}
 
-	// 2. 创建AES密码块和GCM实例
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create cipher block: %w", err)
 	}
 
-	// 3. 从密文中分离nonce和实际的密文部分
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("failed to create gcm instance: %w", err)
+	}
+
+	// 从数据头部截取预定长度的 Nonce
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return "", errors.New("ciphertext too short")
+		return "", errors.New("ciphertext too short to contain nonce")
 	}
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 
-	// 4. 执行解密
-	// Open函数会验证密文的完整性和真实性，如果校验失败则返回错误。
+	// 执行 Open 解密并验证数据的真实性（防止篡改）
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		// 解密失败（例如，密钥错误或密文被篡改）
-		return "", err
+		return "", fmt.Errorf("failed to decrypt or verify data: %w", err)
 	}
 
-	// 5. 将解密后的字节数组转换为字符串
 	return string(plaintext), nil
 }

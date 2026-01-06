@@ -18,13 +18,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ClientFactory 生产级的客户端工厂
+// ClientFactory 是一个生产级的 gRPC 客户端工厂，集成了治理能力（限流、熔断、重试、监控、追踪）。
 type ClientFactory struct {
-	logger  *logging.Logger
-	metrics *metrics.Metrics
-	cfg     config.CircuitBreakerConfig // 全局熔断配置
+	logger  *logging.Logger             // 日志记录器
+	metrics *metrics.Metrics            // 性能指标采集组件
+	cfg     config.CircuitBreakerConfig // 全局默认熔断配置
 }
 
+// NewClientFactory 初始化 gRPC 客户端工厂。
 func NewClientFactory(logger *logging.Logger, m *metrics.Metrics, cfg config.CircuitBreakerConfig) *ClientFactory {
 	return &ClientFactory{
 		logger:  logger,
@@ -33,14 +34,17 @@ func NewClientFactory(logger *logging.Logger, m *metrics.Metrics, cfg config.Cir
 	}
 }
 
+// NewClient 创建并返回一个新的 gRPC 客户端连接（ClientConn）。
+// 核心特性：
+// 1. 自动注入负载均衡策略 (Round Robin)。
+// 2. 注入 OpenTelemetry 追踪处理器。
+// 3. 注入一元拦截器链：指标采集 -> 熔断保护 -> 频控拦截 -> 指数退避重试。
 func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	// 1. 使用项目标准熔断器
 	cb := breaker.NewBreaker(breaker.Settings{
 		Name:   "grpc-client-" + target,
 		Config: f.cfg,
 	}, f.metrics)
 
-	// 2. 限流器
 	limiter := rate.NewLimiter(rate.Limit(5000), 500)
 
 	defaultOpts := []grpc.DialOption{
@@ -68,7 +72,6 @@ func (f *ClientFactory) metricsInterceptor(target string) grpc.UnaryClientInterc
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		duration := time.Since(start).Seconds()
 		st, _ := status.FromError(err)
-		// 记录客户端指标，增加 target 标签以区分目标服务
 		f.metrics.GrpcRequestsTotal.WithLabelValues("client", target+":"+method, st.Code().String()).Inc()
 		f.metrics.GrpcRequestDuration.WithLabelValues("client", target+":"+method).Observe(duration)
 		return err

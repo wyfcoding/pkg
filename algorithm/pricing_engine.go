@@ -1,3 +1,11 @@
+// Package algorithm 提供高性能算法集合。
+// 此文件实现了动态定价引擎，集成了多种经济学模型与优化算法。
+//
+// 核心算法与复杂度：
+// 1. 因子加权定价 (CalculatePrice): O(1)。
+// 2. 需求预测 (PredictDemand): O(N)，基于最小二乘法的线性回归，N 为历史数据点数量。
+// 3. 利润最优化搜索 (OptimalPriceForProfit): O(log((Max-Min)/epsilon))，采用黄金分割搜索算法 (Golden Section Search)。
+// 4. 价格弹性估算: O(N)。
 package algorithm
 
 import (

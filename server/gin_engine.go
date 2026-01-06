@@ -8,21 +8,20 @@ import (
 	"github.com/gin-gonic/gin" // 导入Gin Web框架。
 )
 
-// NewDefaultGinEngine 创建一个新的 Gin 引擎实例，并配置常用的默认中间件。
-// 它还允许在创建时传入额外的自定义中间件。
-// logger: 用于请求日志的日志记录器。
-// middlewares: 可选的自定义 Gin 中间件。
-// 返回一个配置好的 `*gin.Engine` 实例。
+// NewDefaultGinEngine 创建一个新的 Gin 引擎实例，并预置工业级标准中间件。
+// 默认包含：Recovery (异常恢复)、Logger (结构化访问日志)。
+// 同时支持在初始化时注入额外的业务自定义中间件。
 func NewDefaultGinEngine(logger *slog.Logger, middlewares ...gin.HandlerFunc) *gin.Engine {
-	engine := gin.New() // 创建一个不带任何中间件的Gin引擎实例。
+	// 创建一个不带任何默认配置的干净引擎，以便精准控制中间件链
+	engine := gin.New()
 
-	// 应用默认中间件：
-	// gin.Recovery()：从任何panic中恢复，并返回500错误。
-	engine.Use(gin.Recovery())
-	// middleware.Logger(logger)：项目自定义的请求日志中间件，用于记录HTTP请求信息。
+	// 1. 注册核心中间件：确保任何 Panic 都能被记录并转化为 500 响应
+	engine.Use(middleware.Recovery(logger))
+
+	// 2. 注册日志中间件：输出符合 trace 规范的访问日志
 	engine.Use(middleware.Logger(logger))
 
-	// 应用外部传入的自定义中间件。
+	// 3. 注册额外的扩展中间件（如限流、熔断、鉴权等）
 	engine.Use(middlewares...)
 
 	return engine

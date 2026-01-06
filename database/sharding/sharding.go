@@ -23,13 +23,15 @@ func SetDefault(m *Manager) {
 	defaultManager = m
 }
 
-// Manager 管理多个分片
+// Manager 封装了水平分片（Sharding）的数据库访问逻辑，支持按 Key 路由。
 type Manager struct {
-	shards     map[int]*database.DB
-	shardCount int
-	mu         sync.RWMutex
+	shards     map[int]*database.DB // 分片索引与数据库实例的映射
+	shardCount int                  // 总分片数量
+	mu         sync.RWMutex         // 保护分片映射的并发安全
 }
 
+// NewManager 初始化分片集群管理器。
+// 参数 configs: 分片节点的配置列表。
 func NewManager(configs []config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*Manager, error) {
 	if len(configs) == 0 {
 		return nil, fmt.Errorf("no database configs provided")
@@ -44,12 +46,15 @@ func NewManager(configs []config.DatabaseConfig, cbCfg config.CircuitBreakerConf
 		shards[i] = db
 	}
 
+	logger.Info("database sharding manager initialized", "shards_count", len(configs))
+
 	return &Manager{
 		shards:     shards,
 		shardCount: len(configs),
 	}, nil
 }
 
+// GetDB 根据分片键（通常是 userID）执行取模算法，返回对应的 GORM 数据库实例。
 func (m *Manager) GetDB(key uint64) *gorm.DB {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -57,7 +62,7 @@ func (m *Manager) GetDB(key uint64) *gorm.DB {
 	return m.shards[shardIndex].RawDB()
 }
 
-// GetAllDBs 返回所有分片的 GORM DB 实例
+// GetAllDBs 返回集群中所有分片的实例列表，常用于跨分片的全量查询或批量统计。
 func (m *Manager) GetAllDBs() []*gorm.DB {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -68,6 +73,7 @@ func (m *Manager) GetAllDBs() []*gorm.DB {
 	return dbs
 }
 
+// Close 优雅关闭集群中所有分片的数据库连接池。
 func (m *Manager) Close() error {
 	m.mu.Lock()         // 加写锁，以确保在关闭过程中不会有新的DB访问。
 	defer m.mu.Unlock() // 确保函数退出时解锁。

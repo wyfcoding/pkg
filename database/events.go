@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -63,12 +64,13 @@ func (p *EventPlugin) Initialize(db *gorm.DB) error {
 	return db.Callback().Create().After("gorm:create").Register("event_plugin:after_create", p.handleEvents)
 }
 
+// handleEvents 处理实体中积压的领域事件，并将其持久化到 Outbox 表中。
 func (p *EventPlugin) handleEvents(db *gorm.DB) {
 	if db.Error != nil || db.Statement.Schema == nil {
 		return
 	}
 
-	// 检查模型是否实现了 EntityEvents 接口
+	// 检查模型是否实现了 EntityEvents 接口，以确定是否有事件需要处理
 	entity, ok := db.Statement.Dest.(EntityEvents)
 	if !ok {
 		return
@@ -80,7 +82,12 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 	}
 
 	for _, event := range events {
-		payload, _ := json.Marshal(event)
+		payload, err := json.Marshal(event)
+		if err != nil {
+			db.AddError(fmt.Errorf("failed to marshal domain event: %w", err))
+			continue
+		}
+
 		record := &OutboxRecord{
 			Topic:     event.EventName(),
 			Key:       event.EventKey(),
@@ -88,11 +95,14 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 			Status:    0,
 			CreatedAt: time.Now(),
 		}
-		// 在当前事务中保存到 outbox 表
-		if err := db.Session(&gorm.Session{NewDB: true}).Table("sys_outbox_messages").Create(record).Error; err != nil {
-			_ = db.AddError(err)
+
+		// 在当前同一个事务中将消息持久化至 sys_outbox_messages 表
+		// 使用 NewDB: true 开启一个干净的会话，避免干扰主操作的错误状态
+		if err := db.Session(&gorm.Session{NewDB: true}).Create(record).Error; err != nil {
+			db.AddError(fmt.Errorf("failed to create outbox record: %w", err))
 		}
 	}
 
+	// 处理完成后清空实体的事件列表，防止重复处理
 	entity.ClearEvents()
 }

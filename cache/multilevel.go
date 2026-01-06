@@ -12,15 +12,18 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// MultiLevelCache 实现多级缓存 (L1: 本地, L2: 分布式)
+// MultiLevelCache 实现了多级缓存策略，结合了 L1（低延迟、零网络开销的本地内存）与 L2（高可用、数据共享的分布式 Redis）。
+// 关键特性：具备自动回填（Backfill）能力及全链路分布式追踪集成。
 type MultiLevelCache struct {
-	l1     Cache
-	l2     Cache
-	tracer trace.Tracer
-	logger *logging.Logger
+	l1     Cache         // 本地一级缓存 (如 BigCache)
+	l2     Cache         // 分布式二级缓存 (如 RedisCache)
+	tracer trace.Tracer  // 分布式追踪器
+	logger *logging.Logger // 结构化日志记录器
 }
 
+// NewMultiLevelCache 初始化并返回一个新的多级缓存管理器。
 func NewMultiLevelCache(l1, l2 Cache, logger *logging.Logger) *MultiLevelCache {
+	logger.Info("multi-level cache initialized", "strategy", "L1_L2_Coordination")
 	return &MultiLevelCache{
 		l1:     l1,
 		l2:     l2,
@@ -29,22 +32,24 @@ func NewMultiLevelCache(l1, l2 Cache, logger *logging.Logger) *MultiLevelCache {
 	}
 }
 
+// Get 依次尝试从各级缓存中检索数据。
+// 流程：L1 命中直接返回 -> L2 命中则回填 L1 并返回 -> 全不中返回 ErrCacheMiss。
 func (c *MultiLevelCache) Get(ctx context.Context, key string, value any) error {
-	ctx, span := c.tracer.Start(ctx, "MultiLevelCache.Get", trace.WithAttributes(
+	ctx, span := c.tracer.Start(ctx, "multi_level_cache.get", trace.WithAttributes(
 		attribute.String("cache.key", key),
 	))
 	defer span.End()
 
-	// 1. 尝试 L1
+	// 1. 尝试 L1 (Local)
 	if err := c.l1.Get(ctx, key, value); err == nil {
 		span.SetAttributes(attribute.String("cache.hit", "L1"))
 		return nil
 	}
 
-	// 2. 尝试 L2
+	// 2. 尝试 L2 (Distributed)
 	if err := c.l2.Get(ctx, key, value); err == nil {
 		span.SetAttributes(attribute.String("cache.hit", "L2"))
-		// 回填 L1
+		// 将结果自动同步回 L1，加速下一次访问
 		if err := c.l1.Set(ctx, key, value, 0); err != nil {
 			c.logger.ErrorContext(ctx, "failed to backfill L1 cache", "key", key, "error", err)
 		}
@@ -55,20 +60,20 @@ func (c *MultiLevelCache) Get(ctx context.Context, key string, value any) error 
 	return ErrCacheMiss
 }
 
+// Set 同时更新各级缓存，确保数据一致性。
+// 策略：先写 L2（确保全局可见），再写 L1（单机可见）。
 func (c *MultiLevelCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
-	ctx, span := c.tracer.Start(ctx, "MultiLevelCache.Set", trace.WithAttributes(
+	ctx, span := c.tracer.Start(ctx, "multi_level_cache.set", trace.WithAttributes(
 		attribute.String("cache.key", key),
 	))
 	defer span.End()
 
-	// 先写 L2 (分布式)
 	if err := c.l2.Set(ctx, key, value, expiration); err != nil {
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to set L2")
+		span.SetStatus(codes.Error, "failed to set L2 cache")
 		return fmt.Errorf("failed to set L2: %w", err)
 	}
 
-	// 再写 L1 (本地)
 	if err := c.l1.Set(ctx, key, value, expiration); err != nil {
 		c.logger.ErrorContext(ctx, "failed to set L1 cache", "key", key, "error", err)
 	}

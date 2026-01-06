@@ -25,29 +25,32 @@ type Response struct {
 	Body       string            `json:"body"`
 }
 
-// Manager 幂等管理器接口
+// Manager 定义了幂等控制器的核心行为接口。
 type Manager interface {
-	// TryStart 尝试开始一个幂等请求。
-	// 返回 (isFirst, savedResponse, error)
-	// 如果是第一次请求，返回 (true, nil, nil)
-	// 如果请求已完成，返回 (false, response, nil)
-	// 如果请求正在处理中，返回 (false, nil, ErrInProgress)
+	// TryStart 尝试开启幂等保护。
+	// 返回值：
+	// - isFirst: 是否为首次请求
+	// - savedResponse: 如果是已完成的重复请求，返回之前存储的响应快照
+	// - error: 如果请求正在处理中返回 ErrInProgress，或其他底层错误
 	TryStart(ctx context.Context, key string, ttl time.Duration) (bool, *Response, error)
 
-	// Finish 完成幂等请求，存储响应结果
+	// Finish 标记请求处理完成，并持久化响应快照。
 	Finish(ctx context.Context, key string, resp *Response, ttl time.Duration) error
 
-	// Delete 删除幂等记录，通常用于处理失败后允许重试
+	// Delete 显式删除幂等记录，通常在业务逻辑明确失败且允许用户立即重试时调用。
 	Delete(ctx context.Context, key string) error
 }
 
+// ErrInProgress 表示当前请求已存在且正在处理中，禁止重入。
 var ErrInProgress = fmt.Errorf("request already in progress")
 
+// redisManager 是幂等管理器的 Redis 实现。
 type redisManager struct {
-	client *redis.Client
-	prefix string
+	client *redis.Client // Redis 客户端实例
+	prefix string        // 键名全局前缀
 }
 
+// NewRedisManager 初始化并返回一个基于 Redis 的幂等管理器。
 func NewRedisManager(client *redis.Client, prefix string) Manager {
 	return &redisManager{
 		client: client,
@@ -55,6 +58,7 @@ func NewRedisManager(client *redis.Client, prefix string) Manager {
 	}
 }
 
+// makeKey 内部方法：构建包含前缀的完整 Redis 键名。
 func (m *redisManager) makeKey(key string) string {
 	return fmt.Sprintf("%s:%s", m.prefix, key)
 }
@@ -62,10 +66,7 @@ func (m *redisManager) makeKey(key string) string {
 func (m *redisManager) TryStart(ctx context.Context, key string, ttl time.Duration) (bool, *Response, error) {
 	fullKey := m.makeKey(key)
 
-	// Lua 脚本：原子性检查和设置
-	// 1. 如果 key 不存在，设置状态为 STARTED 并设置过期时间 (NX)
-	// 2. 如果存在且状态为 STARTED，返回 "IN_PROGRESS"
-	// 3. 如果存在且状态为 FINISHED，返回缓存的 Response 数据
+	// Lua 脚本实现 Check-And-Set 原子语义
 	script := `
 		local val = redis.call("get", KEYS[1])
 		if not val then
@@ -77,28 +78,27 @@ func (m *redisManager) TryStart(ctx context.Context, key string, ttl time.Durati
 
 	res, err := m.client.Eval(ctx, script, []string{fullKey}, string(StatusStarted), int(ttl.Seconds())).Result()
 	if err != nil {
-		slog.Error("Idempotency TryStart error", "key", fullKey, "error", err)
+		slog.Error("idempotency try_start error", "key", fullKey, "error", err)
 		return false, nil, err
 	}
 
 	if res == "OK" {
-		slog.Debug("Idempotency check passed (first time)", "key", fullKey)
+		slog.Debug("idempotency check passed (first time)", "key", fullKey)
 		return true, nil, nil
 	}
 
 	if res == string(StatusStarted) {
-		slog.Warn("Idempotency check failed (in progress)", "key", fullKey)
+		slog.Warn("idempotency check failed (in progress)", "key", fullKey)
 		return false, nil, ErrInProgress
 	}
 
-	// 如果是已完成的状态，res 存储的是 JSON 格式的 Response
 	var savedResp Response
 	if err := json.Unmarshal([]byte(res.(string)), &savedResp); err != nil {
-		slog.Error("Idempotency failed to unmarshal saved response", "key", fullKey, "error", err)
+		slog.Error("idempotency failed to unmarshal saved response", "key", fullKey, "error", err)
 		return false, nil, fmt.Errorf("failed to unmarshal saved response: %w", err)
 	}
 
-	slog.Info("Idempotency check hit (finished)", "key", fullKey)
+	slog.Info("idempotency check hit (finished)", "key", fullKey)
 	return false, &savedResp, nil
 }
 
@@ -109,13 +109,12 @@ func (m *redisManager) Finish(ctx context.Context, key string, resp *Response, t
 		return err
 	}
 
-	// 更新状态为结果 JSON，并延长过期时间
 	err = m.client.Set(ctx, fullKey, string(data), ttl).Err()
 	if err != nil {
-		slog.Error("Idempotency Finish error", "key", fullKey, "error", err)
+		slog.Error("idempotency finish error", "key", fullKey, "error", err)
 		return err
 	}
-	slog.Debug("Idempotency request finished and saved", "key", fullKey)
+	slog.Debug("idempotency request finished and saved", "key", fullKey)
 	return nil
 }
 

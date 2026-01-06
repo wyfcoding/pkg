@@ -44,7 +44,7 @@ func NewSnowflakeGenerator(cfg config.SnowflakeConfig) (*SnowflakeGenerator, err
 		return nil, fmt.Errorf("failed to create snowflake node: %w", err)
 	}
 
-	slog.Info("SnowflakeGenerator initialized", "machine_id", cfg.MachineID, "epoch", snowflake.Epoch)
+	slog.Info("snowflake generator initialized", "machine_id", cfg.MachineID, "epoch", snowflake.Epoch)
 
 	return &SnowflakeGenerator{
 		node: node,
@@ -91,7 +91,7 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 		return nil, fmt.Errorf("failed to create sonyflake instance: %w", err)
 	}
 
-	slog.Info("SonyflakeGenerator initialized", "machine_id", cfg.MachineID, "start_time", startTime)
+	slog.Info("sonyflake generator initialized", "machine_id", cfg.MachineID, "start_time", startTime)
 
 	return &SonyflakeGenerator{
 		sf: sf,
@@ -149,19 +149,21 @@ func Init(cfg config.SnowflakeConfig) error {
 	return err
 }
 
-// Default 返回全局默认生成器实例
+// Default 返回全局默认生成器实例。
+// 如果尚未初始化，则使用 MachineID=1 进行自动补全初始化（兜底逻辑）。
 func Default() Generator {
 	if defaultGenerator == nil {
-		_ = Init(config.SnowflakeConfig{MachineID: 1})
+		if err := Init(config.SnowflakeConfig{MachineID: 1}); err != nil {
+			slog.Error("failed to initialize default id generator", "error", err)
+		}
 	}
 	return defaultGenerator
 }
 
-// GenID 使用默认生成器生成唯一 ID。
-// 如果默认生成器尚未初始化，它会使用默认配置（MachineID为1）进行一次回退初始化。
+// GenID 使用默认生成器生成全局唯一的 uint64 ID。
+// 顶级架构支持：如果默认生成器未手动初始化，会自动执行一次默认参数的同步初始化。
 func GenID() uint64 {
 	if defaultGenerator == nil {
-		// 如果未初始化，则使用默认值进行回退初始化。
 		if err := Init(config.SnowflakeConfig{MachineID: 1}); err != nil {
 			panic(fmt.Errorf("failed to auto-initialize default id generator: %w", err))
 		}

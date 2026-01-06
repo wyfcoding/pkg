@@ -4,17 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/wyfcoding/pkg/eventsourcing"
 )
 
-// TopicMapper 根据事件决定 Topic 的函数
+// TopicMapper 定义了根据领域事件类型动态决定 Kafka 主题（Topic）的路由逻辑。
 type TopicMapper func(event eventsourcing.DomainEvent) string
 
-// KafkaEventBus 基于 Kafka 的事件总线实现
+// KafkaEventBus 实现了 messagequeue.EventBus 接口，利用 Kafka 提供可靠的异步事件分发能力。
 type KafkaEventBus struct {
-	producer    *Producer
-	topicMapper TopicMapper
+	producer    *Producer   // 底层封装的 Kafka 生产者
+	topicMapper TopicMapper // 事件路由映射器
 }
 
 // NewKafkaEventBus 创建 KafkaEventBus
@@ -39,24 +40,30 @@ func (b *KafkaEventBus) WithTopicMapper(mapper TopicMapper) *KafkaEventBus {
 	return b
 }
 
-// Publish 实现 EventBus 接口
+// Publish 执行单个领域事件的异步分发。
+// 流程：路由 Topic -> 序列化 -> 注入 Trace -> 物理发送 -> 记录审计日志。
 func (b *KafkaEventBus) Publish(ctx context.Context, event eventsourcing.DomainEvent) error {
 	topic := b.topicMapper(event)
-	// 如果 mapper 返回空，可能 fallback 到 producer 默认 topic，或报错
-	// 这里依赖 producer.PublishToTopic，如果没有 topic 会报错
-
 	key := []byte(event.AggregateID())
 
-	// 序列化事件
-	// 这里假设 domain event 可以被 json 序列化
+	// 将领域事件对象序列化为标准 JSON 格式
 	value, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal domain event: %w", err)
 	}
 
-	// 实际发送
-	// 注意：Producer 会自动处理 Tracing 注入
-	return b.producer.PublishToTopic(ctx, topic, key, value)
+	// 调用生产者执行带 Tracing 和指标采集的物理发送
+	if err := b.producer.PublishToTopic(ctx, topic, key, value); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "domain event published to bus",
+		"topic", topic,
+		"aggregate_id", event.AggregateID(),
+		"event_type", event.EventType(),
+	)
+
+	return nil
 }
 
 // PublishBatch 实现 EventBus 接口

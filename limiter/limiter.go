@@ -25,7 +25,7 @@ type LocalLimiter struct {
 // NewLocalLimiter 创建本地限流器。
 // r: 每秒填充速率，b: 桶容量。
 func NewLocalLimiter(r rate.Limit, b int) *LocalLimiter {
-	slog.Info("LocalLimiter initialized", "rate", r, "burst", b)
+	slog.Info("local_limiter initialized", "rate", r, "burst", b)
 	return &LocalLimiter{
 		limiter: rate.NewLimiter(r, b),
 	}
@@ -76,23 +76,23 @@ return allowed and 1 or 0
 `
 
 // RedisLimiter 是基于 Redis 和 Lua 脚本实现的分布式令牌桶限流器。
+// RedisLimiter 是基于 Redis + Lua 脚本实现的分布式令牌桶限流器。
+// 核心优势：跨节点共享限流状态，原子性更新，防止惊群效应。
 type RedisLimiter struct {
-	client *redis.Client
-	rate   int // 每秒产生的令牌数
-	burst  int // 桶的最大容量
+	client *redis.Client // Redis 客户端实例
+	rate   int           // 每秒产生的令牌数 (QPS)
+	burst  int           // 令牌桶的最大容量
 }
 
-// NewRedisLimiter 创建一个新的分布式限流器。
-// client: Redis 客户端。
-// rate: 每秒限制的请求数。
-// window: 在分布式令牌桶中，我们简化为每秒速率，如果传入 1s 则 rate 即为 QPS。
+// NewRedisLimiter 创建并初始化一个分布式限流器。
+// 架构设计：默认突发流量容量设为速率的 120%，确保在请求波动时具有一定的弹性。
 func NewRedisLimiter(client *redis.Client, rate int, _ time.Duration) *RedisLimiter {
 	// 默认突发流量容量为速率的 20% 或最小为 1，确保平滑
 	burst := rate + (rate / 5)
 	if burst <= 0 {
 		burst = 1
 	}
-	slog.Info("RedisLimiter initialized", "rate", rate, "burst", burst)
+	slog.Info("redis_limiter initialized", "rate", rate, "burst", burst)
 	return &RedisLimiter{
 		client: client,
 		rate:   rate,

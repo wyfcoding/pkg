@@ -77,16 +77,17 @@ func NewResult[T any](total int64, req *Request, items []T) *Result[T] {
 	}
 }
 
-// --- Cursor (游标分页支持，用于深度分页优化) ---
+// --- Cursor (游标分页支持，用于深度分页优化，避免 OFFSET 性能问题) ---
 
-// CursorRequest 游标分页请求 (如：基于 ID 或时间戳)
+// CursorRequest 定义了基于游标的分页请求结构。
+// 适用于无限滚动或高频数据流场景。
 type CursorRequest struct {
-	LastID   uint64 `json:"last_id" form:"last_id"` // 上一页最后一条记录的 ID
-	PageSize int    `json:"page_size" form:"page_size"`
+	LastID   uint64 `json:"last_id" form:"last_id"`     // 上一页返回数据中最后一条记录的唯一标识 (ID)
+	PageSize int    `json:"page_size" form:"page_size"` // 请求抓取的数据条数
 }
 
-// CursorResult 游标分页结果
+// CursorResult 定义了游标分页的响应结果。
 type CursorResult[T any] struct {
-	NextID uint64 `json:"next_id"` // 下一页的起始 ID (0 表示没有更多)
-	Data   []T    `json:"list"`
+	NextID uint64 `json:"next_id"` // 指向下一页起始位置的 ID，若为 0 则表示后续无更多数据
+	Data   []T    `json:"list"`    // 本次返回的业务实体列表
 }

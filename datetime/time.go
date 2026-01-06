@@ -45,11 +45,13 @@ func EndOfDay(t time.Time) time.Time {
 }
 
 var (
-	// 特殊节假日 (YYYY-MM-DD): 包含调休后的长假
+	// customHolidays 维护了特定年份的法定节假日列表 (格式: YYYY-MM-DD)。
+	// 包含调休后的长假，用于金融清算或营销活动的日期判定。
 	customHolidays = map[string]bool{
 		"2024-01-01": true, "2024-02-10": true, "2024-05-01": true,
 	}
-	// 特殊工作日 (YYYY-MM-DD): 补班日
+	// customWorkdays 维护了因节假日调休而需要补班的特殊工作日。
+	// 虽然这些日期可能是周末，但在业务逻辑上应被视为交易日或普通工作日。
 	customWorkdays = map[string]bool{
 		"2024-02-04": true, "2024-02-18": true,
 	}

@@ -22,31 +22,36 @@ func (w responseBodyWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// IdempotencyMiddleware 创建一个幂等中间件。
-// manager: 幂等管理实现。
-// ttl: 成功结果在 Redis 中的保留时间。
+// IdempotencyMiddleware 构造一个用于 Gin 框架的通用幂等性控制中间件。
+// 参数说明：
+//   - manager: 具体的幂等状态管理实现（通常基于 Redis）。
+//   - ttl: 业务成功处理后，响应快照在缓存中的保留时长。
 func IdempotencyMiddleware(manager idempotency.Manager, ttl time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 客户端需在 Header 中传递唯一的幂等键标识
 		key := c.GetHeader("X-Idempotency-Key")
 		if key == "" {
 			c.Next()
 			return
 		}
 
-		// 1. 尝试锁定请求
-		isFirst, savedResp, err := manager.TryStart(c.Request.Context(), key, 5*time.Minute) // 默认处理中锁 5 分钟
+		ctx := c.Request.Context()
+
+		// 1. 尝试判定并锁定当前请求。
+		// 锁定 TTL 默认为 5 分钟，防止由于业务异常未调用 Finish 导致的死锁。
+		isFirst, savedResp, err := manager.TryStart(ctx, key, 5*time.Minute)
 		if err != nil {
 			if err == idempotency.ErrInProgress {
-				response.ErrorWithStatus(c, http.StatusConflict, "request is being processed, please do not repeat", "")
+				response.ErrorWithStatus(c, http.StatusConflict, "request is being processed, please do not repeat", "idempotency active")
 				c.Abort()
 				return
 			}
-			slog.Error("idempotency manager error", "error", err)
-			c.Next() // 降级处理：管理系统故障时允许请求通过
+			slog.ErrorContext(ctx, "idempotency manager failure, fallback to passthrough", "key", key, "error", err)
+			c.Next()
 			return
 		}
 
-		// 2. 如果之前已经成功处理过，直接返回缓存的结果
+		// 2. 缓存命中：如果请求之前已成功处理，直接还原并返回之前的响应快照。
 		if !isFirst && savedResp != nil {
 			for k, v := range savedResp.Header {
 				c.Header(k, v)
@@ -57,27 +62,26 @@ func IdempotencyMiddleware(manager idempotency.Manager, ttl time.Duration) gin.H
 			return
 		}
 
-		// 3. 第一次处理，捕获响应
+		// 3. 首次处理：拦截 Writer 缓冲区以捕获业务响应。
 		w := &responseBodyWriter{body: &bytes.Buffer{}, ResponseWriter: c.Writer}
 		c.Writer = w
 
 		c.Next()
 
-		// 4. 只针对成功的响应进行幂等存储 (2xx 状态码)
+		// 4. 后置处理：只对成功的业务响应进行幂等快照持久化。
 		if c.Writer.Status() >= 200 && c.Writer.Status() < 300 {
 			respSnapshot := &idempotency.Response{
 				StatusCode: c.Writer.Status(),
 				Body:       w.body.String(),
 				Header:     make(map[string]string),
 			}
-			// 这里可以根据需要过滤想要缓存的 Header
-			if err := manager.Finish(c.Request.Context(), key, respSnapshot, ttl); err != nil {
-				slog.Error("failed to finish idempotency", "key", key, "error", err)
+			if err := manager.Finish(ctx, key, respSnapshot, ttl); err != nil {
+				slog.ErrorContext(ctx, "failed to persist idempotency snapshot", "key", key, "error", err)
 			}
 		} else {
-			// 如果处理失败，释放锁，允许客户端修改参数后重试
-			if err := manager.Delete(c.Request.Context(), key); err != nil {
-				slog.Error("failed to release idempotency lock", "key", key, "error", err)
+			// 若业务处理失败（如 4xx/5xx），则主动释放幂等锁，允许修正参数后重试。
+			if err := manager.Delete(ctx, key); err != nil {
+				slog.ErrorContext(ctx, "failed to release idempotency lock on failure", "key", key, "error", err)
 			}
 		}
 	}

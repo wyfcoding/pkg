@@ -1,3 +1,4 @@
+// Package breaker 提供了基于 gobreaker 的熔断器封装，集成了 Prometheus 指标监控。
 package breaker
 
 import (
@@ -10,29 +11,28 @@ import (
 	"github.com/wyfcoding/pkg/metrics"
 )
 
+// ErrServiceUnavailable 当熔断器处于开启状态时返回此错误。
 var ErrServiceUnavailable = errors.New("service unavailable (circuit breaker open)")
 
-// Breaker 封装了具备指标监控能力的熔断器
+// Breaker 封装了具备指标监控能力的熔断器实例。
 type Breaker struct {
-	cb      *gobreaker.CircuitBreaker
-	metrics *prometheus.GaugeVec
+	cb      *gobreaker.CircuitBreaker // 底层 gobreaker 实例
+	metrics *prometheus.GaugeVec      // 关联的 Prometheus 指标
 }
 
-// Settings 熔断器配置
+// Settings 定义了熔断器的核心运行参数。
 type Settings struct {
-	Name   string
-	Config config.CircuitBreakerConfig
-	// 失败率阈值 (0.0 - 1.0)，默认 0.5
-	FailureRatio float64
-	// 触发熔断所需的最小请求数，默认 10
-	MinRequests uint32
+	Name         string                      // 熔断器唯一标识名称
+	Config       config.CircuitBreakerConfig // 基础配置（超时、间隔等）
+	FailureRatio float64                     // 失败率阈值 (0.0 - 1.0)，默认 0.5
+	MinRequests  uint32                      // 触发熔断判断所需的最小请求数
 }
 
-// NewBreaker 创建一个新的熔断器，并自动注册监控指标
+// NewBreaker 初始化并返回一个带有自动监控指标的熔断器。
 func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
-	// 如果配置未启用，返回一个永远不熔断的“伪熔断器” (gobreaker 不支持直接禁用，我们通过逻辑控制或默认设置)
+	// 如果配置未启用，返回一个永远不熔断的“伪熔断器”
 	if !st.Config.Enabled {
-		st.Config.MaxRequests = 0 // 0 means no limit in gobreaker for max requests
+		st.Config.MaxRequests = 0
 	}
 
 	if st.FailureRatio <= 0 {
@@ -42,14 +42,13 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 		st.MinRequests = 10
 	}
 
-	// 注册指标 (1: Closed, 2: Open, 3: Half-Open)
+	// 注册状态指标 (1: Closed, 2: Open, 3: Half-Open)
 	cbStatus := m.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "circuit_breaker_state",
 		Help: "Circuit breaker state (1:Closed, 2:Open, 3:HalfOpen)",
 	}, []string{"name"})
 
 	readyToTrip := func(counts gobreaker.Counts) bool {
-		// 如果禁用了熔断，永远不触发
 		if !st.Config.Enabled {
 			return false
 		}
@@ -66,7 +65,7 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 			val = 3.0
 		}
 		cbStatus.WithLabelValues(name).Set(val)
-		slog.Warn("Circuit breaker state changed", "name", name, "from", from.String(), "to", to.String())
+		slog.Warn("circuit breaker state changed", "name", name, "from", from.String(), "to", to.String())
 	}
 
 	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
@@ -86,7 +85,8 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 	}
 }
 
-// Execute 执行受熔断保护的逻辑
+// Execute 执行受熔断保护的业务逻辑。
+// 如果熔断器处于开启状态，立即返回 ErrServiceUnavailable。
 func (b *Breaker) Execute(req func() (any, error)) (any, error) {
 	result, err := b.cb.Execute(req)
 	if err != nil {

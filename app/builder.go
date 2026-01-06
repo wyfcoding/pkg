@@ -20,24 +20,24 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Builder 提供了构建 App 的灵活方式。
+// Builder 提供了构建 App 的灵活方式，采用建造者模式管理复杂的初始化流程。
 type Builder struct {
-	serviceName    string   // 服务名称
-	configInstance any      // 配置实例
-	appOpts        []Option // 应用程序选项
+	serviceName    string   // 服务名称，用于日志标识和默认路径查找
+	configInstance any      // 配置实例指针，用于反序列化配置
+	appOpts        []Option // 应用程序生命周期选项
 
-	initService  any // 服务初始化函数
-	registerGRPC any // gRPC 注册函数
-	registerGin  any // Gin 注册函数
+	initService  any // 业务层初始化钩子函数
+	registerGRPC any // gRPC 服务注册钩子函数
+	registerGin  any // HTTP 路由注册钩子函数
 
-	metricsPort string // Metrics 端口
+	metricsPort string // Metrics 独立暴露端口（若不与 HTTP 复用）
 
-	// healthCheckers 用于收集自定义健康检查。
+	// healthCheckers 用于收集自定义健康检查逻辑。
 	healthCheckers []func() error
 
-	// grpcInterceptors 用于收集gRPC一元拦截器。
+	// grpcInterceptors 用于收集 gRPC 一元拦截器。
 	grpcInterceptors []grpc.UnaryServerInterceptor
-	// ginMiddleware 用于收集Gin中间件。
+	// ginMiddleware 用于收集 Gin 中间件。
 	ginMiddleware []gin.HandlerFunc
 }
 
@@ -171,15 +171,15 @@ func (b *Builder) Build() *App {
 	if cfg.Tracing.Enabled {
 		shutdown, err := tracing.InitTracer(cfg.Tracing)
 		if err != nil {
-			logger.Logger.Error("Failed to initialize tracer", "error", err)
+			logger.Logger.Error("failed to initialize tracer", "error", err)
 		} else {
 			// 注册追踪系统的关闭回调，确保缓冲区数据在应用退出前冲刷。
 			b.appOpts = append(b.appOpts, WithCleanup(func() {
 				if err := shutdown(context.Background()); err != nil {
-					logger.Logger.Error("Failed to shutdown tracer", "error", err)
+					logger.Logger.Error("failed to shutdown tracer", "error", err)
 				}
 			}))
-			logger.Logger.Info("Tracer initialized", "endpoint", cfg.Tracing.OTLPEndpoint)
+			logger.Logger.Info("tracer initialized", "endpoint", cfg.Tracing.OTLPEndpoint)
 
 			// 自动添加 Gin 追踪中间件，确保每个入站 HTTP 请求都有 trace_id。
 			b.ginMiddleware = append([]gin.HandlerFunc{middleware.TracingMiddleware(b.serviceName)}, b.ginMiddleware...)
@@ -213,14 +213,14 @@ func (b *Builder) Build() *App {
 		if burst <= 0 {
 			burst = 100 // 默认突发容量 100
 		}
-		logger.Logger.Info("Rate limit middleware enabled", "rate", rate, "burst", burst)
+		logger.Logger.Info("rate limit middleware enabled", "rate", rate, "burst", burst)
 		b.ginMiddleware = append(b.ginMiddleware, middleware.NewLocalRateLimitMiddleware(rate, burst))
 	}
 
 	// 3.2 初始化熔断 (Circuit Breaker)：如果启用，则在 Gin 中间件链中添加熔断器。
 	// 熔断器会在错误率过高时自动拒绝请求，防止雪崩效应。
 	if cfg.CircuitBreaker.Enabled {
-		logger.Logger.Info("Circuit breaker middleware enabled")
+		logger.Logger.Info("circuit breaker middleware enabled")
 		b.ginMiddleware = append(b.ginMiddleware, middleware.HttpCircuitBreaker(cfg.CircuitBreaker, metricsInstance))
 	}
 
@@ -283,7 +283,7 @@ func (b *Builder) Build() *App {
 				path = "/metrics"
 			}
 			ginEngine.GET(path, gin.WrapH(metricsInstance.Handler()))
-			logger.Logger.Info("Metrics endpoint registered", "path", path)
+			logger.Logger.Info("metrics endpoint registered", "path", path)
 		}
 		// -------------------------------------------------------
 

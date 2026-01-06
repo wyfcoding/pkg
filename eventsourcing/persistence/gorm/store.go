@@ -11,25 +11,23 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// EventModel 数据库持久化模型
+// EventModel 数据库持久化模型，记录每一条领域事件。
 type EventModel struct {
-	ID          uint64    `gorm:"primaryKey;autoIncrement"`
-	AggregateID string    `gorm:"type:varchar(64);index:idx_agg_ver,unique;not null"`
-	Type        string    `gorm:"type:varchar(128);not null"`
-	Version     int64     `gorm:"index:idx_agg_ver,unique;not null"`
-	Data        string    `gorm:"type:json;not null"` // 事件载荷 (JSON)
-	Metadata    string    `gorm:"type:json"`          // 元数据 (JSON)
-	OccurredAt  time.Time `gorm:"index;not null"`
-	CreatedAt   time.Time `gorm:"autoCreateTime"`
+	gorm.Model
+	AggregateID string    `gorm:"type:varchar(64);index:idx_agg_ver,unique;not null;comment:聚合根唯一标识"`
+	Type        string    `gorm:"type:varchar(128);not null;comment:事件类型名称"`
+	Version     int64     `gorm:"index:idx_agg_ver,unique;not null;comment:事件在流中的版本号"`
+	Data        string    `gorm:"type:json;not null;comment:事件载荷数据 (JSON 格式)"`
+	Metadata    string    `gorm:"type:json;comment:事件上下文元数据"`
+	OccurredAt  time.Time `gorm:"index;not null;comment:业务事件发生时间"`
 }
 
-// SnapshotModel 快照持久化模型
+// SnapshotModel 快照持久化模型，存储聚合根的最新状态副本。
 type SnapshotModel struct {
-	ID          uint64    `gorm:"primaryKey;autoIncrement"`
-	AggregateID string    `gorm:"type:varchar(64);uniqueIndex;not null"`
-	Version     int64     `gorm:"not null"`
-	State       string    `gorm:"type:json;not null"` // 聚合根状态 (JSON)
-	UpdatedAt   time.Time `gorm:"autoUpdateTime"`
+	gorm.Model
+	AggregateID string `gorm:"type:varchar(64);uniqueIndex;not null;comment:聚合根唯一标识"`
+	Version     int64  `gorm:"not null;comment:快照对应的聚合版本"`
+	State       string `gorm:"type:json;not null;comment:聚合根状态数据 (JSON 格式)"`
 }
 
 // GormEventStore 基于 GORM 的 EventStore 实现
@@ -62,27 +60,24 @@ func NewGormEventStore(db *gorm.DB, tableName string) (*GormEventStore, error) {
 	return store, nil
 }
 
-// Save 实现 EventStore 接口
+// Save 实现 EventStore 接口，在事务中保存事件流。
 func (s *GormEventStore) Save(ctx context.Context, aggregateID string, events []eventsourcing.DomainEvent, expectedVersion int64) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		// 1. 乐观锁检查：检查当前版本是否匹配 expectedVersion
+		// 1. 乐观锁检查
 		var currentVersion int64
-		// 获取当前最大版本号
 		err := tx.Table(s.tableName).
-			Where("aggregate_id = ?", aggregateID).
+			Where("aggregate_id = ? AND deleted_at IS NULL", aggregateID).
 			Select("COALESCE(MAX(version), 0)").
 			Scan(&currentVersion).Error
 		if err != nil {
 			return err
 		}
 
-		// 检查版本一致性
-		// 如果是新聚合，expectedVersion 通常为 0
 		if currentVersion != expectedVersion {
 			return fmt.Errorf("concurrency error: aggregate %s version mismatch, expected %d but got %d", aggregateID, expectedVersion, currentVersion)
 		}
 
-		// 2. 批量插入事件
+		// 2. 批量插入
 		eventModels := make([]*EventModel, 0, len(events))
 		for i, event := range events {
 			// 简单序列化 Data
@@ -109,12 +104,15 @@ func (s *GormEventStore) Save(ctx context.Context, aggregateID string, events []
 				return fmt.Errorf("failed to marshal event data: %w", err)
 			}
 
-			metaBytes, _ := json.Marshal(metaAny)
+			metaBytes, err := json.Marshal(metaAny)
+			if err != nil {
+				return fmt.Errorf("failed to marshal event metadata: %w", err)
+			}
 
 			eventModels = append(eventModels, &EventModel{
 				AggregateID: aggregateID,
 				Type:        event.EventType(),
-				Version:     expectedVersion + int64(i) + 1, // 版本递增
+				Version:     expectedVersion + int64(i) + 1,
 				Data:        string(dataBytes),
 				Metadata:    string(metaBytes),
 				OccurredAt:  event.OccurredAt(),
@@ -125,11 +123,7 @@ func (s *GormEventStore) Save(ctx context.Context, aggregateID string, events []
 			return nil
 		}
 
-		if err := tx.Table(s.tableName).Create(&eventModels).Error; err != nil {
-			return err
-		}
-
-		return nil
+		return tx.Table(s.tableName).Create(&eventModels).Error
 	})
 }
 
@@ -166,7 +160,10 @@ func (s *GormEventStore) LoadFromVersion(ctx context.Context, aggregateID string
 
 		var metaMap eventsourcing.Metadata
 		if len(model.Metadata) > 0 {
-			_ = json.Unmarshal([]byte(model.Metadata), &metaMap)
+			if err := json.Unmarshal([]byte(model.Metadata), &metaMap); err != nil {
+				// 元数据解析失败仅记录日志，不中断主流程
+				fmt.Printf("warning: failed to unmarshal metadata for event %d: %v\n", model.ID, err)
+			}
 		}
 
 		event := eventsourcing.BaseEvent{
@@ -175,7 +172,7 @@ func (s *GormEventStore) LoadFromVersion(ctx context.Context, aggregateID string
 			AggregateId: model.AggregateID,
 			Ver:         model.Version,
 			Timestamp:   model.OccurredAt,
-			Data:        dataMap, // 返回 Map，需业务层转 Struct
+			Data:        dataMap,
 			Metadata:    metaMap,
 		}
 		events = append(events, &event)
