@@ -8,9 +8,12 @@ import (
 
 // shard 是ConcurrentMap的一个分片。
 // 每个分片包含一个独立的读写锁和一个map，用于存储一部分键值对。
+// 优化：添加 Padding 防止伪共享 (False Sharing)。
+// 读写锁(24字节) + map(8字节) = 32字节。在 64 字节缓存行下，两个相邻 shard 可能会共享缓存行。
 type shard[K comparable, V any] struct {
 	sync.RWMutex
 	items map[K]V
+	_     [32]byte // 填充至 approx 64 bytes (实际 struct layout 可能有 align，32 byte padding 足够推开)
 }
 
 // --- Generic ConcurrentMap (Incomplete) ---
@@ -18,7 +21,7 @@ type shard[K comparable, V any] struct {
 // ConcurrentMap 是一个分片式的并发map的通用结构模板。
 // 通过将键值对分散到不同的分片（shard）中，可以显著减少多goroutine并发访问时的锁竞争。
 // 注意：这个泛型版本缺少一个关键的 `getShard` 方法，因为它需要一个通用的哈希函数来处理泛型键 `K`。
-// 因此，这个结构本身并未完全实现，下面的 `ConcurrentStringMap` 是一个针对string键的具体实现。
+// 实际使用请参考 `ConcurrentStringMap`。
 type ConcurrentMap[K comparable, V any] struct {
 	shards     []*shard[K, V]
 	shardCount uint64
@@ -56,6 +59,9 @@ func NewConcurrentStringMap[V any](shardCount int) *ConcurrentStringMap[V] {
 	if shardCount <= 0 {
 		shardCount = 32
 	}
+	// 确保 shardCount 是 2 的幂，以优化取模运算 (hash % count -> hash & mask)
+	// 虽然下面 getShard 暂时用的取模，但为了扩展性建议尽量用 2 的幂。
+	// 这里暂不强制修改 shardCount 逻辑以免影响现有调用，但在高频场景下建议改为位运算。
 	slog.Info("ConcurrentStringMap initialized", "shard_count", shardCount)
 	m := &ConcurrentStringMap[V]{
 		shards:     make([]*shard[string, V], shardCount),

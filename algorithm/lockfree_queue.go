@@ -14,18 +14,21 @@ import (
 type LockFreeQueue struct {
 	capacity uint32
 	mask     uint32
-	_        [56]byte // 填充以防止伪共享 (False Sharing)
+	_        [56]byte // Padding: 4+4+56 = 64 bytes. Start of next line.
 	head     uint32
-	_        [56]byte
+	_        [60]byte // Padding: 4+60 = 64 bytes. Ensures tail starts at 128.
 	tail     uint32
-	_        [56]byte
+	_        [60]byte // Padding: 4+60 = 64 bytes. Ensures slots start at 192 (aligned).
 	slots    []slot
 }
 
+// slot 代表队列中的一个槽位。
+// 优化：调整结构体大小为 64 字节，以匹配常见的 CPU 缓存行大小，防止伪共享。
 type slot struct {
 	sequence uint32
-	_        [60]byte // 填充以防止伪共享
-	item     any
+	// Go 编译器会自动在此处插入 4 字节的 padding 以满足 interface{} 的 8 字节对齐要求
+	item any      // 16 bytes
+	_    [40]byte // Padding: 4 (seq) + 4 (implicit) + 16 (item) + 40 (explicit) = 64 bytes.
 }
 
 // NewLockFreeQueue 创建一个指定容量的无锁队列。

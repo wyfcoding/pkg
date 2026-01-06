@@ -8,10 +8,10 @@
 package algorithm
 
 import (
-	"fmt"
 	"hash/crc32"
 	"log/slog"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -46,9 +46,16 @@ func (ch *ConsistentHash) Add(nodes ...string) {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 
+	// 预分配 buffer 以减少循环内的内存分配
+	buf := make([]byte, 0, 64)
+
 	for _, node := range nodes {
 		for i := 0; i < ch.replicas; i++ {
-			hash := int(ch.hash(fmt.Appendf(nil, "%d%s", i, node)))
+			buf = buf[:0] // 重置 buffer
+			buf = strconv.AppendInt(buf, int64(i), 10)
+			buf = append(buf, node...)
+
+			hash := int(ch.hash(buf))
 			ch.keys = append(ch.keys, hash)
 			ch.hashMap[hash] = node
 		}
@@ -84,8 +91,14 @@ func (ch *ConsistentHash) Remove(node string) {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 
+	buf := make([]byte, 0, 64)
+
 	for i := 0; i < ch.replicas; i++ {
-		hash := int(ch.hash(fmt.Appendf(nil, "%d%s", i, node)))
+		buf = buf[:0]
+		buf = strconv.AppendInt(buf, int64(i), 10)
+		buf = append(buf, node...)
+
+		hash := int(ch.hash(buf))
 		idx := sort.SearchInts(ch.keys, hash)
 		if idx < len(ch.keys) && ch.keys[idx] == hash {
 			ch.keys = append(ch.keys[:idx], ch.keys[idx+1:]...)

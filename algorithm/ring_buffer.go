@@ -6,24 +6,25 @@ import (
 	"sync/atomic"
 )
 
-// CacheLinePad 用于防止伪共享 (False Sharing)。
-// 现代 CPU 的缓存行通常为 64 字节。
-type CacheLinePad struct {
-	_ [8]uint64 // 64 bytes
+// RingBuffer 是一个高性能、并发安全的 MPMC (Multi-Producer Multi-Consumer) 无锁队列。
+// 它通过序列号 (Sequence) 解决槽位竞争与数据可见性问题，并采用缓存行填充防止伪共享。
+type RingBuffer[T any] struct {
+	_       [64]byte // 缓存行填充
+	head    uint64   // 消费者索引
+	_       [64]byte // 缓存行填充
+	tail    uint64   // 生产者索引
+	_       [64]byte // 缓存行填充
+	mask    uint64
+	slots   []rbSlot[T]
 }
 
-// RingBuffer 是一个高性能、并发安全的循环缓冲区。
-// 设计参考了 LMAX Disruptor，采用了内存对齐、缓存行填充和位运算优化。
-type RingBuffer[T any] struct {
-	_      CacheLinePad
-	buffer []T
-	size   uint64
-	mask   uint64
-	_      CacheLinePad
-	head   uint64 // 读取索引
-	_      CacheLinePad
-	tail   uint64 // 写入索引
-	_      CacheLinePad
+// rbSlot 包装了队列中的元素和序列号
+type rbSlot[T any] struct {
+	sequence uint64
+	data     T
+	// 还可以添加 padding，但 sequence(8) + interface{}(16) = 24，加 padding 到 64 可能会浪费空间。
+	// 在极高并发下，每个 slot 独占缓存行最佳，但会增加 2-3 倍内存开销。
+	// 考虑到通用性，这里暂不强制 slot 级 padding，但在 slot 数组分配时要注意对齐。
 }
 
 var (
@@ -32,68 +33,108 @@ var (
 )
 
 // NewRingBuffer 创建一个具有给定容量的新 RingBuffer。
-// 容量必须是 2 的幂，以利用 (index & mask) 替代取模运算。
+// 容量必须是 2 的幂。
 func NewRingBuffer[T any](capacity uint64) (*RingBuffer[T], error) {
-	if capacity == 0 || (capacity&(capacity-1)) != 0 {
-		return nil, errors.New("capacity must be a power of 2")
+	if capacity < 2 || (capacity&(capacity-1)) != 0 {
+		return nil, errors.New("capacity must be a power of 2 and at least 2")
 	}
-	return &RingBuffer[T]{
-		buffer: make([]T, capacity),
-		size:   capacity,
-		mask:   capacity - 1,
-	}, nil
+
+	rb := &RingBuffer[T]{
+		mask:  capacity - 1,
+		slots: make([]rbSlot[T], capacity),
+	}
+
+	// 初始化序列号，sequence 初始值必须等于索引值
+	// 这样第一次 Offer 时，sequence == tail (0) 检查才会通过
+	for i := uint64(0); i < capacity; i++ {
+		rb.slots[i].sequence = i
+	}
+
+	return rb, nil
 }
 
 // Offer 向缓冲区添加一个项目 (Thread-safe for Multiple Producers)。
-// 采用原子 CAS 操作争抢写入槽位。
 func (rb *RingBuffer[T]) Offer(item T) error {
+	var slot *rbSlot[T]
+	var tail uint64
+
 	for {
-		tail := atomic.LoadUint64(&rb.tail)
-		head := atomic.LoadUint64(&rb.head)
+		tail = atomic.LoadUint64(&rb.tail)
+		slot = &rb.slots[tail&rb.mask]
+		seq := atomic.LoadUint64(&slot.sequence)
 
-		if tail-head >= rb.size {
+		diff := int64(seq) - int64(tail)
+
+		if diff == 0 {
+			// sequence == tail 说明该 slot 空闲且已准备好被当前轮次的 tail 写入
+			if atomic.CompareAndSwapUint64(&rb.tail, tail, tail+1) {
+				break // 成功抢占 tail
+			}
+		} else if diff < 0 {
+			// sequence < tail 说明 slot 被上一轮占用且未释放，或 sequence 回绕（极少见）
+			// 队列满
 			return ErrBufferFull
+		} else {
+			// sequence > tail 说明 tail 已经被其他生产者推进了，重试
 		}
-
-		// 尝试抢占 tail 索引
-		if atomic.CompareAndSwapUint64(&rb.tail, tail, tail+1) {
-			rb.buffer[tail&rb.mask] = item
-			return nil
-		}
-		// 竞争失败，自旋或让出 CPU
 		runtime.Gosched()
 	}
+
+	slot.data = item
+	// 将 sequence 更新为 tail + 1，表示数据已写入，消费者可见
+	atomic.StoreUint64(&slot.sequence, tail+1)
+	return nil
 }
 
 // Poll 从缓冲区取出一个项目 (Thread-safe for Multiple Consumers)。
-// 采用原子 CAS 操作争抢读取槽位。
 func (rb *RingBuffer[T]) Poll() (T, error) {
-	var zero T
+	var slot *rbSlot[T]
+	var head uint64
+	var item T
+
 	for {
-		head := atomic.LoadUint64(&rb.head)
-		tail := atomic.LoadUint64(&rb.tail)
+		head = atomic.LoadUint64(&rb.head)
+		slot = &rb.slots[head&rb.mask]
+		seq := atomic.LoadUint64(&slot.sequence)
 
-		if head >= tail {
-			return zero, ErrBufferEmpty
-		}
+		diff := int64(seq) - int64(head+1)
 
-		// 尝试抢占 head 索引
-		if atomic.CompareAndSwapUint64(&rb.head, head, head+1) {
-			item := rb.buffer[head&rb.mask]
-			// 释放引用，帮助 GC (如果是指针类型)
-			// rb.buffer[head&rb.mask] = zero
-			return item, nil
+		if diff == 0 {
+			// sequence == head + 1 说明该 slot 已被生产者写入完成（Offer 中设置了 tail + 1）
+			if atomic.CompareAndSwapUint64(&rb.head, head, head+1) {
+				break // 成功抢占 head
+			}
+		} else if diff < 0 {
+			// sequence < head + 1 说明 slot 数据尚未准备好（生产者正在写或队列空）
+			return item, ErrBufferEmpty
+		} else {
+			// sequence > head + 1 说明 head 已被其他消费者推进
 		}
 		runtime.Gosched()
 	}
+
+	item = slot.data
+	// 重置 data 避免内存泄漏（对于指针类型）
+	var zero T
+	slot.data = zero
+	// 将 sequence 更新为 head + capacity，表示该 slot 已空闲，可供下一轮生产者使用
+	atomic.StoreUint64(&slot.sequence, head+uint64(len(rb.slots)))
+	return item, nil
 }
 
 // Capacity 返回缓冲区总容量。
 func (rb *RingBuffer[T]) Capacity() uint64 {
-	return rb.size
+	return uint64(len(rb.slots))
 }
 
-// Len 返回当前缓冲区中的元素数量。
+// Len 返回当前缓冲区中的元素数量估计值。
 func (rb *RingBuffer[T]) Len() uint64 {
-	return atomic.LoadUint64(&rb.tail) - atomic.LoadUint64(&rb.head)
+	// 注意：由于是并发环境，head 和 tail 可能在读取瞬间不一致，
+	// 此长度仅为近似值。
+	tail := atomic.LoadUint64(&rb.tail)
+	head := atomic.LoadUint64(&rb.head)
+	if tail < head {
+		return 0
+	}
+	return tail - head
 }
