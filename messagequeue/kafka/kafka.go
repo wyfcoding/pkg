@@ -100,7 +100,7 @@ func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 // PublishToTopic 将消息发送至指定主题.
 func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value []byte) error {
 	start := time.Now()
-	ctx, span := tracing.StartSpan(ctx, "kafka.publish", trace.WithSpanKind(trace.SpanKindProducer))
+	ctx, span := tracing.Tracer().Start(ctx, "kafka.publish", trace.WithSpanKind(trace.SpanKindProducer))
 	defer span.End()
 
 	headers := make([]kafkago.Header, 0)
@@ -223,7 +223,7 @@ func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
 		}
 
 		extractedCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
-		spanCtx, span := tracing.StartSpan(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
+		spanCtx, span := tracing.Tracer().Start(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
 
 		handleErr := handler(spanCtx, msg)
 		c.consumeLag.WithLabelValues(msg.Topic).Observe(time.Since(msg.Time).Seconds())

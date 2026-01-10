@@ -59,12 +59,9 @@ func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error,
 	return tp.Shutdown, nil
 }
 
-// StartSpan 创建并开始一个新的 Span.
-// 注意：调用者必须负责调用 s.End().
-//
-//nolint:spancheck // 此处作为通用的 Span 包装器，由调用方负责生命周期管理.
-func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return otel.Tracer("github.com/wyfcoding/pkg/tracing").Start(ctx, name, opts...)
+// Tracer 返回全局统一配置的 Tracer 实例.
+func Tracer() trace.Tracer {
+	return otel.Tracer("github.com/wyfcoding/pkg/tracing")
 }
 
 // AddTag 为当前活动的 Span 注入自定义业务属性标签.

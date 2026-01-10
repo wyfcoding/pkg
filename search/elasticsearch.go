@@ -144,7 +144,7 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 	start := time.Now()
 
 	_, err := c.cb.Execute(func() (any, error) {
-		searchCtx, span := tracing.StartSpan(ctx, "ES.Search")
+		searchCtx, span := tracing.Tracer().Start(ctx, "ES.Search")
 		defer span.End()
 
 		queryJSON, errMarshal := json.Marshal(query)
@@ -194,7 +194,7 @@ func (c *Client) Index(ctx context.Context, index, documentID string, document a
 	start := time.Now()
 
 	_, err := c.cb.Execute(func() (any, error) {
-		indexCtx, span := tracing.StartSpan(ctx, "ES.Index")
+		indexCtx, span := tracing.Tracer().Start(ctx, "ES.Index")
 		defer span.End()
 
 		data, errMarshal := json.Marshal(document)
@@ -236,7 +236,7 @@ func (c *Client) Delete(ctx context.Context, index, documentID string) error {
 	start := time.Now()
 
 	_, err := c.cb.Execute(func() (any, error) {
-		deleteCtx, span := tracing.StartSpan(ctx, "ES.Delete")
+		deleteCtx, span := tracing.Tracer().Start(ctx, "ES.Delete")
 		defer span.End()
 
 		res, errDel := c.es.Delete(

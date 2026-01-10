@@ -212,7 +212,7 @@ func (p *Processor) send(tx *gorm.DB, msg *Message) {
 		}
 	}
 
-	ctx, span := tracing.StartSpan(ctx, "Outbox.Send")
+	ctx, span := tracing.Tracer().Start(ctx, "Outbox.Send")
 	defer span.End()
 
 	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
