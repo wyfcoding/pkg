@@ -25,11 +25,11 @@ type timerEntry struct {
 type TimingWheel struct {
 	slots     []*timerEntry
 	exitC     chan struct{}
-	tick      time.Duration
-	interval  time.Duration
 	pool      sync.Pool
 	wg        conc.WaitGroup
 	mu        sync.Mutex
+	tick      time.Duration
+	interval  time.Duration
 	wheelSize int
 	current   int
 	running   bool

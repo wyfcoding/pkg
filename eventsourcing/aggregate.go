@@ -96,16 +96,16 @@ func NewBaseEventWithMetadata(eventType, aggregateID string, version int64, meta
 // AggregateRoot 事件溯源聚合根基类。
 type AggregateRoot struct {
 	uncommitted []DomainEvent
-	version     int64
 	id          string
+	version     int64
 }
 
-// ID 返回聚合根唯一标识。
+// ID 返回聚合根 unique identifier。
 func (a *AggregateRoot) ID() string {
 	return a.id
 }
 
-// SetID 设置聚合根唯一标识。
+// SetID 设置聚合根 unique identifier。
 func (a *AggregateRoot) SetID(id string) {
 	a.id = id
 }

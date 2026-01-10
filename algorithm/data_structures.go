@@ -14,8 +14,8 @@ import (
 type OrderBookSnapshot struct {
 	Bids      []*PriceLevel
 	Asks      []*PriceLevel
-	Timestamp int64
 	Symbol    string
+	Timestamp int64
 }
 
 // PriceLevel 价格层.
@@ -59,12 +59,12 @@ type PositionSnapshot struct {
 
 // PortfolioSnapshot 投资组合快.
 type PortfolioSnapshot struct {
+	Positions          []*PositionSnapshot
+	UserID             string
 	TotalValue         decimal.Decimal
 	CashBalance        decimal.Decimal
 	TotalUnrealizedPnL decimal.Decimal
 	TotalRealizedPnL   decimal.Decimal
-	Positions          []*PositionSnapshot
-	UserID             string
 	Timestamp          int64
 }
 
@@ -73,10 +73,10 @@ type PortfolioSnapshot struct {
 // SettlementBatch 清算批.
 type SettlementBatch struct {
 	Trades      []*TradeSettlement
-	CreatedAt   int64
-	CompletedAt *int64
 	BatchID     string
 	Status      string
+	CompletedAt *int64
+	CreatedAt   int64
 }
 
 // TradeSettlement 交易清算记.
@@ -255,11 +255,11 @@ type SymbolInfo struct {
 // ExchangeInfo 交易所信.
 type ExchangeInfo struct {
 	TradingDays      []string
+	Name             string
+	Timezone         string
 	TradingStartTime int64
 	TradingEndTime   int64
 	UpdatedAt        int64
-	Name             string
-	Timezone         string
 }
 
 // AssetInfo 资产信.

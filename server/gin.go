@@ -49,7 +49,7 @@ func (s *GinServer) Start(ctx context.Context) error {
 		s.logger.Info("gin server stopping due to context cancellation")
 
 		const shutdownTimeout = 5 * time.Second
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout) //nolint:contextcheck // 这里的 shutdown 必须使用全新的上下文。
+		shutdownCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 		defer cancel()
 
 		return s.server.Shutdown(shutdownCtx)
@@ -60,11 +60,11 @@ func (s *GinServer) Start(ctx context.Context) error {
 
 // Stop 执行 Gin 服务器的优雅关停。
 // 它会停止接收新请求并等待正在处理的请求完成（最长等待 5 秒）。
-func (s *GinServer) Stop(_ context.Context) error {
+func (s *GinServer) Stop(ctx context.Context) error {
 	s.logger.Info("stopping gin server gracefully")
 
 	const shutdownTimeout = 5 * time.Second
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout) //nolint:contextcheck // 这里的 shutdown 必须使用全新的上下文。
+	shutdownCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
 
 	return s.server.Shutdown(shutdownCtx)

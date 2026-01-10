@@ -2,9 +2,10 @@ package cache
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"math/rand/v2"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -143,8 +144,15 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 
 	// 注入随机扰动防止雪崩
 	if expiration > 0 {
-		jitter := time.Duration(rand.Int64N(int64(expiration / 10)))
-		expiration += jitter
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err == nil {
+			mod := int64(uint64(expiration / 10))
+			if mod > 0 {
+				val := binary.LittleEndian.Uint64(b[:]) & 0x7FFFFFFFFFFFFFFF
+				jitter := time.Duration(int64(val) % mod)
+				expiration += jitter
+			}
+		}
 	}
 
 	return c.client.Set(ctx, c.buildKey(key), data, expiration).Err()

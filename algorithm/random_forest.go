@@ -1,7 +1,8 @@
 package algorithm
 
 import (
-	"math/rand/v2"
+	"crypto/rand"
+	"encoding/binary"
 	"runtime"
 	"sync"
 )
@@ -49,7 +50,9 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 			bootstrapLabels := make([]int, len(labels))
 
 			for j := range points {
-				idx := rand.IntN(len(points))
+				var b [4]byte
+				_, _ = rand.Read(b[:])
+				idx := int(binary.LittleEndian.Uint32(b[:]) % uint32(len(points)))
 				bootstrapPoints[j] = points[idx]
 				bootstrapLabels[j] = labels[idx]
 			}

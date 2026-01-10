@@ -5,11 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"log/slog"
 	"math"
-	randv2 "math/rand/v2"
 	"sync"
+	"time"
 )
 
 var (
@@ -59,18 +58,17 @@ func NewNeuralNetwork(layerSizes []int) (*NeuralNetwork, error) {
 }
 
 func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) error {
-	var seed [8]byte
-	if _, err := rand.Read(seed[:]); err != nil {
-		return fmt.Errorf("failed to read seed: %w", err)
-	}
-
-	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
 	stdDev := math.Sqrt(2.0 / float64(rows+cols))
 
 	for i := range rows {
 		nn.layers[layerIdx].weights[i] = make([]float64, cols)
 		for j := range cols {
-			nn.layers[layerIdx].weights[i][j] = (randomSrc.Float64()*2 - 1) * stdDev
+			var b [8]byte
+			if _, err := rand.Read(b[:]); err != nil {
+				binary.LittleEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+			}
+			rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)
+			nn.layers[layerIdx].weights[i][j] = (rv*2 - 1) * stdDev
 		}
 	}
 

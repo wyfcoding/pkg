@@ -15,11 +15,10 @@ import (
 )
 
 // Config 全局顶级配置结构.
-type Config struct { // 顶级聚合配置，嵌套层次深，已尽可能优化对齐。
+type Config struct {
 	Services       ServicesConfig       `mapstructure:"services"       toml:"services"`
 	Data           DataConfig           `mapstructure:"data"           toml:"data"`
 	Log            LogConfig            `mapstructure:"log"            toml:"log"`
-	Version        string               `mapstructure:"version"        toml:"version"`
 	Server         ServerConfig         `mapstructure:"server"         toml:"server"`
 	JWT            JWTConfig            `mapstructure:"jwt"            toml:"jwt"`
 	Snowflake      SnowflakeConfig      `mapstructure:"snowflake"      toml:"snowflake"`
@@ -32,13 +31,12 @@ type Config struct { // 顶级聚合配置，嵌套层次深，已尽可能优�
 	Cache          CacheConfig          `mapstructure:"cache"          toml:"cache"`
 	Lock           LockConfig           `mapstructure:"lock"           toml:"lock"`
 	Hadoop         HadoopConfig         `mapstructure:"hadoop"         toml:"hadoop"`
+	Version        string               `mapstructure:"version"        toml:"version"`
 }
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
 type ServerConfig struct {
-	Name        string `mapstructure:"name"        toml:"name"        validate:"required"`
-	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
-	HTTP        struct {
+	HTTP struct {
 		Addr         string        `mapstructure:"addr"          toml:"addr"`
 		Timeout      time.Duration `mapstructure:"timeout"       toml:"timeout"`
 		ReadTimeout  time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
@@ -54,10 +52,12 @@ type ServerConfig struct {
 		MaxSendMsgSize       int           `mapstructure:"max_send_msg_size"      toml:"max_send_msg_size"`
 		MaxConcurrentStreams int           `mapstructure:"max_concurrent_streams" toml:"max_concurrent_streams"`
 	} `mapstructure:"grpc" toml:"grpc"`
+	Name        string `mapstructure:"name"        toml:"name"        validate:"required"`
+	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
 }
 
 // DataConfig 汇集了所有持久化存储与中间件的数据源配置.
-type DataConfig struct { // 包含大量子配置结构，已按指针分组原则对齐。
+type DataConfig struct {
 	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 	Database      DatabaseConfig      `mapstructure:"database"      toml:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"         toml:"redis"`
@@ -122,7 +122,7 @@ type MessageQueueConfig struct {
 }
 
 // KafkaConfig 定义 Kafka 生产者与消费者参数.
-type KafkaConfig struct { // 包含多个 time.Duration 与 string，已尽可能对齐。
+type KafkaConfig struct {
 	Brokers        []string      `mapstructure:"brokers"         toml:"brokers"`
 	Topic          string        `mapstructure:"topic"           toml:"topic"`
 	GroupID        string        `mapstructure:"group_id"        toml:"group_id"`

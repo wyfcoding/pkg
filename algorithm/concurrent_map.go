@@ -33,8 +33,8 @@ type HashFunc[K comparable] func(key K) uint32
 // ConcurrentMap 是一个分片式的并发map。
 type ConcurrentMap[K comparable, V any] struct {
 	shards []shard[K, V]
-	mask   uint64
 	hash   HashFunc[K]
+	mask   uint64
 }
 
 // NewConcurrentMap 创建一个通用的并发map。
@@ -46,7 +46,8 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 
 	// 向上取整到最近的 2 的.
 	if (shardCount & (shardCount - 1)) != 0 {
-		shardCount = 1 << (64 - bits.LeadingZeros64(uint64(shardCount-1)))
+		sc := uint64(uint32(shardCount - 1))
+		shardCount = 1 << (64 - bits.LeadingZeros64(sc))
 	}
 
 	if hashFunc == nil {
@@ -55,7 +56,7 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 
 	m := &ConcurrentMap[K, V]{
 		shards: make([]shard[K, V], shardCount),
-		mask:   uint64(shardCount - 1),
+		mask:   uint64(uint(shardCount - 1)),
 		hash:   hashFunc,
 	}
 	for i := range shardCount {

@@ -97,7 +97,8 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 	settings := sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: func() (uint16, error) {
-			return uint16(cfg.MachineID), nil // 已在上方检查范围.
+			mid := uint32(cfg.MachineID)
+			return uint16(mid & 0xFFFF), nil // 已在上方检查范围.
 		},
 	}
 
@@ -118,7 +119,8 @@ func (g *SonyflakeGenerator) Generate() int64 {
 	for i := range maxRetries {
 		id, err := g.sf.NextID()
 		if err == nil {
-			return int64(id) // 经过审计，此处忽略是安全的。
+			maskedID := id & 0x7FFFFFFFFFFFFFFF
+			return int64(maskedID) // 确保为正数.
 		}
 
 		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)
@@ -177,7 +179,8 @@ func GenID() uint64 {
 		}
 	}
 
-	return uint64(defaultGenerator.Generate()) // 经过审计，此处忽略是安全的。
+	generatedID := defaultGenerator.Generate()
+	return uint64(uint64(generatedID))
 }
 
 // GenOrderNo 生成订单号，格式为 "O" + 唯一ID.

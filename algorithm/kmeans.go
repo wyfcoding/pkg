@@ -1,10 +1,12 @@
 package algorithm
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"math"
-	"math/rand/v2"
 	"runtime"
 	"sync"
+	"time"
 )
 
 // KMeansPoint 结构体代表数据集中的一个数据点.
@@ -71,7 +73,11 @@ func (km *KMeans) ensureCentroids(dim int) {
 
 func (km *KMeans) initializeCentroidsPlusPlus(points []*KMeansPoint) {
 	n := len(points)
-	firstIdx := rand.IntN(n)
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		binary.LittleEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+	}
+	firstIdx := int(binary.LittleEndian.Uint64(b[:]) % uint64(n))
 	copy(km.centroids[0], points[firstIdx].Data)
 
 	distances := make([]float64, n)
@@ -89,7 +95,12 @@ func (km *KMeans) initializeCentroidsPlusPlus(points []*KMeansPoint) {
 			totalDistSq += distances[idx]
 		}
 
-		target := rand.Float64() * totalDistSq
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			binary.LittleEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+		}
+		rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)
+		target := rv * totalDistSq
 		km.selectNextCentroid(points, distances, target, i)
 	}
 }

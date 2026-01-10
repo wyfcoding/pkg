@@ -1,13 +1,12 @@
 package algorithm
 
 import (
-	"math/rand/v2"
-	"time"
+	"crypto/rand"
+	"encoding/binary"
 )
 
 // ReservoirSampler 蓄水池采样.
 type ReservoirSampler[T any] struct {
-	random  *rand.Rand
 	samples []T
 	count   int
 	k       int
@@ -15,12 +14,9 @@ type ReservoirSampler[T any] struct {
 
 // NewReservoirSampler 创建一个新的 ReservoirSampler 实例.
 func NewReservoirSampler[T any](k int) *ReservoirSampler[T] {
-	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
-
 	return &ReservoirSampler[T]{
 		k:       k,
 		samples: make([]T, 0, k),
-		random:  r,
 		count:   0,
 	}
 }
@@ -32,7 +28,9 @@ func (s *ReservoirSampler[T]) Observe(item T) {
 	if len(s.samples) < s.k {
 		s.samples = append(s.samples, item)
 	} else {
-		j := s.random.IntN(s.count)
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		j := int(binary.LittleEndian.Uint64(b[:]) % uint64(s.count))
 		if j < s.k {
 			s.samples[j] = item
 		}

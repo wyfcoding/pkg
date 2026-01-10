@@ -9,11 +9,11 @@ import (
 )
 
 // AdminClaims 封装了管理后台专用令牌的 Payload 结构。
-type AdminClaims struct { // 管理员 Claims 结构，已优化对齐。
-	AdminID  uint64 `json:"admin_id"` // 管理员唯一标识。
-	Username string `json:"username"` // 登录用户名。
-	Email    string `json:"email"`    // 绑定邮箱。
+type AdminClaims struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
 	jwt.RegisteredClaims
+	AdminID uint64 `json:"admin_id"`
 }
 
 // GenerateAdminToken 构造并签发一个管理员级别的 JWT 令牌。

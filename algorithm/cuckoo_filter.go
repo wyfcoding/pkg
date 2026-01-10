@@ -1,10 +1,10 @@
 package algorithm
 
 import (
+	"crypto/rand"
 	"errors"
 	"log/slog"
 	"math/bits"
-	"math/rand/v2"
 )
 
 var (
@@ -64,12 +64,16 @@ func (cf *CuckooFilter) Add(data []byte) bool {
 	}
 
 	currIdx := idx1
-	if rand.IntN(2) == 0 {
+	var b [1]byte
+	_, _ = rand.Read(b[:])
+	if b[0]%2 == 0 {
 		currIdx = idx2
 	}
 
 	for range maxKicks {
-		slot := rand.IntN(bucketSize)
+		var b2 [1]byte
+		_, _ = rand.Read(b2[:])
+		slot := int(b2[0]) % bucketSize
 		cf.buckets[currIdx][slot], fp = fp, cf.buckets[currIdx][slot]
 
 		currIdx = (currIdx ^ cf.getHashOfFingerprint(fp)) & cf.mask

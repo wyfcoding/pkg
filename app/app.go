@@ -17,10 +17,8 @@ const (
 )
 
 // App 是应用程序的核心容器.
-type App struct { //nolint:govet // 应用核心结构，已对齐。
+type App struct {
 	logger *slog.Logger
-	ctx    context.Context
-	cancel func()
 	name   string
 	opts   options
 }
@@ -37,14 +35,10 @@ func New(name string, logger *slog.Logger, opts ...Option) *App {
 		opt(&o)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &App{
 		name:   name,
 		logger: logger,
 		opts:   o,
-		ctx:    ctx,
-		cancel: cancel,
 	}
 }
 
@@ -52,11 +46,14 @@ func New(name string, logger *slog.Logger, opts ...Option) *App {
 func (a *App) Run() error {
 	a.printBanner()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	for _, srv := range a.opts.servers {
 		go func(s server.Server) {
-			if err := s.Start(a.ctx); err != nil {
+			if err := s.Start(ctx); err != nil {
 				a.logger.Error("server failed to start", "error", err)
-				a.cancel()
+				cancel()
 			}
 		}(srv)
 	}
@@ -67,9 +64,7 @@ func (a *App) Run() error {
 
 	a.logger.Info("shutting down application", "name", a.name)
 
-	if a.cancel != nil {
-		a.cancel()
-	}
+	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
 	defer shutdownCancel()

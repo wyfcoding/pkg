@@ -2,9 +2,8 @@
 package text
 
 import (
-	"crypto/md5" // 仅用于生成非安全哈希.
 	"crypto/rand"
-	"encoding/binary"
+	"crypto/sha256"
 	"encoding/hex"
 	randv2 "math/rand/v2"
 	"strings"
@@ -15,28 +14,27 @@ import (
 func RandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	result := make([]byte, length)
-
-	var seed [8]byte
-	if _, err := rand.Read(seed[:]); err != nil {
-		binary.LittleEndian.PutUint64(seed[:], uint64(time.Now().UnixNano()))
+	if _, err := rand.Read(result); err != nil {
+		// 降级使用 time 相关作为熵（非理想，但作为兜底）.
+		ts := time.Now().UnixNano()
+		randomSrc := randv2.New(randv2.NewPCG(uint64(ts), 0))
+		for i := range result {
+			result[i] = charset[randomSrc.IntN(len(charset))]
+		}
+		return string(result)
 	}
 
-	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
-
 	for i := range result {
-		result[i] = charset[randomSrc.IntN(len(charset))]
+		result[i] = charset[result[i]%byte(len(charset))]
 	}
 
 	return string(result)
 }
 
-// MD5 计算字符串的 MD5 哈希值.
-func MD5(text string) string {
-	//nolint:gosec // 经过审计，此处仅用于普通哈希校验，不涉及安全场景.
-	hash := md5.New()
-	hash.Write([]byte(text))
-
-	return hex.EncodeToString(hash.Sum(nil))
+// SHA256 计算字符串的 SHA256 哈希值.
+func SHA256(text string) string {
+	hash := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(hash[:])
 }
 
 // Mask 字符串脱敏处理.

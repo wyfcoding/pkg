@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	randv2 "math/rand/v2"
+	"math"
 	"time"
 )
 
@@ -38,13 +38,6 @@ func Retry(ctx context.Context, fn Func, cfg Config) error {
 	var lastErr error
 	backoff := cfg.InitialBackoff
 
-	var seed [8]byte
-	if _, readErr := rand.Read(seed[:]); readErr != nil {
-		binary.LittleEndian.PutUint64(seed[:], uint64(time.Now().UnixNano()))
-	}
-
-	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
-
 	for retryIdx := 0; retryIdx <= cfg.MaxRetries; retryIdx++ {
 		lastErr = fn()
 		if lastErr == nil {
@@ -64,8 +57,12 @@ func Retry(ctx context.Context, fn Func, cfg Config) error {
 		nextBackoff := float64(backoff) * cfg.Multiplier
 
 		if cfg.Jitter > 0 {
-			jitterValue := (randomSrc.Float64()*2 - 1) * cfg.Jitter * nextBackoff
-			nextBackoff += jitterValue
+			var b [8]byte
+			if _, err := rand.Read(b[:]); err == nil {
+				rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)
+				jitterValue := (rv*2 - 1) * cfg.Jitter * nextBackoff
+				nextBackoff += jitterValue
+			}
 		}
 
 		backoff = time.Duration(nextBackoff)
