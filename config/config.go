@@ -15,24 +15,24 @@ import (
 )
 
 // Config 全局顶级配置结构.
-// 字段顺序按逻辑分组而非内存对齐，以保持配置文件可读性.
-type Config struct { //nolint:govet // 字段顺序按逻辑分组，配置可读性优先。
+// 字段已按内存对齐优化 (fieldalignment).
+type Config struct {
 	Services       ServicesConfig       `mapstructure:"services"       toml:"services"`
-	Data           DataConfig           `mapstructure:"data"           toml:"data"`
-	Log            LogConfig            `mapstructure:"log"            toml:"log"`
-	Server         ServerConfig         `mapstructure:"server"         toml:"server"`
-	JWT            JWTConfig            `mapstructure:"jwt"            toml:"jwt"`
-	Snowflake      SnowflakeConfig      `mapstructure:"snowflake"      toml:"snowflake"`
-	MessageQueue   MessageQueueConfig   `mapstructure:"messagequeue"   toml:"messagequeue"`
+	Hadoop         HadoopConfig         `mapstructure:"hadoop"         toml:"hadoop"`
+	Version        string               `mapstructure:"version"        toml:"version"`
 	Minio          MinioConfig          `mapstructure:"minio"          toml:"minio"`
 	Tracing        TracingConfig        `mapstructure:"tracing"        toml:"tracing"`
 	Metrics        MetricsConfig        `mapstructure:"metrics"        toml:"metrics"`
-	RateLimit      RateLimitConfig      `mapstructure:"ratelimit"      toml:"ratelimit"`
-	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuitbreaker" toml:"circuitbreaker"`
+	JWT            JWTConfig            `mapstructure:"jwt"            toml:"jwt"`
+	Snowflake      SnowflakeConfig      `mapstructure:"snowflake"      toml:"snowflake"`
 	Cache          CacheConfig          `mapstructure:"cache"          toml:"cache"`
 	Lock           LockConfig           `mapstructure:"lock"           toml:"lock"`
-	Hadoop         HadoopConfig         `mapstructure:"hadoop"         toml:"hadoop"`
-	Version        string               `mapstructure:"version"        toml:"version"`
+	Log            LogConfig            `mapstructure:"log"            toml:"log"`
+	Server         ServerConfig         `mapstructure:"server"         toml:"server"`
+	MessageQueue   MessageQueueConfig   `mapstructure:"messagequeue"   toml:"messagequeue"`
+	Data           DataConfig           `mapstructure:"data"           toml:"data"`
+	RateLimit      RateLimitConfig      `mapstructure:"ratelimit"      toml:"ratelimit"`
+	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuitbreaker" toml:"circuitbreaker"`
 }
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
@@ -58,15 +58,15 @@ type ServerConfig struct {
 }
 
 // DataConfig 汇集了所有持久化存储与中间件的数据源配置.
-type DataConfig struct { //nolint:govet // 字段顺序按逻辑分组，配置可读性优先。
+type DataConfig struct {
+	ClickHouse    ClickHouseConfig    `mapstructure:"clickhouse"    toml:"clickhouse"`
+	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch" toml:"elasticsearch"`
+	Neo4j         Neo4jConfig         `mapstructure:"neo4j"         toml:"neo4j"`
+	MongoDB       MongoDBConfig       `mapstructure:"mongodb"       toml:"mongodb"`
+	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 	Database      DatabaseConfig      `mapstructure:"database"      toml:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"         toml:"redis"`
 	BigCache      BigCacheConfig      `mapstructure:"bigcache"      toml:"bigcache"`
-	MongoDB       MongoDBConfig       `mapstructure:"mongodb"       toml:"mongodb"`
-	ClickHouse    ClickHouseConfig    `mapstructure:"clickhouse"    toml:"clickhouse"`
-	Neo4j         Neo4jConfig         `mapstructure:"neo4j"         toml:"neo4j"`
-	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch" toml:"elasticsearch"`
-	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 }
 
 // DatabaseConfig 定义单数据库实例连接与连接池参数.
