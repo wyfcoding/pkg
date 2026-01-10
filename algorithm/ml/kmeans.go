@@ -176,3 +176,8 @@ func (km *KMeans) Predict(point []float64) int {
 
 	return bestCluster
 }
+
+// GetAssignments 返回每个点的聚类归属（索引对应输入数据的顺序）。
+func (km *KMeans) GetAssignments() []int {
+	return km.clusters
+}

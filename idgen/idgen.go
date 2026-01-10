@@ -1,45 +1,92 @@
-// Package idgen 提供了全局唯一的 ID 生成能力，支持 Sonyflake 与基础雪花算法.
+// Package idgen 提供了分布式唯一 ID 生成器的实现.
+// 支持 Snowflake 和 Sonyflake 两种算法，可通过配置选择.
 package idgen
 
 import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/bwmarrin/snowflake"
 	"github.com/sony/sonyflake"
+	"github.com/wyfcoding/pkg/config"
 )
 
 var (
-	// ErrCreateSonyflake 无法创建 Sonyflake 实例.
-	ErrCreateSonyflake = errors.New("failed to create sonyflake")
-	// ErrInvalidMachineID 机器 ID 超出有效范围.
-	ErrInvalidMachineID = errors.New("invalid machine id")
-	// ErrGeneratorFailed 生成器重试失败.
-	ErrGeneratorFailed = errors.New("id generator failed after retries")
+	// ErrUnsupportedType 不支持的 ID 生成器类型.
+	ErrUnsupportedType = errors.New("unsupported id generator type")
+	// ErrParseTime 解析时间失败.
+	ErrParseTime = errors.New("failed to parse start time")
+	// ErrCreateNode 创建 Snowflake 节点失败.
+	ErrCreateNode = errors.New("failed to create snowflake node")
+	// ErrCreateSonyflake 创建 Sonyflake 实例失败.
+	ErrCreateSonyflake = errors.New("failed to create sonyflake instance")
+	// ErrInvalidMachineID 错误的机器 ID.
+	ErrInvalidMachineID = errors.New("machine_id must be between 0 and 65535")
 )
 
-// Generator 定义了 ID 生成器的标准接口.
+const (
+	msPerSecond = 1000000
+	maxRetries  = 3
+)
+
+// Generator 定义 ID 生成器接口.
 type Generator interface {
-	NextID() (int64, error)
+	Generate() int64
 }
 
-// Config ID 生成器的配置参数.
-type Config struct {
-	StartTime time.Time `mapstructure:"start_time" toml:"start_time"`
-	MachineID int64     `mapstructure:"machine_id" toml:"machine_id"`
+// SnowflakeGenerator 使用雪花算法实现 Generator.
+// 特点：每毫秒可生成 4096 个 ID，支持 1024 台机器，可用约 69 年.
+type SnowflakeGenerator struct { // 雪花算法生成器，已对齐。
+	node *snowflake.Node
 }
 
-// SonyGenerator 基于 Sonyflake 实现的生成器.
-type SonyGenerator struct {
+// NewSnowflakeGenerator 创建一个新的 SnowflakeGenerator.
+func NewSnowflakeGenerator(cfg config.SnowflakeConfig) (*SnowflakeGenerator, error) {
+	if cfg.StartTime != "" {
+		st, err := time.Parse("2006-01-02", cfg.StartTime)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrParseTime, err)
+		}
+		snowflake.Epoch = st.UnixNano() / msPerSecond
+	}
+
+	node, err := snowflake.NewNode(cfg.MachineID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCreateNode, err)
+	}
+
+	slog.Info("snowflake generator initialized", "machine_id", cfg.MachineID, "epoch", snowflake.Epoch)
+
+	return &SnowflakeGenerator{
+		node: node,
+	}, nil
+}
+
+// Generate 生成一个新的 ID.
+func (g *SnowflakeGenerator) Generate() int64 {
+	return g.node.Generate().Int64()
+}
+
+// SonyflakeGenerator 使用 Sonyflake 算法实现 Generator.
+// 特点：每 10 毫秒可生成 256 个 ID，支持 65536 台机器，可用约 174 年.
+type SonyflakeGenerator struct { // Sonyflake 生成器，已对齐。
 	sf *sonyflake.Sonyflake
 }
 
-// NewSonyGenerator 构造一个新的 Sonyflake 生成器.
-func NewSonyGenerator(cfg *Config) (*SonyGenerator, error) {
-	startTime := cfg.StartTime
-	if startTime.IsZero() {
+// NewSonyflakeGenerator 创建一个新的 SonyflakeGenerator.
+func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, error) {
+	var startTime time.Time
+	if cfg.StartTime != "" {
+		st, err := time.Parse("2006-01-02", cfg.StartTime)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrParseTime, err)
+		}
+		startTime = st
+	} else {
 		startTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
 
@@ -47,14 +94,11 @@ func NewSonyGenerator(cfg *Config) (*SonyGenerator, error) {
 		return nil, ErrInvalidMachineID
 	}
 
-	// 预计算 machineID 以避免在闭包中进行类型转换警告。
-	// 安全：MachineID 已在上方验证范围 [0, 65535]。
-	machineID := uint16(cfg.MachineID & 0xFFFF) //nolint:gosec // MachineID 已验证范围。
-
 	settings := sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: func() (uint16, error) {
-			return machineID, nil
+			mid := uint32(cfg.MachineID) & 0xFFFF //nolint:gosec // 范围已验证
+			return uint16(mid), nil               //nolint:gosec // 范围已验证
 		},
 	}
 
@@ -65,63 +109,106 @@ func NewSonyGenerator(cfg *Config) (*SonyGenerator, error) {
 
 	slog.Info("sonyflake generator initialized", "machine_id", cfg.MachineID, "start_time", startTime)
 
-	return &SonyGenerator{sf: sonyFlake}, nil
+	return &SonyflakeGenerator{
+		sf: sonyFlake,
+	}, nil
 }
 
-// NextID 生成下一个分布式唯一 ID.
-func (g *SonyGenerator) NextID() (int64, error) {
-	const maxRetries = 3
+// Generate 生成一个新的 ID.
+func (g *SonyflakeGenerator) Generate() int64 {
 	for i := range maxRetries {
 		id, err := g.sf.NextID()
 		if err == nil {
-			// 使用位掩码确保最高位为 0，产出正数 int64。
-			// 此转换是安全的：掩码后的值 <= math.MaxInt64。
-			masked := id & 0x7FFFFFFFFFFFFFFF
-			return int64(masked), nil //nolint:gosec // 已通过掩码确保范围安全。
+			maskedID := id & 0x7FFFFFFFFFFFFFFF
+			return int64(maskedID & 0x7FFFFFFFFFFFFFFF) //nolint:gosec // 确保为正数.
 		}
 
 		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)
-		time.Sleep(time.Millisecond * 10)
+		time.Sleep(10 * time.Millisecond)
 	}
 
-	return 0, ErrGeneratorFailed
+	slog.Error("Sonyflake generator failed after multiple retries")
+
+	return 0
 }
 
-// DefaultGenerator 默认全局 ID 生成器.
-type DefaultGenerator struct {
-	mu sync.Mutex
-	ts int64
-	id int64
+// NewGenerator 根据配置创建对应类型的 ID 生成器.
+func NewGenerator(cfg config.SnowflakeConfig) (Generator, error) {
+	switch cfg.Type {
+	case "sonyflake":
+		return NewSonyflakeGenerator(cfg)
+	case "snowflake", "":
+		return NewSnowflakeGenerator(cfg)
+	default:
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, cfg.Type)
+	}
 }
 
-// Generate 生成简单的递增 ID（线程安全）.
-func (g *DefaultGenerator) Generate() int64 {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+// 全局默认生成器.
+var (
+	defaultGenerator Generator
+	once             sync.Once
+)
 
-	now := time.Now().UnixNano()
-	if now <= g.ts {
-		g.id++
-	} else {
-		g.ts = now
-		g.id = 0
+// Init 初始化全局默认生成器.
+func Init(cfg config.SnowflakeConfig) error {
+	var err error
+	once.Do(func() {
+		defaultGenerator, err = NewGenerator(cfg)
+	})
+
+	return err
+}
+
+// Default 返回全局默认生成器实例.
+func Default() Generator {
+	if defaultGenerator == nil {
+		if err := Init(config.SnowflakeConfig{MachineID: 1}); err != nil {
+			slog.Error("failed to initialize default id generator", "error", err)
+		}
 	}
 
-	return now + g.id
+	return defaultGenerator
 }
 
-var defaultGenerator = &DefaultGenerator{}
-
-// NextID 全局快捷生成入口.
+// GenID 使用默认生成器生成全局唯一的 uint64 ID.
 func GenID() uint64 {
-	generatedID := defaultGenerator.Generate()
-	if generatedID < 0 {
-		return uint64(-generatedID)
+	if defaultGenerator == nil {
+		if err := Init(config.SnowflakeConfig{MachineID: 1}); err != nil {
+			panic(fmt.Errorf("failed to auto-initialize default id generator: %w", err))
+		}
 	}
-	return uint64(generatedID)
+
+	generatedID := defaultGenerator.Generate()
+	return uint64(generatedID) & 0xFFFFFFFFFFFFFFFF //nolint:gosec // 转换安全
 }
 
 // GenOrderNo 生成订单号，格式为 "O" + 唯一ID.
 func GenOrderNo() string {
-	return fmt.Sprintf("O%d", GenID())
+	return "O" + strconv.FormatUint(GenID(), 10)
+}
+
+// GenPaymentNo 生成支付单号.
+func GenPaymentNo() string {
+	return "P" + strconv.FormatUint(GenID(), 10)
+}
+
+// GenRefundNo 生成退款单号.
+func GenRefundNo() string {
+	return "R" + strconv.FormatUint(GenID(), 10)
+}
+
+// GenSPUNo 生成 SPU 编号.
+func GenSPUNo() string {
+	return "SPU" + strconv.FormatUint(GenID(), 10)
+}
+
+// GenSKUNo 生成 SKU 编号.
+func GenSKUNo() string {
+	return "SKU" + strconv.FormatUint(GenID(), 10)
+}
+
+// GenCouponCode 生成优惠券码.
+func GenCouponCode() string {
+	return "C" + strconv.FormatUint(GenID(), 10)
 }

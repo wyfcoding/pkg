@@ -42,12 +42,12 @@ type Manager interface {
 var ErrInProgress = errors.New("request already in progress")
 
 type redisManager struct { // Redis 幂等管理器内部结构，已对齐。
-	client *redis.Client
+	client redis.UniversalClient
 	prefix string
 }
 
 // NewRedisManager 初始化并返回一个基于 Redis 的幂等管理器.
-func NewRedisManager(client *redis.Client, prefix string) Manager {
+func NewRedisManager(client redis.UniversalClient, prefix string) Manager {
 	return &redisManager{
 		client: client,
 		prefix: prefix,

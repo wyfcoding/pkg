@@ -13,8 +13,8 @@ import (
 	"github.com/wyfcoding/pkg/logging"
 )
 
-// Client 是 redis.Client 的别名.
-type Client = redis.Client
+// Client 是 redis.UniversalClient 的别名, 支持单节点, 哨兵, 集群.
+type Client = redis.UniversalClient
 
 var (
 	redisOps = prometheus.NewCounterVec(
@@ -92,17 +92,25 @@ func (h *metricsHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.
 	}
 }
 
-// NewClient 使用提供的配置创建一个新的 Redis 客户端.
-func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (*redis.Client, func(), error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:         cfg.Addr,
+// NewClient 使用提供的配置创建一个新的 Redis UniversalClient (自动适配 Cluster/Sentinel/Standalone).
+func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (redis.UniversalClient, func(), error) {
+	// 将配置转换为 UniversalOptions
+	// 注意: config.RedisConfig 需要支持更多字段 (如 Addrs []string) 来完全支持集群.
+	// 这里假设 cfg.Addr 可能包含逗号分隔的地址, 或者我们暂时只支持单节点但使用通用接口.
+	// 更好的做法是让 config.RedisConfig 本身支持集群配置.
+	// 这里做最小改动以支持 UniversalClient 接口.
+
+	opts := &redis.UniversalOptions{
+		Addrs:        []string{cfg.Addr}, // TODO: Support multiple addrs in config
 		Password:     cfg.Password,
 		DB:           cfg.DB,
 		PoolSize:     cfg.PoolSize,
 		MinIdleConns: cfg.MinIdleConns,
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
-	})
+	}
+
+	client := redis.NewUniversalClient(opts)
 
 	client.AddHook(&metricsHook{addr: cfg.Addr})
 

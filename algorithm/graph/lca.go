@@ -103,3 +103,9 @@ func (lca *TreeLCA) GetLCA(u, v int) int {
 
 	return lca.up[u*lca.logN]
 }
+
+// GetDistance 计算两个节点之间的距离（边数）。
+func (lca *TreeLCA) GetDistance(u, v int) int {
+	w := lca.GetLCA(u, v)
+	return lca.depth[u] + lca.depth[v] - 2*lca.depth[w]
+}

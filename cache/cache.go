@@ -46,12 +46,12 @@ type Cache interface {
 
 // RedisCache 是基于 Redis 实现的具体缓存结构
 type RedisCache struct { //nolint:govet // Redis 缓存结构，已对齐。
-	client  *redis.Client      // Redis 原生客户端
-	cleanup func()             // 资源清理回调函数
-	prefix  string             // 缓存 Key 的全局前缀
-	cb      *breaker.Breaker   // 关联的熔断器，保护 Redis 不被过载
-	sfg     singleflight.Group // 用于合并并发回源请求，防止击穿
-	logger  *logging.Logger    // 日志记录器
+	client  redis.UniversalClient // Redis 原生客户端 (通用接口)
+	cleanup func()                // 资源清理回调函数
+	prefix  string                // 缓存 Key 的全局前缀
+	cb      *breaker.Breaker      // 关联的熔断器，保护 Redis 不被过载
+	sfg     singleflight.Group    // 用于合并并发回源请求，防止击穿
+	logger  *logging.Logger       // 日志记录器
 
 	// 监控指标组件
 	hits     *prometheus.CounterVec   // 命中次数计数器
@@ -225,6 +225,6 @@ func (c *RedisCache) Close() error {
 	return nil
 }
 
-func (c *RedisCache) GetClient() *redis.Client {
+func (c *RedisCache) GetClient() redis.UniversalClient {
 	return c.client
 }

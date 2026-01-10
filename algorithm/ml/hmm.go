@@ -10,7 +10,6 @@ import (
 const (
 	minLogProb = -1e10
 	tinyProb   = 1e-300
-	epsilonHMM = 1e-6
 	maxProbVal = -1e20
 )
 

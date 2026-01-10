@@ -38,11 +38,11 @@ type DistributedLock interface {
 
 // RedisLock 是基于 Redis 实现的分布式锁结构.
 type RedisLock struct {
-	client *redis.Client
+	client redis.UniversalClient
 }
 
 // NewRedisLock 构造一个新的 Redis 分布式锁驱动.
-func NewRedisLock(client *redis.Client) *RedisLock {
+func NewRedisLock(client redis.UniversalClient) *RedisLock {
 	return &RedisLock{client: client}
 }
 

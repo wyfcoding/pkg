@@ -52,6 +52,15 @@ func (co *CouponOptimizer) OptimalCombination(
 		return nil, originalPrice, 0
 	}
 
+	// 安全检查：如果优惠券数量过大，暴力枚举 (2^N) 会导致极其严重的性能问题。
+	// 阈值设置为 20，2^20 ≈ 100万次迭代，耗时尚可接受。
+	// 大于此阈值时，降级使用贪心算法或仅选取前 20 个高优先级的券。
+	// 这里选择降级为贪心算法，并记录警告日志。
+	if len(coupons) > 20 {
+		slog.Warn("OptimalCombination: too many coupons, multiple to greedy strategy", "count", len(coupons), "threshold", 20)
+		return co.GreedyOptimization(originalPrice, coupons)
+	}
+
 	// 过滤掉不满足门槛条件的优惠券，只保留可用的。
 	available := make([]Coupon, 0)
 	for _, c := range coupons {

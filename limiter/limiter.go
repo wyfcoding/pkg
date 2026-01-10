@@ -71,13 +71,13 @@ return allowed and 1 or 0
 
 // RedisLimiter 是基于 Redis + Lua 脚本实现的分布式令牌桶限流器。
 type RedisLimiter struct {
-	client *redis.Client // Redis 客户端实例。
-	rate   int           // 每秒产生的令牌数 (QPS)。
-	burst  int           // 令牌桶的最大容量。
+	client redis.UniversalClient // Redis 客户端实例。
+	rate   int                   // 每秒产生的令牌数 (QPS)。
+	burst  int                   // 令牌桶的最大容量。
 }
 
 // NewRedisLimiter 创建并初始化一个分布式限流器。
-func NewRedisLimiter(client *redis.Client, fillingRate int, _ time.Duration) *RedisLimiter {
+func NewRedisLimiter(client redis.UniversalClient, fillingRate int, _ time.Duration) *RedisLimiter {
 	// 默认突发流量容量为速率的 120%。
 	const burstMultiplier = 1.2
 	burstVal := int(float64(fillingRate) * burstMultiplier)
