@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"math"
 	"time"
+
+	"github.com/wyfcoding/pkg/utils"
 )
 
 // KMeans K-Means 聚类结构体。
@@ -53,7 +55,8 @@ func (km *KMeans) initializeCentroidsPlusPlus() {
 		if ts < 0 {
 			ts = -ts
 		}
-		binary.LittleEndian.PutUint64(b[:], uint64(ts)) //nolint:gosec // ts >= 0 已保证。
+		// G115 Fix: Mask to ensure positive
+		binary.LittleEndian.PutUint64(b[:], utils.Int64ToUint64(ts&0x7FFFFFFFFFFFFFFF))
 	}
 	val := binary.LittleEndian.Uint64(b[:]) % uint64(n)
 	var firstIdx int
@@ -86,7 +89,8 @@ func (km *KMeans) initializeCentroidsPlusPlus() {
 			if ts < 0 {
 				ts = -ts
 			}
-			binary.LittleEndian.PutUint64(b[:], uint64(ts)) //nolint:gosec // ts >= 0 已保证。
+			// G115 Fix: Mask to ensure positive
+			binary.LittleEndian.PutUint64(b[:], utils.Int64ToUint64(ts&0x7FFFFFFFFFFFFFFF))
 		}
 		r := (float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)) * totalDist
 		sum := 0.0

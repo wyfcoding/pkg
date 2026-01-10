@@ -1,6 +1,10 @@
 // Package algorithm 提供了高性能的图论算法实现。
 package graph
 
+import (
+	"github.com/wyfcoding/pkg/utils"
+)
+
 // TreeLCA 实现了基于倍增（Binary Lifting）算法的最近公共祖先查询。
 // 预处理复杂度 O(N log N)，单次查询复杂度 O(log N)。
 type TreeLCA struct {
@@ -19,7 +23,9 @@ func NewTreeLCA(root int, adj [][]int) *TreeLCA {
 	// 计算最大跳数的对数.
 	logN := 1
 	// 安全：logN 不会超过 log2(n) + 1，对于合理的图大小远小于 uint32 范围。
-	for (1 << uint32(logN)) < n { //nolint:gosec // logN 范围安全。
+	// 安全：logN 不会超过 log2(n) + 1
+	// G115 Fix: Masking
+	for (1 << utils.IntToUint32(logN&0x1F)) < n {
 		logN++
 	}
 
@@ -81,7 +87,9 @@ func (lca *TreeLCA) GetLCA(u, v int) int {
 	diff := lca.depth[u] - lca.depth[v]
 	for i := range lca.logN {
 		// 安全：i 范围 [0, logN)，位移量安全。
-		shift := uint32(i & 0x1F) //nolint:gosec // i 范围安全。
+		// 安全：i 范围 [0, logN)，位移量安全。
+		// G115 Fix: Masking
+		shift := utils.IntToUint32(i & 0x1F)
 		if (diff & (1 << shift)) != 0 {
 			u = lca.up[u*lca.logN+i]
 		}

@@ -3,6 +3,7 @@ package limiter
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"time"
@@ -10,6 +11,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/time/rate"
 )
+
+//go:embed token_bucket.lua
+var redisTokenBucketScript string
 
 // Limiter 定义了限流器的通用接口。
 type Limiter interface {
@@ -35,39 +39,6 @@ func NewLocalLimiter(fillingRate rate.Limit, burst int) *LocalLimiter {
 func (l *LocalLimiter) Allow(_ context.Context, _ string) (bool, error) {
 	return l.limiter.Allow(), nil
 }
-
-// redisTokenBucketScript 是经过优化的 Redis Lua 脚本。
-//
-//nolint:gosec // 这是一个 Lua 脚本，不包含硬编码的凭据。
-const redisTokenBucketScript = `
-local key = KEYS[1]
-local rate = tonumber(ARGV[1])
-local burst = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
-local requested = 1
-
-local last_tokens = tonumber(redis.call("hget", key, "tokens"))
-local last_refreshed = tonumber(redis.call("hget", key, "last_refreshed"))
-
-if last_tokens == nil then
-    last_tokens = burst
-    last_refreshed = now
-end
-
-local delta = math.max(0, now - last_refreshed)
-local new_tokens = math.min(burst, last_tokens + (delta * rate))
-
-local allowed = false
-if new_tokens >= requested then
-    new_tokens = new_tokens - requested
-    allowed = true
-end
-
-redis.call("hset", key, "tokens", new_tokens, "last_refreshed", now)
-redis.call("expire", key, math.ceil(burst / rate) * 2)
-
-return allowed and 1 or 0
-`
 
 // RedisLimiter 是基于 Redis + Lua 脚本实现的分布式令牌桶限流器。
 type RedisLimiter struct {

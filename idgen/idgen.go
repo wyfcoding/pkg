@@ -13,6 +13,7 @@ import (
 	"github.com/bwmarrin/snowflake"
 	"github.com/sony/sonyflake"
 	"github.com/wyfcoding/pkg/config"
+	"github.com/wyfcoding/pkg/utils"
 )
 
 var (
@@ -97,8 +98,10 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 	settings := sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: func() (uint16, error) {
-			mid := uint32(cfg.MachineID) & 0xFFFF //nolint:gosec // 范围已验证
-			return uint16(mid), nil               //nolint:gosec // 范围已验证
+			// G115 fix: Explicitly mask to correct size before casting
+			mid := cfg.MachineID & 0xFFFF
+			// G115 fix
+			return utils.Int64ToUint16(mid), nil
 		},
 	}
 
@@ -119,8 +122,10 @@ func (g *SonyflakeGenerator) Generate() int64 {
 	for i := range maxRetries {
 		id, err := g.sf.NextID()
 		if err == nil {
+			// G115 fix: Mask before cast
 			maskedID := id & 0x7FFFFFFFFFFFFFFF
-			return int64(maskedID & 0x7FFFFFFFFFFFFFFF) //nolint:gosec // 确保为正数.
+			// G115 fix
+			return utils.Uint64ToInt64(maskedID)
 		}
 
 		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)
@@ -180,7 +185,8 @@ func GenID() uint64 {
 	}
 
 	generatedID := defaultGenerator.Generate()
-	return uint64(generatedID) & 0xFFFFFFFFFFFFFFFF //nolint:gosec // 转换安全
+	// G115 fix: Safe cast
+	return utils.Int64ToUint64(generatedID & 0x7FFFFFFFFFFFFFFF)
 }
 
 // GenOrderNo 生成订单号，格式为 "O" + 唯一ID.

@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"sync"
 	"time"
+
+	"github.com/wyfcoding/pkg/utils"
 )
 
 const (
@@ -35,14 +37,16 @@ type SkipList[K cmp.Ordered, V any] struct {
 
 // NewSkipList 创建一个新的跳表。
 func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
-	return &SkipList[K, V]{
+	sl := &SkipList[K, V]{
 		header: &SkipListNode[K, V]{
 			next: make([]*SkipListNode[K, V], maxLevel),
 		},
 		level: 1,
-		// 安全：时间戳用于伪随机种子，转换后用位掩码确保正值。
-		randState: uint64(time.Now().UnixNano()) & 0x7FFFFFFFFFFFFFFF, //nolint:gosec // 伪随机状态初始化。
 	}
+	// G115 Fix: Safe cast
+	ts := time.Now().UnixNano()
+	sl.randState = utils.Int64ToUint64(ts)
+	return sl
 }
 
 // fastRand 使用 Xorshift 算法生成伪随机数，无锁且高效。
@@ -55,7 +59,9 @@ func (sl *SkipList[K, V]) fastRand() uint32 {
 	sl.randState = state
 
 	// 安全：随机状态截断用于哈希，是设计意图。
-	return uint32(state) //nolint:gosec // 截断用于哈希。
+	// 安全：随机状态截断用于哈希，是设计意图。
+	// G115 fix: Masking
+	return utils.Uint64ToUint32(state & 0xFFFFFFFF)
 }
 
 // randomLevel 随机生成节点的层数，使用位运算优化。

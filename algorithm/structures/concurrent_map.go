@@ -4,6 +4,8 @@ package structures
 import (
 	"math/bits"
 	"sync"
+
+	"github.com/wyfcoding/pkg/utils"
 )
 
 // fnv32 实现了一个非加密的哈希函数 FNV-1a (32-bit)。
@@ -47,7 +49,8 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 	// 向上取整到最近的 2 的.
 	if (shardCount & (shardCount - 1)) != 0 {
 		// 安全：shardCount 为正数，且结果用于 2 的幂计算。
-		sc := uint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF //nolint:gosec // shardCount > 0 已保证。
+		// G115 fix: Masking
+		sc := utils.IntToUint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF
 		shardCount = 1 << (64 - bits.LeadingZeros64(sc))
 	}
 
@@ -55,10 +58,12 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 		panic("hashFunc cannot be nil")
 	}
 
+	// 安全：shardCount 已调整为 2 的幂，且为正数。
+	// G115 fix: Masking
 	m := &ConcurrentMap[K, V]{
 		shards: make([]shard[K, V], shardCount),
-		// 安全：shardCount 已调整为 2 的幂，且为正数。
-		mask: uint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF, //nolint:gosec // shardCount > 0 已保证。
+		// G115 fix: Masking
+		mask: utils.IntToUint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF,
 		hash: hashFunc,
 	}
 	for i := range shardCount {

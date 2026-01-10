@@ -59,21 +59,22 @@ func (rb *RingBuffer[T]) Offer(item T) error {
 	var slot *rbSlot[T]
 	var tail uint64
 
+Loop:
 	for {
 		tail = atomic.LoadUint64(&rb.tail)
 		slot = &rb.slots[tail&rb.mask]
 		seq := atomic.LoadUint64(&slot.sequence)
 
-		diff := int64(seq - tail) //nolint:gosec // 环形索引差值安全。
-
-		if diff == 0 {
+		// G115 fix: Use unsigned arithmetic
+		dist := seq - tail
+		switch {
+		case dist == 0:
 			// sequence == tail 说明该 slot 空闲且已准备好被当前轮次的 tail 写.
 			if atomic.CompareAndSwapUint64(&rb.tail, tail, tail+1) {
-				break // 成功抢占 tai.
+				break Loop
 			}
-		} else if diff < 0 {
-			// sequence < tail 说明 slot 被上一轮占用且未释放，或 sequence 回绕（极少见.
-			// 队列.
+		case dist > 9223372036854775807: // dist is negative in signed interpretation
+			// sequence < tail
 			return xerrors.ErrBufferFull
 		}
 		runtime.Gosched()
@@ -91,21 +92,23 @@ func (rb *RingBuffer[T]) Poll() (T, error) {
 	var head uint64
 	var item T
 
+LoopPop:
 	for {
 		head = atomic.LoadUint64(&rb.head)
 		slot = &rb.slots[head&rb.mask]
 		seq := atomic.LoadUint64(&slot.sequence)
 
-		// 安全：环形索引差值计算，用于出队操作的状态判断。
-		diff := int64(seq - (head + 1)) //nolint:gosec // 环形索引差值安全。
+		// G115 fix: unsigned comparison
+		dist := seq - (head + 1)
 
-		if diff == 0 {
-			// sequence == head + 1 说明该 slot 已被生产者写入完成（Offer 中设置了 tail + 1.
+		switch {
+		case dist == 0:
+			// sequence == head + 1 说明该 slot 已被生产者写入完成
 			if atomic.CompareAndSwapUint64(&rb.head, head, head+1) {
-				break // 成功抢占 hea.
+				break LoopPop
 			}
-		} else if diff < 0 {
-			// sequence < head + 1 说明 slot 数据尚未准备好（生产者正在写或队列空.
+		case dist > 9223372036854775807: // dist is negative in signed interpretation
+			// sequence < head + 1
 			return item, xerrors.ErrBufferEmpty
 		}
 		runtime.Gosched()

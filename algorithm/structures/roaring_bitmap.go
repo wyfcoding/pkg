@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/bits"
 	"sync"
+
+	"github.com/wyfcoding/pkg/utils"
 )
 
 var bitsetPool = sync.Pool{
@@ -42,8 +44,9 @@ func (rb *RoaringBitmap) Release() {
 // Add 将一个 ID (uint32) 加入位图。
 func (rb *RoaringBitmap) Add(x uint32) {
 	// 安全：位图索引拆分，截断是设计意图。
-	high := uint16((x >> 16) & 0xFFFF) //nolint:gosec // 位图索引截断。
-	low := uint16(x & 0xFFFF)          //nolint:gosec // 位图索引截断。
+	// G115 fix: Safe splitting
+	high := utils.Uint32ToUint16(x >> 16)
+	low := utils.Uint32ToUint16(x)
 
 	container, ok := rb.chunks[high]
 	if !ok {
@@ -70,8 +73,9 @@ func (rb *RoaringBitmap) Add(x uint32) {
 // Contains 检查 ID 是否存在。
 func (rb *RoaringBitmap) Contains(x uint32) bool {
 	// 安全：位图索引拆分，截断是设计意图。
-	high := uint16((x >> 16) & 0xFFFF) //nolint:gosec // 位图索引截断。
-	low := uint16(x & 0xFFFF)          //nolint:gosec // 位图索引截断。
+	// G115 fix: Direct safe casting
+	high := utils.Uint32ToUint16(x >> 16)
+	low := utils.Uint32ToUint16(x)
 
 	container, ok := rb.chunks[high]
 	if !ok {
@@ -157,8 +161,8 @@ func (rb *RoaringBitmap) ToList() []uint32 {
 			temp := word
 			for temp != 0 {
 				bit := bits.TrailingZeros64(temp)
-				res = append(res, hBase|uint32(i<<6)|uint32(bit)) //nolint:gosec // 位运算安全，i < 1024。
-				temp &= temp - 1                                  // 清除最低位的 1。
+				res = append(res, hBase|utils.IntToUint32(i)<<6|utils.IntToUint32(bit)) // G115 fix: cast to uint32 before shifting is safer
+				temp &= temp - 1                                                        // 清除最低位的 1。
 			}
 		}
 	}

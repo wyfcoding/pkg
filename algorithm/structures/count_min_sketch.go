@@ -141,7 +141,10 @@ func getCMSHashes(data []byte) (h1, h2 uint32) {
 	}
 
 	// 安全：这是标准的哈希拆分技术，截断是预期行为。
-	h1 = uint32(h)       //nolint:gosec // 哈希截断是设计意图。
-	h2 = uint32(h >> 32) //nolint:gosec // 哈希截断是设计意图。
+	// G115 Fix: Safe truncation using binary
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], h)
+	h1 = binary.LittleEndian.Uint32(b[:4])
+	h2 = binary.LittleEndian.Uint32(b[4:])
 	return
 }

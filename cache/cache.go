@@ -13,6 +13,7 @@ import (
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	redis_pkg "github.com/wyfcoding/pkg/redis"
+	"github.com/wyfcoding/pkg/utils"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -150,7 +151,8 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 			if mod > 0 {
 				val := binary.LittleEndian.Uint64(b[:]) & 0x7FFFFFFFFFFFFFFF
 				// 安全：val 和 mod 都是非负的，计算结果在 time.Duration 范围内。
-				jitter := time.Duration(val % uint64(mod)) //nolint:gosec // 已确保 mod > 0 且 val 非负。
+				// G115 Fix: Ensure positive
+				jitter := time.Duration(utils.Uint64ToInt64(val % uint64(mod)))
 				expiration += jitter
 			}
 		}

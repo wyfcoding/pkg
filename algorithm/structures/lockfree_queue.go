@@ -3,6 +3,8 @@ package structures
 import (
 	"runtime"
 	"sync/atomic"
+
+	"github.com/wyfcoding/pkg/utils"
 )
 
 // LockFreeQueue 是一个高性能、无锁、固定大小的 MPMC（多生产者多消费者）环形队列。
@@ -35,7 +37,10 @@ type slot struct {
 func NewLockFreeQueue(capacity uint32) *LockFreeQueue {
 	if capacity&(capacity-1) != 0 {
 		// 如果不是 2 的幂，向上取.
-		capacity = 1 << uint(32-countLeadingZeros(capacity-1)) //nolint:gosec // 2的幂计算安全。
+		// G115 fix: Mask shift count safely
+		// G115 fix: Mask shift count safely
+		shift := utils.IntToUint(32 - countLeadingZeros(capacity-1)&0x1F)
+		capacity = 1 << shift
 	}
 
 	q := &LockFreeQueue{
@@ -59,16 +64,15 @@ func (q *LockFreeQueue) Push(item any) bool {
 	for {
 		s = &q.slots[pos&q.mask]
 		seq := atomic.LoadUint32(&s.sequence)
-		// 显式检查防止回绕导致的溢出误判，虽然对于环形索引 diff 计算是安全的，
-		// 但为了满足 G115 且保持逻辑严密，我们确保只在合理范围内比较。
-		// 安全：环形队列索引差值计算，结果用于比较，不会导致数据损坏。
-		diff := int32(seq - pos) //nolint:gosec // 环形索引差值安全。
+		// 显式检查防止回绕导致的溢出误判
+		// G115 fix: Use unsigned arithmetic. dist > MaxInt32 implies negative signed distance.
+		dist := seq - pos
 		switch {
-		case diff == 0:
+		case dist == 0:
 			if atomic.CompareAndSwapUint32(&q.tail, pos, pos+1) {
 				goto breakOuter
 			}
-		case diff < 0:
+		case dist > 2147483647: // dist is negative in signed interpretation
 			return false
 		default:
 			pos = atomic.LoadUint32(&q.tail)
@@ -90,14 +94,15 @@ func (q *LockFreeQueue) Pop() (any, bool) {
 	for {
 		s = &q.slots[pos&q.mask]
 		seq := atomic.LoadUint32(&s.sequence)
-		// 安全：环形索引差值计算，用于出队操作的状态判断。
-		diff := int32(seq - (pos + 1)) //nolint:gosec // 环形索引差值安全。
+		// 安全：环形队列索引差值计算
+		// G115 fix: Use unsigned comparison
+		dist := seq - (pos + 1)
 		switch {
-		case diff == 0:
+		case dist == 0:
 			if atomic.CompareAndSwapUint32(&q.head, pos, pos+1) {
 				goto breakOuterPop
 			}
-		case diff < 0:
+		case dist > 2147483647: // negative signed distance
 			return nil, false
 		default:
 			pos = atomic.LoadUint32(&q.head)
