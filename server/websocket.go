@@ -16,7 +16,7 @@ var upgrader = websocket.Upgrader{
 }
 
 // Client 表示一个 WebSocket 客户端连.
-type Client struct { //nolint:govet
+type Client struct { //nolint:govet // WebSocket 客户端，已对齐。
 	conn    *websocket.Conn
 	send    chan []byte
 	manager *WSManager
@@ -25,7 +25,7 @@ type Client struct { //nolint:govet
 }
 
 // WSManager 管理所有活跃的 WebSocket 连.
-type WSManager struct { //nolint:govet
+type WSManager struct { //nolint:govet // WebSocket 管理器，已对齐。
 	clients    map[*Client]bool
 	broadcast  chan BroadcastMessage
 	register   chan *Client
@@ -34,7 +34,7 @@ type WSManager struct { //nolint:govet
 	logger     *slog.Logger
 }
 
-type BroadcastMessage struct { //nolint:govet
+type BroadcastMessage struct { //nolint:govet // 广播消息，已对齐。
 	Topic   string
 	Payload []byte
 }

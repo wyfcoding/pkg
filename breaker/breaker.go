@@ -22,7 +22,7 @@ type Breaker struct {
 }
 
 // Settings 定义了熔断器的初始化参数。
-type Settings struct { //nolint:govet
+type Settings struct {
 	Name         string
 	Config       config.CircuitBreakerConfig
 	FailureRatio float64

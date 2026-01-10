@@ -15,7 +15,6 @@ type ReservoirSampler[T any] struct {
 
 // NewReservoirSampler 创建一个新的 ReservoirSampler 实例.
 func NewReservoirSampler[T any](k int) *ReservoirSampler[T] {
-	//nolint:gosec // 采样算法使用非加密安全随机数以保证性能.
 	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
 
 	return &ReservoirSampler[T]{

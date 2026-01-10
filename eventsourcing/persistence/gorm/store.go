@@ -25,7 +25,7 @@ var (
 )
 
 // EventModel 数据库持久化模型.
-type EventModel struct { //nolint:govet
+type EventModel struct {
 	OccurredAt  time.Time `gorm:"index;not null;comment:业务事件发生时间"`
 	AggregateID string    `gorm:"type:varchar(64);index:idx_agg_ver,unique;not null;comment:聚合根唯一标识"`
 	Type        string    `gorm:"type:varchar(128);not null;comment:事件类型名称"`
@@ -36,7 +36,7 @@ type EventModel struct { //nolint:govet
 }
 
 // SnapshotModel 快照持久化模型.
-type SnapshotModel struct { //nolint:govet
+type SnapshotModel struct {
 	AggregateID string `gorm:"type:varchar(64);uniqueIndex;not null;comment:聚合根唯一标识"`
 	State       string `gorm:"type:json;not null;comment:聚合根状态数据 (JSON 格式)"`
 	gorm.Model
@@ -44,7 +44,7 @@ type SnapshotModel struct { //nolint:govet
 }
 
 // GormEventStore 基于 GORM 的 EventStore 实现.
-type GormEventStore struct { //nolint:govet
+type GormEventStore struct {
 	db        *gorm.DB
 	tableName string
 }

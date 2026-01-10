@@ -68,7 +68,7 @@ func (g *MinCostMaxFlowGraph) AddEdge(from, to string, capacity, c int64) {
 }
 
 // spfa 寻找最短增广路.
-func (g *MinCostMaxFlowGraph) spfa(sID, tID int, dist []int64, parent []int, parentEdge []int) bool {
+func (g *MinCostMaxFlowGraph) spfa(sID, tID int, dist []int64, parent, parentEdge []int) bool {
 	n := len(g.adj)
 	inQueue := make([]bool, n)
 	queue := make([]int, 0, n)
@@ -103,7 +103,7 @@ func (g *MinCostMaxFlowGraph) spfa(sID, tID int, dist []int64, parent []int, par
 }
 
 // MinCostMaxFlow 算法实现了最小成本最大流问题。
-func (g *MinCostMaxFlowGraph) MinCostMaxFlow(source, sink string, maxFlow int64) (int64, int64) {
+func (g *MinCostMaxFlowGraph) MinCostMaxFlow(source, sink string, maxFlow int64) (flow, cost int64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 

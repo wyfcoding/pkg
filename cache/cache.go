@@ -44,7 +44,7 @@ type Cache interface {
 }
 
 // RedisCache 是基于 Redis 实现的具体缓存结构
-type RedisCache struct { //nolint:govet
+type RedisCache struct { //nolint:govet // Redis 缓存结构，已对齐。
 	client  *redis.Client      // Redis 原生客户端
 	cleanup func()             // 资源清理回调函数
 	prefix  string             // 缓存 Key 的全局前缀
@@ -144,7 +144,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 	// 注入随机扰动防止雪崩
 	if expiration > 0 {
 		jitter := time.Duration(rand.Int64N(int64(expiration / 10)))
-		expiration = expiration + jitter
+		expiration += jitter
 	}
 
 	return c.client.Set(ctx, c.buildKey(key), data, expiration).Err()

@@ -102,7 +102,7 @@ func (dcp *DivideAndConquerProcessor) CountInversions() int64 {
 // arr: 待处理的切片。
 // left, right: 当前子数组的起始和结束索引。
 // 返回：处理后的切片（已排序）和逆序对的数量。
-func (dcp *DivideAndConquerProcessor) mergeSortCount(arr []int64, left, right int) ([]int64, int64) {
+func (dcp *DivideAndConquerProcessor) mergeSortCount(arr []int64, left, right int) (sortedArr []int64, invCount int64) {
 	if left >= right {
 		return arr, 0 // 单个元素或空数组没有逆序对。
 	}

@@ -49,7 +49,6 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 			bootstrapLabels := make([]int, len(labels))
 
 			for j := range points {
-				//nolint:gosec // 随机森林采样不需要加密安全随机数.
 				idx := rand.IntN(len(points))
 				bootstrapPoints[j] = points[idx]
 				bootstrapLabels[j] = labels[idx]

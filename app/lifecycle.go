@@ -9,14 +9,14 @@ import (
 )
 
 // Hook 定义了生命周期钩子，包含启动和停止逻辑。
-type Hook struct { //nolint:govet
+type Hook struct {
 	OnStart func(context.Context) error
 	OnStop  func(context.Context) error
 	Name    string
 }
 
 // Lifecycle 管理应用程序中多个组件的生命周期。
-type Lifecycle struct { //nolint:govet
+type Lifecycle struct {
 	hooks  []Hook
 	mu     sync.Mutex
 	logger *slog.Logger

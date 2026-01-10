@@ -17,9 +17,9 @@ const (
 )
 
 // App 是应用程序的核心容器.
-type App struct { //nolint:govet
+type App struct { //nolint:govet // 应用核心结构，已对齐。
 	logger *slog.Logger
-	ctx    context.Context //nolint:containedctx // 经过审计，此处忽略是安全的。
+	ctx    context.Context
 	cancel func()
 	name   string
 	opts   options

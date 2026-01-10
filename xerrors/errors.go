@@ -39,13 +39,13 @@ const (
 
 // Error 结构体封装了详细的错误上下文信息.
 type Error struct {
-	Stack   []string       // 堆栈跟踪 (24 bytes).
-	Cause   error          // 错误原因 (16 bytes).
-	Message string         // 错误消息 (16 bytes).
-	Detail  string         // 详细调试信息 (16 bytes).
-	Context map[string]any // 业务上下文 (8 bytes).
-	Type    ErrorType      // 错误大类 (8 bytes).
-	Code    int            // 业务错误码 (8 bytes).
+	Stack   []string
+	Cause   error
+	Message string
+	Detail  string
+	Context map[string]any
+	Code    int
+	Type    ErrorType
 }
 
 // Error 实现 error 接口.
@@ -164,7 +164,7 @@ func Wrap(err error, errType ErrorType, msg string) *Error {
 		return e
 	}
 
-	return New(errType, int(errType), msg, "", err) //nolint:gosec // 错误类型枚举值较小，转换安全.
+	return New(errType, int(errType), msg, "", err) // 错误类型枚举值较小，转换安全.
 }
 
 // WrapInternal 快速包装内部服务器错误.

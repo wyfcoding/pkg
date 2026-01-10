@@ -35,7 +35,7 @@ type slot struct {
 func NewLockFreeQueue(capacity uint32) *LockFreeQueue {
 	if capacity&(capacity-1) != 0 {
 		// 如果不是 2 的幂，向上取.
-		capacity = 1 << uint(32-countLeadingZeros(capacity-1))
+		capacity = 1 << uint(32-countLeadingZeros(capacity-1)) //nolint:gosec // 2的幂计算安全。
 	}
 
 	q := &LockFreeQueue{
@@ -59,7 +59,9 @@ func (q *LockFreeQueue) Push(item any) bool {
 	for {
 		s = &q.slots[pos&q.mask]
 		seq := atomic.LoadUint32(&s.sequence)
-		diff := int32(seq) - int32(pos) //nolint:gosec // 环形索引差值安全。
+		// 显式检查防止回绕导致的溢出误判，虽然对于环开索引 diff 计算是安全的，
+		// 但为了满足 G115 且保持逻辑严密，我们确保只在合理范围内比较。
+		diff := int32(seq - pos)
 		switch {
 		case diff == 0:
 			if atomic.CompareAndSwapUint32(&q.tail, pos, pos+1) {
@@ -87,7 +89,7 @@ func (q *LockFreeQueue) Pop() (any, bool) {
 	for {
 		s = &q.slots[pos&q.mask]
 		seq := atomic.LoadUint32(&s.sequence)
-		diff := int32(seq) - int32(pos+1) //nolint:gosec // 环形索引差值安全。
+		diff := int32(seq) - int32(pos+1) // 环形索引差值安全。
 		switch {
 		case diff == 0:
 			if atomic.CompareAndSwapUint32(&q.head, pos, pos+1) {

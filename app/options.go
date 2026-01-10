@@ -5,7 +5,7 @@ import (
 	"github.com/wyfcoding/pkg/server" // 导入服务器接口定义。
 )
 
-type options struct { //nolint:govet
+type options struct {
 	servers        []server.Server
 	cleanups       []func()
 	healthCheckers []func() error // 自定义健康检查探测器列表。

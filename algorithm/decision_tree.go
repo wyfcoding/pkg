@@ -139,7 +139,7 @@ func (dt *DecisionTree) getMajorityLabel(counts map[int]int) int {
 	return majority
 }
 
-func (dt *DecisionTree) findBestSplit(points []*DTPoint, labels []int) (int, float64) {
+func (dt *DecisionTree) findBestSplit(points []*DTPoint, labels []int) (bestFeat int, bestThresh float64) {
 	bestG := -1.0
 	bestF := -1
 	bestT := 0.0
@@ -157,7 +157,7 @@ func (dt *DecisionTree) findBestSplit(points []*DTPoint, labels []int) (int, flo
 	return bestF, bestT
 }
 
-func (dt *DecisionTree) findBestThresholdForFeature(points []*DTPoint, labels []int, fIdx int) (float64, float64) {
+func (dt *DecisionTree) findBestThresholdForFeature(points []*DTPoint, labels []int, fIdx int) (bestThresh, minGini float64) {
 	n := len(points)
 	vals := make([]float64, n)
 
@@ -205,7 +205,7 @@ func (dt *DecisionTree) evaluateSplit(points []*DTPoint, labels []int, fIdx int,
 	return dt.calculateGain(labels, leftL, rightL)
 }
 
-func (dt *DecisionTree) splitData(points []*DTPoint, labels []int, feat int, thresh float64) ([]*DTPoint, []int, []*DTPoint, []int) {
+func (dt *DecisionTree) splitData(points []*DTPoint, labels []int, feat int, thresh float64) (leftPoints []*DTPoint, leftLabels []int, rightPoints []*DTPoint, rightLabels []int) {
 	var leftP, rightP []*DTPoint
 	var leftL, rightL []int
 

@@ -31,7 +31,7 @@ func SetDefault(m *Manager) {
 }
 
 // Manager 封装了水平分片 (Sharding) 的数据库访问逻辑.
-type Manager struct { //nolint:govet
+type Manager struct {
 	shards     map[int]*database.DB
 	mu         sync.RWMutex
 	shardCount int
@@ -67,7 +67,7 @@ func (m *Manager) GetDB(key uint64) *gorm.DB {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	shardIndex := int(key % uint64(m.shardCount)) //nolint:gosec // 经过审计，此处忽略是安全的。
+	shardIndex := int(key % uint64(m.shardCount)) // 经过审计，此处忽略是安全的。
 
 	return m.shards[shardIndex].RawDB()
 }

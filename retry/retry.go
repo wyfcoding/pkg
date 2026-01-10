@@ -14,7 +14,7 @@ import (
 type Func func() error
 
 // Config 封装了重试策略的详细控制参数.
-type Config struct { //nolint:govet
+type Config struct { // 重试策略配置，已对齐。
 	InitialBackoff time.Duration
 	MaxBackoff     time.Duration
 	Multiplier     float64
@@ -40,11 +40,9 @@ func Retry(ctx context.Context, fn Func, cfg Config) error {
 
 	var seed [8]byte
 	if _, readErr := rand.Read(seed[:]); readErr != nil {
-		//nolint:gosec // 重试抖动场景使用时间戳作为种子是安全的.
 		binary.LittleEndian.PutUint64(seed[:], uint64(time.Now().UnixNano()))
 	}
 
-	//nolint:gosec // 重试抖动场景不需要加密安全随机数.
 	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
 
 	for retryIdx := 0; retryIdx <= cfg.MaxRetries; retryIdx++ {

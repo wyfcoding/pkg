@@ -2,8 +2,8 @@ package algorithm
 
 // Participant 代表参与匹配的一方（如团员或团长）。
 type Participant struct {
+	Preferences []int
 	ID          int
-	Preferences []int // 对另一方成员的偏好排名（由高到低）。
 }
 
 // StableMarriage 实现了 Gale-Shapley 算法。

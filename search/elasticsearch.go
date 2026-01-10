@@ -62,13 +62,13 @@ type Config struct {
 	Username      string
 	Password      string
 	ServiceName   string
+	BreakerConfig config.CircuitBreakerConfig
 	SlowThreshold time.Duration
 	MaxRetries    int
-	BreakerConfig config.CircuitBreakerConfig
 }
 
 // NewClient 创建具备全方位治理能力的 ES 客户端.
-func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metrics) (*Client, error) {
+func NewClient(cfg *Config, logger *logging.Logger, metricsInstance *metrics.Metrics) (*Client, error) {
 	tp := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{

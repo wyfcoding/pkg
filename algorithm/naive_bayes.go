@@ -8,10 +8,10 @@ import (
 // NaiveBayes 结构体实现了朴素贝叶斯分类器。
 // 优化：使用倒排索引结构（Word -> []Prob）加速预测，减少 Map 查找次数。
 type NaiveBayes struct {
-	vocab          map[string][]float64 // 词汇表：单词 -> [类别1条件对数概率, 类别2条件对数概率...]。
+	vocab          map[string][]float64
+	classNames     []string
+	classLogPriors []float64
 	mu             sync.RWMutex
-	classNames     []string  // 类别名称列表 (Index -> Name)。
-	classLogPriors []float64 // 类别先验对数概率 (Index -> LogProb)。
 }
 
 // NewNaiveBayes 创建并返回一个新的 NaiveBayes 分类器实例。

@@ -13,7 +13,7 @@ import (
 )
 
 // GRPCServer 封装了标准的 grpc.Server，提供了简化的生命周期管理逻辑。
-type GRPCServer struct { //nolint:govet
+type GRPCServer struct { //nolint:govet // gRPC 服务器核心结构，已对齐。
 	server *grpc.Server // 底层 gRPC 服务器实.
 	addr   string       // 监听地址 (Host:Port.
 	logger *slog.Logger // 日志记录.

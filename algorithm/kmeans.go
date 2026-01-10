@@ -71,7 +71,6 @@ func (km *KMeans) ensureCentroids(dim int) {
 
 func (km *KMeans) initializeCentroidsPlusPlus(points []*KMeansPoint) {
 	n := len(points)
-	//nolint:gosec // 算法场景不要求加密安全随机数.
 	firstIdx := rand.IntN(n)
 	copy(km.centroids[0], points[firstIdx].Data)
 
@@ -90,7 +89,6 @@ func (km *KMeans) initializeCentroidsPlusPlus(points []*KMeansPoint) {
 			totalDistSq += distances[idx]
 		}
 
-		//nolint:gosec // 经过审计，此处忽略是安全的。
 		target := rand.Float64() * totalDistSq
 		km.selectNextCentroid(points, distances, target, i)
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 // Saga 封装了 DTM 的 Saga 分布式事务模式，增强了追踪信息自动注入功能.
-type Saga struct { //nolint:govet
+type Saga struct { // SAGA 事务结构，已对齐。
 	saga   *dtmgrpc.SagaGrpc // 底层 DTM gRPC 客户端实例
 	server string            // DTM 服务器地址 (Host:Port)
 	gid    string            // 全局事务 ID (Global ID)

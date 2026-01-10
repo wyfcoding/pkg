@@ -267,11 +267,12 @@ func (t *RBTree) DeleteNode(target *RBNode) {
 		childNode.Parent = replaceNode.Parent
 	}
 
-	if replaceNode.Parent == nil {
+	switch {
+	case replaceNode.Parent == nil:
 		t.Root = childNode
-	} else if replaceNode == replaceNode.Parent.Left {
+	case replaceNode == replaceNode.Parent.Left:
 		replaceNode.Parent.Left = childNode
-	} else {
+	default:
 		replaceNode.Parent.Right = childNode
 	}
 

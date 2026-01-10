@@ -105,7 +105,7 @@ func (cf *CuckooFilter) Delete(data []byte) bool {
 	return false
 }
 
-func (cf *CuckooFilter) getHashes(data []byte) (uint, uint, byte) {
+func (cf *CuckooFilter) getHashes(data []byte) (h1, h2 uint, fp byte) {
 	var h uint64 = fnvOffset64
 	for _, b := range data {
 		h ^= uint64(b)
@@ -113,7 +113,7 @@ func (cf *CuckooFilter) getHashes(data []byte) (uint, uint, byte) {
 	}
 
 	idx1 := uint(h) & cf.mask
-	fp := byte((h>>32)%fpModulo) + 1
+	fp = byte((h>>32)%fpModulo) + 1
 	idx2 := (idx1 ^ cf.getHashOfFingerprint(fp)) & cf.mask
 
 	return idx1, idx2, fp

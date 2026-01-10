@@ -42,7 +42,7 @@ func (gbm *GeometricBrownianMotion) Simulate(steps int) []decimal.Decimal {
 	volTerm := volatilityFloat * math.Sqrt(timeStepFloat)
 
 	for i := 1; i <= steps; i++ {
-		z := rand.NormFloat64() // v2 是并发安全的，且性能更.
+		z := rand.NormFloat64()
 		currentPrice := prices[i-1].InexactFloat64()
 		exponent := driftTerm + volTerm*z
 		newPrice := currentPrice * math.Exp(exponent)

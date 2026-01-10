@@ -14,7 +14,7 @@ import (
 )
 
 // BigCache 是基于本地内存实现的高性能非阻塞缓存。
-type BigCache struct { //nolint:govet
+type BigCache struct {
 	cache  *bigcache.BigCache
 	sfg    singleflight.Group
 	logger *logging.Logger

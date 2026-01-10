@@ -40,7 +40,7 @@ func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
 			next: make([]*SkipListNode[K, V], maxLevel),
 		},
 		level:     1,
-		randState: uint64(time.Now().UnixNano()), //nolint:gosec // 伪随机状态初始化。
+		randState: uint64(time.Now().UnixNano()), // 伪随机状态初始化。
 	}
 }
 
@@ -53,7 +53,7 @@ func (sl *SkipList[K, V]) fastRand() uint32 {
 	state ^= state << 17
 	sl.randState = state
 
-	return uint32(state) //nolint:gosec // 截断用于哈希。
+	return uint32(state) // 截断用于哈希。
 }
 
 // randomLevel 随机生成节点的层数，使用位运算优化。

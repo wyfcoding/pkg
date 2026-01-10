@@ -15,7 +15,7 @@ import (
 )
 
 // Config 全局顶级配置结构.
-type Config struct { //nolint:govet // 顶级聚合配置，嵌套层次深，已尽可能优化对齐。
+type Config struct { // 顶级聚合配置，嵌套层次深，已尽可能优化对齐。
 	Services       ServicesConfig       `mapstructure:"services"       toml:"services"`
 	Data           DataConfig           `mapstructure:"data"           toml:"data"`
 	Log            LogConfig            `mapstructure:"log"            toml:"log"`
@@ -57,7 +57,7 @@ type ServerConfig struct {
 }
 
 // DataConfig 汇集了所有持久化存储与中间件的数据源配置.
-type DataConfig struct { //nolint:govet // 包含大量子配置结构，已按指针分组原则对齐。
+type DataConfig struct { // 包含大量子配置结构，已按指针分组原则对齐。
 	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 	Database      DatabaseConfig      `mapstructure:"database"      toml:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"         toml:"redis"`
@@ -122,7 +122,7 @@ type MessageQueueConfig struct {
 }
 
 // KafkaConfig 定义 Kafka 生产者与消费者参数.
-type KafkaConfig struct { //nolint:govet // 包含多个 time.Duration 与 string，已尽可能对齐。
+type KafkaConfig struct { // 包含多个 time.Duration 与 string，已尽可能对齐。
 	Brokers        []string      `mapstructure:"brokers"         toml:"brokers"`
 	Topic          string        `mapstructure:"topic"           toml:"topic"`
 	GroupID        string        `mapstructure:"group_id"        toml:"group_id"`

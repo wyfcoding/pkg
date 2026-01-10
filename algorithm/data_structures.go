@@ -14,8 +14,8 @@ import (
 type OrderBookSnapshot struct {
 	Bids      []*PriceLevel
 	Asks      []*PriceLevel
-	Symbol    string
 	Timestamp int64
+	Symbol    string
 }
 
 // PriceLevel 价格层.
@@ -73,8 +73,8 @@ type PortfolioSnapshot struct {
 // SettlementBatch 清算批.
 type SettlementBatch struct {
 	Trades      []*TradeSettlement
-	CompletedAt *int64
 	CreatedAt   int64
+	CompletedAt *int64
 	BatchID     string
 	Status      string
 }

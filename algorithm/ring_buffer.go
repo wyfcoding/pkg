@@ -68,7 +68,7 @@ func (rb *RingBuffer[T]) Offer(item T) error {
 		slot = &rb.slots[tail&rb.mask]
 		seq := atomic.LoadUint64(&slot.sequence)
 
-		diff := int64(seq) - int64(tail) //nolint:gosec // 环形索引差值安全。
+		diff := int64(seq) - int64(tail) // 环形索引差值安全。
 
 		if diff == 0 {
 			// sequence == tail 说明该 slot 空闲且已准备好被当前轮次的 tail 写.
@@ -100,7 +100,7 @@ func (rb *RingBuffer[T]) Poll() (T, error) {
 		slot = &rb.slots[head&rb.mask]
 		seq := atomic.LoadUint64(&slot.sequence)
 
-		diff := int64(seq) - int64(head+1) //nolint:gosec // 环形索引差值安全。
+		diff := int64(seq) - int64(head+1) // 环形索引差值安全。
 
 		if diff == 0 {
 			// sequence == head + 1 说明该 slot 已被生产者写入完成（Offer 中设置了 tail + 1.

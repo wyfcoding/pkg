@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -34,7 +35,7 @@ func HTTPCircuitBreaker(cfg config.CircuitBreakerConfig, m *metrics.Metrics) gin
 			return nil, nil
 		})
 
-		if err != nil && err == breaker.ErrServiceUnavailable {
+		if err != nil && errors.Is(err, breaker.ErrServiceUnavailable) {
 			slog.WarnContext(c.Request.Context(), "http request rejected by inbound circuit breaker", "path", c.Request.URL.Path)
 			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "circuit breaker open"})
 		}
@@ -53,7 +54,7 @@ func GRPCCircuitBreaker(cfg config.CircuitBreakerConfig, m *metrics.Metrics) grp
 			return handler(ctx, req)
 		})
 
-		if err != nil && err == breaker.ErrServiceUnavailable {
+		if err != nil && errors.Is(err, breaker.ErrServiceUnavailable) {
 			slog.WarnContext(ctx, "grpc call rejected by inbound circuit breaker", "method", info.FullMethod)
 
 			return nil, status.Error(codes.Unavailable, "circuit breaker open")

@@ -41,7 +41,7 @@ func (rb *RoaringBitmap) Release() {
 
 // Add 将一个 ID (uint32) 加入位图。
 func (rb *RoaringBitmap) Add(x uint32) {
-	high := uint16(x >> 16)
+	high := uint16((x >> 16) & 0xFFFF)
 	low := uint16(x & 0xFFFF)
 
 	container, ok := rb.chunks[high]
@@ -68,7 +68,7 @@ func (rb *RoaringBitmap) Add(x uint32) {
 
 // Contains 检查 ID 是否存在。
 func (rb *RoaringBitmap) Contains(x uint32) bool {
-	high := uint16(x >> 16)
+	high := uint16((x >> 16) & 0xFFFF)
 	low := uint16(x & 0xFFFF)
 
 	container, ok := rb.chunks[high]
@@ -155,7 +155,7 @@ func (rb *RoaringBitmap) ToList() []uint32 {
 			temp := word
 			for temp != 0 {
 				bit := bits.TrailingZeros64(temp)
-				res = append(res, hBase|uint32(i<<6)|uint32(bit)) //nolint:gosec // 位运算安全。
+				res = append(res, hBase|uint32(i<<6)|uint32(bit)) // 位运算安全。
 				temp &= temp - 1                                  // 清除最低位的 1。
 			}
 		}

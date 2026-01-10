@@ -70,7 +70,7 @@ func NewClient(cfg config.ClickHouseConfig) (driver.Conn, error) {
 }
 
 // MeasuredConn 通过装饰器模式扩展原生驱动，自动采集 Prometheus 指标。
-type MeasuredConn struct { //nolint:govet // 装饰器模式包装原生 Conn，忽略对齐告警。
+type MeasuredConn struct { // 装饰器模式包装原生 Conn，忽略对齐告警。
 	driver.Conn
 	db string
 }
@@ -102,7 +102,7 @@ func (c *MeasuredConn) recordMetrics(start time.Time, err error) {
 }
 
 // BatchWriter 封装了 ClickHouse 官方的高性能 Batch 接口，提供更易用的批量写入能力。
-type BatchWriter struct { //nolint:govet // 批量写入封装结构，忽略对齐告警。
+type BatchWriter struct { // 批量写入封装结构，忽略对齐告警。
 	conn      driver.Conn
 	query     string
 	batchSize int

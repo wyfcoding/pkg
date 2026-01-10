@@ -27,7 +27,7 @@ const (
 )
 
 // Builder 提供了构建 App 的灵活方式.
-type Builder struct { //nolint:govet
+type Builder struct {
 	serviceName      string
 	configInstance   any
 	initService      any

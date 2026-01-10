@@ -27,7 +27,7 @@ var (
 )
 
 // Response 用于存储已完成请求的响应快照.
-type Response struct { //nolint:govet
+type Response struct { // 幂等响应结构，已对齐。
 	Header     map[string]string `json:"header"`
 	Body       string            `json:"body"`
 	StatusCode int               `json:"statusCode"`
@@ -45,7 +45,7 @@ var (
 	ErrInProgress = errors.New("request already in progress")
 )
 
-type redisManager struct { //nolint:govet
+type redisManager struct { // Redis 幂等管理器内部结构，已对齐。
 	client *redis.Client
 	prefix string
 }

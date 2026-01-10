@@ -21,7 +21,7 @@ type EntityEvents interface {
 }
 
 // BaseEntity 是一个可嵌入的结构体.
-type BaseEntity struct { //nolint:govet
+type BaseEntity struct {
 	events []DomainEvent `gorm:"-" json:"-"`
 }
 
@@ -41,7 +41,7 @@ func (e *BaseEntity) ClearEvents() {
 }
 
 // OutboxRecord 必须与业务在同一事务中持久化的记录.
-type OutboxRecord struct { //nolint:govet
+type OutboxRecord struct {
 	CreatedAt time.Time `gorm:"index"`
 	Topic     string    `gorm:"type:varchar(255);not null;index"`
 	Key       string    `gorm:"type:varchar(255);index"`

@@ -83,7 +83,7 @@ func (lca *TreeLCA) GetLCA(u, v int) int {
 	// 1. 将 u 提升到与 v 同一深度。
 	diff := lca.depth[u] - lca.depth[v]
 	for i := range lca.logN {
-		if (diff >> uint(i) & 1) == 1 {
+		if (diff & (1 << uint(i))) != 0 {
 			u = lca.up[u*lca.logN+i]
 		}
 	}

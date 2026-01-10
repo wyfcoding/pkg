@@ -23,19 +23,17 @@ type timerEntry struct {
 // 1. 移除 container/list，使用内嵌链表节点，减少指针跳转和内存占用。
 // 2. 使用 sync.Pool 复用 timerEntry，实现零分配 (Zero Allocation) 添加任务。
 type TimingWheel struct {
-	slots     []*timerEntry // 槽位链表头数组。
+	slots     []*timerEntry
 	exitC     chan struct{}
-	pool      sync.Pool // 对象池。
+	tick      time.Duration
+	interval  time.Duration
+	pool      sync.Pool
 	wg        conc.WaitGroup
 	mu        sync.Mutex
-	tick      time.Duration // 每一格的时间跨度。
-	interval  time.Duration // 一圈的总时间。
-	wheelSize int           // 槽位数量。
-	current   int           // 当前指针位置。
+	wheelSize int
+	current   int
 	running   bool
 }
-
-//nolint:govet // 已按指针对齐优化。
 
 // NewTimingWheel 创建一个新的时间.
 func NewTimingWheel(tick time.Duration, wheelSize int) (*TimingWheel, error) {

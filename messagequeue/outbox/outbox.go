@@ -229,7 +229,7 @@ func (p *Processor) send(tx *gorm.DB, msg *Message) {
 		updates["status"] = StatusSent
 	} else {
 		// 指数退避重试。
-		backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour) //nolint:gosec // 重试次数受控，转换安全.
+		backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour) // 重试次数受控，转换安全.
 		updates["next_retry"] = time.Now().Add(backoff)
 		updates["last_error"] = err.Error()
 

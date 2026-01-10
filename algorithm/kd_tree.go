@@ -123,9 +123,9 @@ func (t *KDTree) partition(points []KDPoint, left, right, axis int) int {
 }
 
 // Nearest 寻找最近邻点.
-func (t *KDTree) Nearest(target []float64) (KDPoint, float64) {
+func (t *KDTree) Nearest(target []float64) (bestPoint KDPoint, minDist float64) {
 	var best KDPoint
-	minDist := math.MaxFloat64
+	minDist = math.MaxFloat64
 	t.search(t.Root, target, &best, &minDist)
 
 	return best, math.Sqrt(minDist)

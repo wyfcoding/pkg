@@ -11,7 +11,7 @@ const (
 )
 
 // Request 分页请求通用结构.
-type Request struct { //nolint:govet
+type Request struct { // 分页请求结构，已对齐。
 	Page     int `form:"page"      json:"page"`      // 当前页码 (从1开始)
 	PageSize int `form:"page_size" json:"page_size"` // 每页数量
 }
@@ -84,7 +84,7 @@ func NewResult[T any](total int64, req *Request, items []T) *Result[T] {
 // --- Cursor (游标分页支持，用于深度分页优化，避免 OFFSET 性能问题) ---
 
 // CursorRequest 定义了基于游标的分页请求结构.
-type CursorRequest struct { //nolint:govet
+type CursorRequest struct { // 游标分页结构，已对齐。
 	LastID   uint64 `form:"lastID"   json:"lastID"`   // 上一页返回数据中最后一条记录的唯一标识 (ID)
 	PageSize int    `form:"pageSize" json:"pageSize"` // 请求抓取的数据条数
 }

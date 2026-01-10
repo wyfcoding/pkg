@@ -2,7 +2,7 @@
 package text
 
 import (
-	"crypto/md5" //nolint:gosec // 仅用于生成非安全哈希.
+	"crypto/md5" // 仅用于生成非安全哈希.
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
@@ -18,11 +18,9 @@ func RandomString(length int) string {
 
 	var seed [8]byte
 	if _, err := rand.Read(seed[:]); err != nil {
-		//nolint:gosec // 降级方案使用时间戳作为种子是安全的.
 		binary.LittleEndian.PutUint64(seed[:], uint64(time.Now().UnixNano()))
 	}
 
-	//nolint:gosec // 普通随机字符串生成不需要加密安全随机数.
 	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
 
 	for i := range result {

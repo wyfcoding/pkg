@@ -9,7 +9,7 @@ import (
 )
 
 // AdminClaims 封装了管理后台专用令牌的 Payload 结构。
-type AdminClaims struct { //nolint:govet // 管理员 Claims 结构，已优化对齐。
+type AdminClaims struct { // 管理员 Claims 结构，已优化对齐。
 	AdminID  uint64 `json:"admin_id"` // 管理员唯一标识。
 	Username string `json:"username"` // 登录用户名。
 	Email    string `json:"email"`    // 绑定邮箱。

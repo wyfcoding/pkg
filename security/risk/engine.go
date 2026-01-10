@@ -9,7 +9,7 @@ import (
 
 // DynamicRiskEngine 是基于可编程规则引擎实现的高级风控器。
 // 支持在不重启服务的情况下，通过修改规则表达式动态调整风控策略。
-type DynamicRiskEngine struct { //nolint:govet // 动态引擎内部结构，已优化对齐。
+type DynamicRiskEngine struct { // 动态引擎内部结构，已优化对齐。
 	re     *ruleengine.Engine // 底层规则执行引.
 	logger *slog.Logger       // 日志记录.
 }

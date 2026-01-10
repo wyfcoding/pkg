@@ -13,7 +13,7 @@ import (
 )
 
 // Tcc 封装了 DTM 的 Try-Confirm-Cancel 分布式事务模式，用于处理对一致性要求极高的跨服务资源操作。
-type Tcc struct { //nolint:govet
+type Tcc struct { // TCC 事务结构，已对齐。
 	server string // DTM 服务端地址 (Host:Port)。
 	gid    string // 全局唯一的事务标识。
 }

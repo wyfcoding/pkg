@@ -18,7 +18,7 @@ var (
 )
 
 // MyCustomClaims 定义了 JWT 的 Payload 部分，包含用户信息与权限角色。
-type MyCustomClaims struct { //nolint:govet // 已按照 JWT 标准 Payload 结构对齐。
+type MyCustomClaims struct { // 已按照 JWT 标准 Payload 结构对齐。
 	UserID   uint64   `json:"user_id"`  // 用户唯一标识。
 	Username string   `json:"username"` // 用户登录名。
 	Roles    []string `json:"roles"`    // 用户所属的角色列表（用于 RBAC）。

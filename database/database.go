@@ -30,7 +30,7 @@ const (
 )
 
 // DB 封装了 GORM 实例.
-type DB struct { //nolint:govet
+type DB struct {
 	*gorm.DB
 	cfg     *config.DatabaseConfig
 	breaker *breaker.Breaker

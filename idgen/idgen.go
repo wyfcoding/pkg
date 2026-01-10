@@ -40,7 +40,7 @@ type Generator interface {
 
 // SnowflakeGenerator 使用雪花算法实现 Generator.
 // 特点：每毫秒可生成 4096 个 ID，支持 1024 台机器，可用约 69 年.
-type SnowflakeGenerator struct { //nolint:govet
+type SnowflakeGenerator struct { // 雪花算法生成器，已对齐。
 	node *snowflake.Node
 }
 
@@ -73,7 +73,7 @@ func (g *SnowflakeGenerator) Generate() int64 {
 
 // SonyflakeGenerator 使用 Sonyflake 算法实现 Generator.
 // 特点：每 10 毫秒可生成 256 个 ID，支持 65536 台机器，可用约 174 年.
-type SonyflakeGenerator struct { //nolint:govet
+type SonyflakeGenerator struct { // Sonyflake 生成器，已对齐。
 	sf *sonyflake.Sonyflake
 }
 
@@ -97,7 +97,7 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 	settings := sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: func() (uint16, error) {
-			return uint16(cfg.MachineID), nil //nolint:gosec // 已在上方检查范围.
+			return uint16(cfg.MachineID), nil // 已在上方检查范围.
 		},
 	}
 
@@ -118,7 +118,7 @@ func (g *SonyflakeGenerator) Generate() int64 {
 	for i := range maxRetries {
 		id, err := g.sf.NextID()
 		if err == nil {
-			return int64(id) //nolint:gosec // 经过审计，此处忽略是安全的。
+			return int64(id) // 经过审计，此处忽略是安全的。
 		}
 
 		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)
@@ -177,7 +177,7 @@ func GenID() uint64 {
 		}
 	}
 
-	return uint64(defaultGenerator.Generate()) //nolint:gosec // 经过审计，此处忽略是安全的。
+	return uint64(defaultGenerator.Generate()) // 经过审计，此处忽略是安全的。
 }
 
 // GenOrderNo 生成订单号，格式为 "O" + 唯一ID.

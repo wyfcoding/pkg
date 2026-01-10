@@ -1,10 +1,11 @@
 package algorithm
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"log/slog"
 	"math"
-	"math/rand/v2"
 	"sync/atomic"
 	"time"
 )
@@ -48,7 +49,9 @@ func NewCountMinSketch(epsilon, delta float64) (*CountMinSketch, error) {
 func generateSeeds(depth uint) []uint32 {
 	seeds := make([]uint32, depth)
 	for i := range seeds {
-		seeds[i] = rand.Uint32()
+		var b [4]byte
+		_, _ = rand.Read(b[:])
+		seeds[i] = binary.LittleEndian.Uint32(b[:])
 	}
 
 	return seeds
@@ -142,5 +145,7 @@ func getCMSHashes(data []byte) (h1, h2 uint32) {
 		h *= fnvPrime64
 	}
 
-	return uint32(h), uint32(h >> 32)
+	h1 = uint32(h)
+	h2 = uint32(h >> 32)
+	return
 }

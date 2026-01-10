@@ -209,7 +209,7 @@ func (d *AntiBotDetector) isAbnormalUserAgent(userAgent string) bool {
 	return true
 }
 
-func (d *AntiBotDetector) checkIPAbnormal(behavior *UserBehavior) (bool, string) {
+func (d *AntiBotDetector) checkIPAbnormal(behavior *UserBehavior) (abnormal bool, reason string) {
 	ipUsers := make(map[uint64]bool)
 	for userID, behaviors := range d.userBehaviors {
 		for i := range behaviors {

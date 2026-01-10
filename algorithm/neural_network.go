@@ -64,7 +64,6 @@ func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) error {
 		return fmt.Errorf("failed to read seed: %w", err)
 	}
 
-	//nolint:gosec // 神经网络权重初始化不需要加密安全随机数.
 	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
 	stdDev := math.Sqrt(2.0 / float64(rows+cols))
 

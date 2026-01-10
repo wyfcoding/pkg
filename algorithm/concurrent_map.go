@@ -32,9 +32,9 @@ type HashFunc[K comparable] func(key K) uint32
 
 // ConcurrentMap 是一个分片式的并发map。
 type ConcurrentMap[K comparable, V any] struct {
-	shards []shard[K, V] // 优化：使用 slice of structs 减少指针跳.
+	shards []shard[K, V]
+	mask   uint64
 	hash   HashFunc[K]
-	mask   uint64 // 掩码，用于快速计算索引 (shardCount - 1.
 }
 
 // NewConcurrentMap 创建一个通用的并发map。

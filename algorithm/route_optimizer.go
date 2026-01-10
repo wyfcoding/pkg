@@ -88,7 +88,7 @@ func (ro *RouteOptimizer) findNearest(curr Location, dests []Location, visited m
 	return bestIdx, minDist
 }
 
-type saving struct { //nolint:govet
+type saving struct {
 	val float64
 	i   int
 	j   int

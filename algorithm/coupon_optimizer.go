@@ -46,7 +46,7 @@ func NewCouponOptimizer() *CouponOptimizer {
 func (co *CouponOptimizer) OptimalCombination(
 	originalPrice int64,
 	coupons []Coupon,
-) ([]uint64, int64, int64) {
+) (bestCoupons []uint64, finalPrice int64, totalDiscount int64) {
 	start := time.Now()
 	if len(coupons) == 0 {
 		return nil, originalPrice, 0
