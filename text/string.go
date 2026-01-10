@@ -3,6 +3,7 @@ package text
 
 import (
 	"crypto/rand"
+	"strings"
 	"time"
 )
 
@@ -38,10 +39,7 @@ func MaskString(s string, prefixLen, suffixLen int) string {
 	}
 
 	maskLen := len(s) - prefixLen - suffixLen
-	mask := ""
-	for range maskLen {
-		mask += "*"
-	}
+	mask := strings.Repeat("*", maskLen)
 
 	return s[:prefixLen] + mask + s[len(s)-suffixLen:]
 }

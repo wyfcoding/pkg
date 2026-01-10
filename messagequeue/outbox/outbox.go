@@ -85,7 +85,6 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic, key strin
 
 	metadataMap := tracing.InjectContext(ctx)
 	metadataJSON, err := json.Marshal(metadataMap)
-
 	if err != nil {
 		// 元数据注入失败不应中断业务事务，仅记录警告。
 		m.logger.WarnContext(ctx, "failed to marshal tracing metadata", "error", err)
@@ -197,7 +196,6 @@ func (p *Processor) process() {
 
 		return nil
 	})
-
 	if err != nil {
 		p.mgr.logger.Error("outbox batch process failed", "error", err)
 	}

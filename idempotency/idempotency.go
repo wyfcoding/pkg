@@ -21,10 +21,8 @@ const (
 	StatusFinished Status = "FINISHED"
 )
 
-var (
-	// ErrUnexpectedType 意外的响应类型.
-	ErrUnexpectedType = errors.New("unexpected response type from redis")
-)
+// ErrUnexpectedType 意外的响应类型.
+var ErrUnexpectedType = errors.New("unexpected response type from redis")
 
 // Response 用于存储已完成请求的响应快照.
 type Response struct { // 幂等响应结构，已对齐。
@@ -40,10 +38,8 @@ type Manager interface {
 	Delete(ctx context.Context, key string) error
 }
 
-var (
-	// ErrInProgress 表示当前请求已存在且正在处理中.
-	ErrInProgress = errors.New("request already in progress")
-)
+// ErrInProgress 表示当前请求已存在且正在处理中.
+var ErrInProgress = errors.New("request already in progress")
 
 type redisManager struct { // Redis 幂等管理器内部结构，已对齐。
 	client *redis.Client

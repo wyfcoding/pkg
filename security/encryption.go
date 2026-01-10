@@ -11,10 +11,8 @@ import (
 	"io"
 )
 
-var (
-	// ErrCiphertextTooShort 密文长度不足。
-	ErrCiphertextTooShort = errors.New("ciphertext too short")
-)
+// ErrCiphertextTooShort 密文长度不足。
+var ErrCiphertextTooShort = errors.New("ciphertext too short")
 
 // GenerateRandomKey 生成加密安全的随机密钥。
 func GenerateRandomKey(length int) ([]byte, error) {

@@ -5,7 +5,6 @@ go 1.25.5
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
 	github.com/allegro/bigcache/v3 v3.1.0
-	github.com/bwmarrin/snowflake v0.3.0
 	github.com/dtm-labs/client v1.18.7
 	github.com/elastic/go-elasticsearch/v9 v9.2.1
 	github.com/expr-lang/expr v1.17.7
@@ -16,6 +15,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/minio/minio-go/v7 v7.0.97
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
 	github.com/neo4j/neo4j-go-driver/v6 v6.0.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.17.2

@@ -18,7 +18,6 @@ func RateLimitWithLimiter(l limiter.Limiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.ClientIP() + ":" + c.Request.URL.Path
 		allowed, err := l.Allow(c.Request.Context(), key)
-
 		if err != nil {
 			logging.Error(c.Request.Context(), "rate limit check failed", "key", key, "error", err)
 			c.Next()

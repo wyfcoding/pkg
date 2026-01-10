@@ -10,10 +10,8 @@ import (
 	"github.com/wyfcoding/pkg/metrics"
 )
 
-var (
-	// ErrServiceUnavailable 表示服务当前处于熔断状态。
-	ErrServiceUnavailable = errors.New("service unavailable: circuit breaker is open")
-)
+// ErrServiceUnavailable 表示服务当前处于熔断状态。
+var ErrServiceUnavailable = errors.New("service unavailable: circuit breaker is open")
 
 // Breaker 封装了 gobreaker 实例，集成了 Prometheus 指标监控。
 type Breaker struct {

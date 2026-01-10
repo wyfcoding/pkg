@@ -65,10 +65,7 @@ func Retry(ctx context.Context, fn Func, cfg Config) error {
 			}
 		}
 
-		backoff = time.Duration(nextBackoff)
-		if backoff > cfg.MaxBackoff {
-			backoff = cfg.MaxBackoff
-		}
+		backoff = min(time.Duration(nextBackoff), cfg.MaxBackoff)
 	}
 
 	return fmt.Errorf("maximum retries (%d) reached: %w", cfg.MaxRetries, lastErr)
