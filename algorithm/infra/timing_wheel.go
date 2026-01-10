@@ -13,10 +13,10 @@ type TimerTask func()
 
 // timerEntry 内部任务包装 (Singly Linked List Node)。
 type timerEntry struct {
-	task       TimerTask   // 任务回调。
-	next       *timerEntry // 下一个节点。
-	expiration time.Time   // 绝对过期时间。
-	circle     int         // 剩余圈数。
+	expiration time.Time   // 绝对过期时间 (24 bytes)。
+	task       TimerTask   // 任务回调 (8 bytes)。
+	next       *timerEntry // 下一个节点 (8 bytes)。
+	circle     int         // 剩余圈数 (8 bytes)。
 }
 
 // TimingWheel 是一个基于“圈数”的单层时间轮实现。
@@ -24,17 +24,17 @@ type timerEntry struct {
 // 1. 移除 container/list，使用内嵌链表节点，减少指针跳转和内存占用。
 // 2. 使用 sync.Pool 复用 timerEntry，实现零分配 (Zero Allocation) 添加任务。
 // 3. 字段按大小排序以减少内存对齐填充。
-type TimingWheel struct { //nolint:govet // 字段顺序保持业务语义清晰。
-	slots     []*timerEntry
-	pool      sync.Pool
-	exitC     chan struct{}
-	wg        conc.WaitGroup
-	mu        sync.Mutex
-	tick      time.Duration
-	interval  time.Duration
-	wheelSize int
-	current   int
-	running   bool
+type TimingWheel struct {
+	pool      *sync.Pool      // 8 bytes
+	wg        *conc.WaitGroup // 8 bytes
+	exitC     chan struct{}   // 8 bytes
+	slots     []*timerEntry   // 24 bytes (Pointer at offset 0, followed by Len/Cap)
+	mu        sync.Mutex      // 8 bytes
+	tick      time.Duration   // 8 bytes
+	interval  time.Duration   // 8 bytes
+	wheelSize int             // 8 bytes
+	current   int             // 8 bytes
+	running   bool            // 1 byte
 }
 
 // NewTimingWheel 创建一个新的时间.
@@ -44,16 +44,17 @@ func NewTimingWheel(tick time.Duration, wheelSize int) (*TimingWheel, error) {
 	}
 
 	return &TimingWheel{
-		tick:      tick,
-		wheelSize: wheelSize,
-		interval:  tick * time.Duration(wheelSize),
-		slots:     make([]*timerEntry, wheelSize),
-		exitC:     make(chan struct{}),
-		pool: sync.Pool{
+		pool: &sync.Pool{
 			New: func() any {
 				return &timerEntry{}
 			},
 		},
+		wg:        &conc.WaitGroup{},
+		exitC:     make(chan struct{}),
+		slots:     make([]*timerEntry, wheelSize),
+		tick:      tick,
+		wheelSize: wheelSize,
+		interval:  tick * time.Duration(wheelSize),
 	}, nil
 }
 
