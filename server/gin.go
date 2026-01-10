@@ -12,10 +12,10 @@ import (
 )
 
 // GinServer 封装了标准的 http.Server，专用于承载 Gin 引擎并提供优雅启停能力。
-type GinServer struct { //nolint:govet // HTTP 服务器核心结构，已对齐。
+type GinServer struct {
 	server *http.Server // 底层标准 HTTP 服务器。
-	addr   string       // 监听地址 (Host:Port)。
 	logger *slog.Logger // 日志记录器。
+	addr   string       // 监听地址 (Host:Port)。
 }
 
 // NewGinServer 构造一个新的 Gin 协议服务器实例。

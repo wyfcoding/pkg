@@ -2,9 +2,10 @@
 package eventsourcing
 
 import (
+	"strconv"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/wyfcoding/pkg/idgen"
 )
 
 // DomainEvent 领域事件基础接口。
@@ -69,7 +70,7 @@ func (e *BaseEvent) SetVersion(version int64) {
 // NewBaseEvent 创建基础事件实例。
 func NewBaseEvent(eventType, aggregateID string, version int64) BaseEvent {
 	return BaseEvent{
-		ID:        uuid.New().String(),
+		ID:        strconv.FormatUint(idgen.GenID(), 10),
 		Type:      eventType,
 		AggID:     aggregateID,
 		Ver:       version,

@@ -118,7 +118,7 @@ func (s *GormEventStore) Save(ctx context.Context, aggregateID string, events []
 				Data:        string(dataBytes),
 				Metadata:    string(metaBytes),
 				OccurredAt:  event.OccurredAt(),
-				Model:       gorm.Model{}, //nolint:exhaustruct // 经过审计，此处忽略是安全的。
+				Model:       gorm.Model{},
 			})
 		}
 
@@ -187,7 +187,7 @@ func (s *GormEventStore) SaveSnapshot(ctx context.Context, aggregateID string, s
 		AggregateID: aggregateID,
 		Version:     version,
 		State:       string(stateBytes),
-		Model:       gorm.Model{}, //nolint:exhaustruct // 经过审计，此处忽略是安全的。
+		Model:       gorm.Model{},
 	}
 
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{

@@ -113,7 +113,7 @@ func (g *DefaultGenerator) Generate() int64 {
 var defaultGenerator = &DefaultGenerator{}
 
 // NextID 全局快捷生成入口.
-func NextID() uint64 {
+func GenID() uint64 {
 	generatedID := defaultGenerator.Generate()
 	if generatedID < 0 {
 		return uint64(-generatedID)
@@ -121,12 +121,7 @@ func NextID() uint64 {
 	return uint64(generatedID)
 }
 
-// GenID 全局快捷生成入口 (别名).
-func GenID() uint64 {
-	return NextID()
-}
-
 // GenOrderNo 生成订单号，格式为 "O" + 唯一ID.
 func GenOrderNo() string {
-	return fmt.Sprintf("O%d", NextID())
+	return fmt.Sprintf("O%d", GenID())
 }
