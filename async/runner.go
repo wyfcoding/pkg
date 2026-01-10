@@ -2,10 +2,16 @@ package async
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"sync"
+)
+
+var (
+	// ErrPanicRecovered 表示异步任务中恢复的 panic。
+	ErrPanicRecovered = errors.New("async task panic recovered")
 )
 
 // Runner 定义了安全的并发执行器接口。
@@ -50,7 +56,7 @@ func (r *defaultRunner) GoWithContext(ctx context.Context, fn func(ctx context.C
 }
 
 func (r *defaultRunner) logPanic(rec any) {
-	err := fmt.Errorf("panic: %v", rec) //nolint:err113 // Panic error is dynamic
+	err := fmt.Errorf("%w: %v", ErrPanicRecovered, rec)
 	stack := string(debug.Stack())
 	r.logger.Error("Async task panic recovered", "error", err, "stack", stack)
 }
