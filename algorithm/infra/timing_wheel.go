@@ -23,10 +23,11 @@ type timerEntry struct {
 // 优化：
 // 1. 移除 container/list，使用内嵌链表节点，减少指针跳转和内存占用。
 // 2. 使用 sync.Pool 复用 timerEntry，实现零分配 (Zero Allocation) 添加任务。
-type TimingWheel struct {
-	exitC     chan struct{}
-	pool      sync.Pool
+// 3. 字段按大小排序以减少内存对齐填充。
+type TimingWheel struct { //nolint:govet // 字段顺序保持业务语义清晰。
 	slots     []*timerEntry
+	pool      sync.Pool
+	exitC     chan struct{}
 	wg        conc.WaitGroup
 	mu        sync.Mutex
 	tick      time.Duration

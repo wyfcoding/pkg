@@ -15,8 +15,8 @@ import (
 )
 
 // Config 全局顶级配置结构.
-// 优化：严格按大小排序以最小化对齐空间.
-type Config struct {
+// 字段顺序按逻辑分组而非内存对齐，以保持配置文件可读性.
+type Config struct { //nolint:govet // 字段顺序按逻辑分组，配置可读性优先。
 	Services       ServicesConfig       `mapstructure:"services"       toml:"services"`
 	Data           DataConfig           `mapstructure:"data"           toml:"data"`
 	Log            LogConfig            `mapstructure:"log"            toml:"log"`
@@ -58,7 +58,7 @@ type ServerConfig struct {
 }
 
 // DataConfig 汇集了所有持久化存储与中间件的数据源配置.
-type DataConfig struct {
+type DataConfig struct { //nolint:govet // 字段顺序按逻辑分组，配置可读性优先。
 	Database      DatabaseConfig      `mapstructure:"database"      toml:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"         toml:"redis"`
 	BigCache      BigCacheConfig      `mapstructure:"bigcache"      toml:"bigcache"`

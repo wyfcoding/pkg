@@ -42,8 +42,9 @@ func cryptoNormFloat64() float64 {
 		if ts < 0 {
 			ts = -ts
 		}
-		binary.LittleEndian.PutUint64(b[:8], uint64(ts))
-		binary.LittleEndian.PutUint64(b[8:], uint64(ts))
+		// 安全：ts >= 0 已保证。
+		binary.LittleEndian.PutUint64(b[:8], uint64(ts)) //nolint:gosec // ts >= 0 已保证。
+		binary.LittleEndian.PutUint64(b[8:], uint64(ts)) //nolint:gosec // ts >= 0 已保证。
 	}
 	u1 := float64(binary.LittleEndian.Uint64(b[:8]))/float64(math.MaxUint64) + 1e-10
 	u2 := float64(binary.LittleEndian.Uint64(b[8:])) / float64(math.MaxUint64)

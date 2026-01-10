@@ -227,7 +227,8 @@ func (p *Processor) send(tx *gorm.DB, msg *Message) {
 		updates["status"] = StatusSent
 	} else {
 		// 指数退避重试。
-		retryCount := uint(uint32(msg.RetryCount) & 0x3F) // 最大支持 63 次重试 (G115).
+		// 安全：RetryCount 为正整数，位掩码限制最大重试次数。
+		retryCount := uint(msg.RetryCount) & 0x3F //nolint:gosec // 最大支持 63 次重试。
 		backoff := min(time.Duration(1<<retryCount)*time.Minute, 24*time.Hour)
 		updates["next_retry"] = time.Now().Add(backoff)
 		updates["last_error"] = err.Error()

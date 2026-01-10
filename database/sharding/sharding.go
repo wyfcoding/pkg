@@ -67,7 +67,8 @@ func (m *Manager) GetDB(key uint64) *gorm.DB {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	shardIndex := int(key % uint64(uint32(m.shardCount)))
+	// 安全转换：shardCount 始终为正且在初始化时受限于配置数量。
+	shardIndex := int(key % uint64(m.shardCount)) //nolint:gosec // shardCount > 0 且受配置约束。
 
 	return m.shards[shardIndex].RawDB()
 }

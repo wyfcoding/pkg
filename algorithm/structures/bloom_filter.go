@@ -58,7 +58,7 @@ func (bf *BloomFilter) Add(data []byte) {
 	defer bf.mu.Unlock()
 
 	h1, h2 := bf.getHashes(data)
-	for i := uint(0); i < bf.hashes; i++ {
+	for i := range bf.hashes {
 		idx := (h1 + i*h2) % bf.size
 		bf.bits[idx>>wordShift] |= (1 << (idx & wordMask))
 	}
@@ -70,7 +70,7 @@ func (bf *BloomFilter) Contains(data []byte) bool {
 	defer bf.mu.RUnlock()
 
 	h1, h2 := bf.getHashes(data)
-	for i := uint(0); i < bf.hashes; i++ {
+	for i := range bf.hashes {
 		idx := (h1 + i*h2) % bf.size
 		if bf.bits[idx>>wordShift]&(1<<(idx&wordMask)) == 0 {
 			return false

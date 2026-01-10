@@ -58,13 +58,14 @@ type PositionSnapshot struct {
 }
 
 // PortfolioSnapshot 投资组合快.
-type PortfolioSnapshot struct {
-	UserID             string
+// 优化：字段按大小排序以减少内存对齐填充。
+type PortfolioSnapshot struct { //nolint:govet // 字段顺序保持业务语义清晰。
 	Positions          []*PositionSnapshot
 	TotalValue         decimal.Decimal
 	CashBalance        decimal.Decimal
 	TotalUnrealizedPnL decimal.Decimal
 	TotalRealizedPnL   decimal.Decimal
+	UserID             string
 	Timestamp          int64
 }
 

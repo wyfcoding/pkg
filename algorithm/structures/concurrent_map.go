@@ -46,7 +46,8 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 
 	// 向上取整到最近的 2 的.
 	if (shardCount & (shardCount - 1)) != 0 {
-		sc := uint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF
+		// 安全：shardCount 为正数，且结果用于 2 的幂计算。
+		sc := uint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF //nolint:gosec // shardCount > 0 已保证。
 		shardCount = 1 << (64 - bits.LeadingZeros64(sc))
 	}
 
@@ -56,8 +57,9 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 
 	m := &ConcurrentMap[K, V]{
 		shards: make([]shard[K, V], shardCount),
-		mask:   uint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF,
-		hash:   hashFunc,
+		// 安全：shardCount 已调整为 2 的幂，且为正数。
+		mask: uint64(shardCount-1) & 0x7FFFFFFFFFFFFFFF, //nolint:gosec // shardCount > 0 已保证。
+		hash: hashFunc,
 	}
 	for i := range shardCount {
 		m.shards[i].items = make(map[K]V)

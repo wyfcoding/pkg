@@ -19,7 +19,8 @@ func RandomString(length int) string {
 			if ts < 0 {
 				ts = -ts
 			}
-			idx := uint64(ts) % uint64(len(charset))
+			// 安全：ts >= 0 已保证，用于字符集索引。
+			idx := uint64(ts) % uint64(len(charset)) //nolint:gosec // ts >= 0 已保证。
 			result[i] = charset[idx]
 		}
 		return string(result)

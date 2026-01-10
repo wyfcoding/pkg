@@ -2,7 +2,6 @@ package analytics
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -11,22 +10,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// AnalyticsWriter 提供了向 ClickHouse 批量写入数据的能力.
-type AnalyticsWriter struct {
+// Writer 提供了向 ClickHouse 批量写入数据的能力.
+type Writer struct {
 	db     *gorm.DB
 	logger *logging.Logger
 }
 
-// NewAnalyticsWriter 创建一个新的 AnalyticsWriter.
-func NewAnalyticsWriter(db *gorm.DB, logger *logging.Logger) *AnalyticsWriter {
-	return &AnalyticsWriter{
+// NewWriter 创建一个新的 Writer.
+func NewWriter(db *gorm.DB, logger *logging.Logger) *Writer {
+	return &Writer{
 		db:     db,
 		logger: logger,
 	}
 }
 
 // BatchInsert 批量插入数据到指定表.
-func (w *AnalyticsWriter) BatchInsert(ctx context.Context, table string, data any) error {
+func (w *Writer) BatchInsert(ctx context.Context, table string, data any) error {
 	start := time.Now()
 	err := w.db.WithContext(ctx).Table(table).Create(data).Error
 	duration := time.Since(start)
@@ -37,7 +36,7 @@ func (w *AnalyticsWriter) BatchInsert(ctx context.Context, table string, data an
 			slog.String("duration", duration.String()),
 			slog.Any("error", err),
 		)
-		return xerrors.WrapInternal(err, fmt.Sprintf("failed to insert data into %s", table))
+		return xerrors.WrapInternal(err, "failed to insert data into "+table)
 	}
 
 	w.logger.Info("successfully inserted data into ClickHouse",

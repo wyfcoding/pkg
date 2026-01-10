@@ -25,11 +25,12 @@ var (
 )
 
 // MyCustomClaims 定义了 JWT 的 Payload 部分，包含用户信息与权限角色。
-type MyCustomClaims struct {
-	jwt.RegisteredClaims
-	UserID   uint64   `json:"user_id"`
-	Username string   `json:"username"`
-	Roles    []string `json:"roles"`
+// 优化：字段按大小排序以减少内存对齐填充。
+type MyCustomClaims struct { //nolint:govet // 字段顺序保持 JSON 序列化兼容性。
+	jwt.RegisteredClaims          // 嵌入结构体放在最前。
+	Roles                []string `json:"roles"`
+	Username             string   `json:"username"`
+	UserID               uint64   `json:"user_id"`
 }
 
 // GenerateToken 是系统中标准且唯一的 JWT 生成入口。

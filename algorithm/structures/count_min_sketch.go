@@ -12,11 +12,6 @@ import (
 	"github.com/wyfcoding/pkg/xerrors"
 )
 
-var (
-// xerrors.ErrInvalidEpsilonDelta 无效的 epsilon 或 delta 参数.
-// xerrors.ErrDimMismatch 维度不匹配，无法合并.
-)
-
 // CountMinSketch 高性能概率数据结构.
 type CountMinSketch struct {
 	matrix []uint64
@@ -145,7 +140,8 @@ func getCMSHashes(data []byte) (h1, h2 uint32) {
 		h *= algomath.FnvPrime64
 	}
 
-	h1 = uint32(h)
-	h2 = uint32(h >> 32)
+	// 安全：这是标准的哈希拆分技术，截断是预期行为。
+	h1 = uint32(h)       //nolint:gosec // 哈希截断是设计意图。
+	h2 = uint32(h >> 32) //nolint:gosec // 哈希截断是设计意图。
 	return
 }

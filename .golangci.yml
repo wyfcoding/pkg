@@ -8,7 +8,6 @@ linters:
   disable:
     - tenv # 弃用
     - godox # 允许 TODO
-    - exhaustivestruct # 弃用
     - nonamedreturns # 允许命名返回值
     - nestif # 允许一定的嵌套
     - wrapcheck # 某些情况下外部错误不需要 wrap
@@ -33,7 +32,6 @@ linters:
     - forcetypeassert # Pool Get 等场景不需要
     - lll # 允许长行
     - forbidigo # 允许 fmt.Printf
-    - gomnd # 弃用
     - interfacebloat # 允许较大的接口
     - gomodguard # 允许依赖
     - depguard # 允许所有依赖

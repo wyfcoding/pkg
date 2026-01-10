@@ -146,10 +146,11 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 	if expiration > 0 {
 		var b [8]byte
 		if _, err := rand.Read(b[:]); err == nil {
-			mod := int64(uint64(expiration / 10))
+			mod := int64(expiration / 10)
 			if mod > 0 {
 				val := binary.LittleEndian.Uint64(b[:]) & 0x7FFFFFFFFFFFFFFF
-				jitter := time.Duration(uint64(val) % uint64(mod))
+				// 安全：val 和 mod 都是非负的，计算结果在 time.Duration 范围内。
+				jitter := time.Duration(val % uint64(mod)) //nolint:gosec // 已确保 mod > 0 且 val 非负。
 				expiration += jitter
 			}
 		}

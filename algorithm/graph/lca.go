@@ -18,7 +18,8 @@ func NewTreeLCA(root int, adj [][]int) *TreeLCA {
 
 	// 计算最大跳数的对数.
 	logN := 1
-	for (1 << uint32(logN)) < n {
+	// 安全：logN 不会超过 log2(n) + 1，对于合理的图大小远小于 uint32 范围。
+	for (1 << uint32(logN)) < n { //nolint:gosec // logN 范围安全。
 		logN++
 	}
 
@@ -79,7 +80,8 @@ func (lca *TreeLCA) GetLCA(u, v int) int {
 	// 1. 将 u 提升到与 v 同一深度。
 	diff := lca.depth[u] - lca.depth[v]
 	for i := range lca.logN {
-		shift := uint32(i & 0x1F)
+		// 安全：i 范围 [0, logN)，位移量安全。
+		shift := uint32(i & 0x1F) //nolint:gosec // i 范围安全。
 		if (diff & (1 << shift)) != 0 {
 			u = lca.up[u*lca.logN+i]
 		}

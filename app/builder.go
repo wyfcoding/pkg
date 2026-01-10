@@ -298,15 +298,13 @@ func (b *Builder) registerServers(cfg *config.Config, svc any, m *metrics.Metric
 
 func (b *Builder) registerAdminRoutes(engine *gin.Engine, cfg *config.Config, m *metrics.Metrics) {
 	sys := engine.Group("/sys")
-	{
-		sys.GET("/health", func(c *gin.Context) {
-			response.SuccessWithRawData(c, gin.H{
-				"status":    "UP",
-				"service":   b.serviceName,
-				"timestamp": time.Now().Unix(),
-			})
+	sys.GET("/health", func(c *gin.Context) {
+		response.SuccessWithRawData(c, gin.H{
+			"status":    "UP",
+			"service":   b.serviceName,
+			"timestamp": time.Now().Unix(),
 		})
-	}
+	})
 
 	if cfg.Metrics.Enabled && m != nil {
 		path := cfg.Metrics.Path

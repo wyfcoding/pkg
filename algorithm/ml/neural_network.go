@@ -49,15 +49,13 @@ func NewNeuralNetwork(layerSizes []int) (*NeuralNetwork, error) {
 			output:  make([]float64, layerSizes[i+1]),
 		}
 
-		if err := net.initializeWeights(i, layerSizes[i], layerSizes[i+1]); err != nil {
-			return nil, err
-		}
+		net.initializeWeights(i, layerSizes[i], layerSizes[i+1])
 	}
 
 	return net, nil
 }
 
-func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) error {
+func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) {
 	stdDev := math.Sqrt(2.0 / float64(rows+cols))
 
 	for i := range rows {
@@ -69,14 +67,12 @@ func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) error {
 				if ts < 0 {
 					ts = -ts
 				}
-				binary.LittleEndian.PutUint64(b[:], uint64(ts))
+				binary.LittleEndian.PutUint64(b[:], uint64(ts)) //nolint:gosec // ts >= 0 已保证。
 			}
 			rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)
 			nn.layers[layerIdx].weights[i][j] = (rv*2 - 1) * stdDev
 		}
 	}
-
-	return nil
 }
 
 // Forward 执行前向传播.

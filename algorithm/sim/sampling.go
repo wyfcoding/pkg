@@ -30,7 +30,8 @@ func (s *ReservoirSampler[T]) Observe(item T) {
 	} else {
 		var b [8]byte
 		_, _ = rand.Read(b[:])
-		j := int(binary.LittleEndian.Uint64(b[:]) % uint64(uint32(s.count)))
+		// 安全：count 为正数，用于随机选择索引。
+		j := int(binary.LittleEndian.Uint64(b[:]) % uint64(s.count)) //nolint:gosec // count > 0 已保证。
 		if j < s.k {
 			s.samples[j] = item
 		}

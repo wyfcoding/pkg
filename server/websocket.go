@@ -25,13 +25,14 @@ type Client struct {
 }
 
 // WSManager 管理所有活跃的 WebSocket 连.
+// 优化：字段按大小排序以减少内存对齐填充。
 type WSManager struct {
 	clients    map[*Client]bool
 	broadcast  chan BroadcastMessage
 	register   chan *Client
 	unregister chan *Client
-	mu         sync.RWMutex
 	logger     *slog.Logger
+	mu         sync.RWMutex
 }
 
 type BroadcastMessage struct {

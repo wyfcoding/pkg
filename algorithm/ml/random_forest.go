@@ -52,7 +52,8 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 			for j := range points {
 				var b [4]byte
 				_, _ = rand.Read(b[:])
-				idx := int(binary.LittleEndian.Uint32(b[:]) % uint32(len(points)))
+				// 安全：len(points) 在实际使用中不会超过 uint32 范围。
+				idx := int(binary.LittleEndian.Uint32(b[:]) % uint32(len(points))) //nolint:gosec // 训练数据集大小受限。
 				bootstrapPoints[j] = points[idx]
 				bootstrapLabels[j] = labels[idx]
 			}

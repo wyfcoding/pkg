@@ -92,7 +92,7 @@ func (dcp *DivideAndConquerProcessor) CountInversions() int64 {
 
 	arr := make([]int64, len(dcp.data)) // 创建一个副本进行处理。
 	copy(arr, dcp.data)
-	_, count := dcp.mergeSortCount(arr, 0, len(arr)-1) // 调用递归函数计算逆序对。
+	count := dcp.mergeSortCount(arr, 0, len(arr)-1) // 调用递归函数计算逆序对。
 
 	return count
 }
@@ -101,19 +101,19 @@ func (dcp *DivideAndConquerProcessor) CountInversions() int64 {
 // 它在合并两个有序子数组时，计算跨越两个子数组的逆序对。
 // arr: 待处理的切片。
 // left, right: 当前子数组的起始和结束索引。
-// 返回：处理后的切片（已排序）和逆序对的数量。
-func (dcp *DivideAndConquerProcessor) mergeSortCount(arr []int64, left, right int) (sorted []int64, count int64) {
+// 返回：逆序对的数量。
+func (dcp *DivideAndConquerProcessor) mergeSortCount(arr []int64, left, right int) int64 {
 	if left >= right {
-		return arr, 0 // 单个元素或空数组没有逆序对。
+		return 0 // 单个元素或空数组没有逆序对。
 	}
 
 	mid := (left + right) / 2
-	_, leftCount := dcp.mergeSortCount(arr, left, mid)     // 递归计算左半部分的逆序对。
-	_, rightCount := dcp.mergeSortCount(arr, mid+1, right) // 递归计算右半部分的逆序对。
+	leftCount := dcp.mergeSortCount(arr, left, mid)     // 递归计算左半部分的逆序对。
+	rightCount := dcp.mergeSortCount(arr, mid+1, right) // 递归计算右半部分的逆序对。
 
 	mergeCount := dcp.mergeCount(arr, left, mid, right) // 计算合并时产生的逆序对。
 
-	return arr, leftCount + rightCount + mergeCount // 返回总的逆序对数量。
+	return leftCount + rightCount + mergeCount // 返回总的逆序对数量。
 }
 
 // mergeCount 合并两个有序子数组，并计算合并过程中产生的逆序对数量。

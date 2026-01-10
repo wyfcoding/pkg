@@ -47,11 +47,14 @@ func NewSonyGenerator(cfg *Config) (*SonyGenerator, error) {
 		return nil, ErrInvalidMachineID
 	}
 
+	// 预计算 machineID 以避免在闭包中进行类型转换警告。
+	// 安全：MachineID 已在上方验证范围 [0, 65535]。
+	machineID := uint16(cfg.MachineID & 0xFFFF) //nolint:gosec // MachineID 已验证范围。
+
 	settings := sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: func() (uint16, error) {
-			// 使用 uint16 强制转换并配合位掩码以满足 G115。
-			return uint16(uint64(cfg.MachineID) & 0xFFFF), nil
+			return machineID, nil
 		},
 	}
 
@@ -71,8 +74,10 @@ func (g *SonyGenerator) NextID() (int64, error) {
 	for i := range maxRetries {
 		id, err := g.sf.NextID()
 		if err == nil {
-			// 显式转为 int64 并确保最高位为0，保持为正数 (G115).
-			return int64(id & 0x7FFFFFFFFFFFFFFF), nil
+			// 使用位掩码确保最高位为 0，产出正数 int64。
+			// 此转换是安全的：掩码后的值 <= math.MaxInt64。
+			masked := id & 0x7FFFFFFFFFFFFFFF
+			return int64(masked), nil //nolint:gosec // 已通过掩码确保范围安全。
 		}
 
 		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)

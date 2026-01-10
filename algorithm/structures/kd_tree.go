@@ -7,10 +7,6 @@ import (
 	"github.com/wyfcoding/pkg/xerrors"
 )
 
-var (
-// xerrors.ErrEmptyPoints 输入点集不能为空.
-)
-
 // KDPoint 多维空间中的一个点.
 type KDPoint struct {
 	Vector []float64
