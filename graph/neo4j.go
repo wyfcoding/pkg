@@ -4,20 +4,20 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/xerrors"
 )
 
 // Neo4jAdapter 封装了 Neo4j 驱动程序，提供常用的图查询能力.
 type Neo4jAdapter struct {
-	driver neo4j.DriverWithContext
+	driver neo4j.Driver
 	logger *logging.Logger
 }
 
 // NewNeo4jAdapter 初始化 Neo4j 适配器.
 func NewNeo4jAdapter(uri, username, password string, logger *logging.Logger) (*Neo4jAdapter, error) {
-	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(username, password, ""))
+	driver, err := neo4j.NewDriver(uri, neo4j.BasicAuth(username, password, ""))
 	if err != nil {
 		return nil, xerrors.WrapInternal(err, "failed to create neo4j driver")
 	}

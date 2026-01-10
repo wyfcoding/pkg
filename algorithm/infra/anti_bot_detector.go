@@ -17,9 +17,9 @@ type UserBehavior struct {
 }
 
 const (
-	reasonHighFreq    = "high_request_frequency"
-	reasonSuspicious  = "suspicious_pattern"
-	reasonAbnormalIP  = "abnormal_ip_activity"
+	reasonHighFreq = "high_request_frequency"
+	// reasonSuspicious  = "suspicious_pattern"
+	// reasonAbnormalIP  = "abnormal_ip_activity"
 	reasonDirectKill  = "direct_kill_without_view"
 	reasonRegularInt  = "regular_interval_detected"
 	reasonBadUA       = "abnormal_user_agent"
