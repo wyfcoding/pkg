@@ -36,7 +36,9 @@ type Config struct {
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
 type ServerConfig struct {
-	HTTP struct {
+	Name        string `mapstructure:"name"        toml:"name"        validate:"required"`
+	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
+	HTTP        struct {
 		Addr         string        `mapstructure:"addr"          toml:"addr"`
 		Timeout      time.Duration `mapstructure:"timeout"       toml:"timeout"`
 		ReadTimeout  time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
@@ -52,8 +54,6 @@ type ServerConfig struct {
 		MaxSendMsgSize       int           `mapstructure:"max_send_msg_size"      toml:"max_send_msg_size"`
 		MaxConcurrentStreams int           `mapstructure:"max_concurrent_streams" toml:"max_concurrent_streams"`
 	} `mapstructure:"grpc" toml:"grpc"`
-	Name        string `mapstructure:"name"        toml:"name"        validate:"required"`
-	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
 }
 
 // DataConfig 汇集了所有持久化存储与中间件的数据源配置.
@@ -74,9 +74,9 @@ type DatabaseConfig struct {
 	DSN             string          `mapstructure:"dsn"               toml:"dsn"               validate:"required"`
 	ConnMaxLifetime time.Duration   `mapstructure:"conn_max_lifetime"  toml:"conn_max_lifetime"`
 	SlowThreshold   time.Duration   `mapstructure:"slow_threshold"     toml:"slow_threshold"`
+	LogLevel        logger.LogLevel `mapstructure:"log_level"          toml:"log_level"`
 	MaxIdleConns    int             `mapstructure:"max_idle_conns"     toml:"max_idle_conns"`
 	MaxOpenConns    int             `mapstructure:"max_open_conns"     toml:"max_open_conns"`
-	LogLevel        logger.LogLevel `mapstructure:"log_level"          toml:"log_level"`
 }
 
 // RedisConfig 定义 Redis 连接与池化参数.
@@ -111,8 +111,8 @@ type JWTConfig struct {
 
 // SnowflakeConfig 雪花算法分布式 ID 生成器参数.
 type SnowflakeConfig struct {
-	Type      string `mapstructure:"type"       toml:"type"`
 	StartTime string `mapstructure:"start_time" toml:"start_time"`
+	Type      string `mapstructure:"type"       toml:"type"`
 	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"`
 }
 
@@ -171,7 +171,7 @@ type RateLimitConfig struct {
 // CircuitBreakerConfig 定义熔断器（如 Gobreaker）的保护策略.
 type CircuitBreakerConfig struct {
 	Interval    time.Duration `mapstructure:"interval"     toml:"interval"`
-	Timeout     time.Duration `mapstructure:"timeout"      toml:"timeout"`
+	Timeout     time.Duration `mapstructure:"timeout"      timeout"`
 	MaxRequests uint32        `mapstructure:"max_requests" toml:"max_requests"`
 	Enabled     bool          `mapstructure:"enabled"      toml:"enabled"`
 }
@@ -239,9 +239,9 @@ type Neo4jConfig struct {
 
 // ElasticsearchConfig 定义搜索引擎集群连接参数.
 type ElasticsearchConfig struct {
+	Addresses []string `mapstructure:"addresses" toml:"addresses"`
 	Username  string   `mapstructure:"username"  toml:"username"`
 	Password  string   `mapstructure:"password"  toml:"password"`
-	Addresses []string `mapstructure:"addresses" toml:"addresses"`
 }
 
 var vInstance = viper.New()

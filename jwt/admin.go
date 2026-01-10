@@ -46,14 +46,14 @@ func ParseAdminToken(tokenString, secretKey string) (*AdminClaims, error) {
 			return nil, ErrTokenMalformed
 		}
 		if errors.Is(err, jwt.ErrTokenExpired) || errors.Is(err, jwt.ErrTokenNotValidYet) {
-			return nil, ErrTokenExpired
+			return nil, ErrExpiredToken
 		}
-		return nil, ErrTokenInvalid
+		return nil, ErrInvalidToken
 	}
 
 	if claims, ok := token.Claims.(*AdminClaims); ok && token.Valid {
 		return claims, nil
 	}
 
-	return nil, ErrTokenInvalid
+	return nil, ErrInvalidToken
 }

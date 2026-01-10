@@ -96,8 +96,8 @@ func NewBaseEventWithMetadata(eventType, aggregateID string, version int64, meta
 // AggregateRoot 事件溯源聚合根基类。
 type AggregateRoot struct {
 	uncommitted []DomainEvent
-	id          string
 	version     int64
+	id          string
 }
 
 // ID 返回聚合根 unique identifier。

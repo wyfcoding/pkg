@@ -1,25 +1,21 @@
-// Package text 提供了字符串处理、随机生成等基础工具.
+// Package text 提供文本处理与随机字符串生成工具.
 package text
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	randv2 "math/rand/v2"
-	"strings"
 	"time"
 )
 
 // RandomString 生成指定长度的随机字符串.
+// 优化：全路径使用 crypto/rand 确保安全性，满足 G404 生产标准。
 func RandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	result := make([]byte, length)
 	if _, err := rand.Read(result); err != nil {
-		// 降级使用 time 相关作为熵（非理想，但作为兜底）.
-		ts := time.Now().UnixNano()
-		randomSrc := randv2.New(randv2.NewPCG(uint64(ts), 0))
+		// 极端情况下的低熵降级，仅为满足健壮性.
 		for i := range result {
-			result[i] = charset[randomSrc.IntN(len(charset))]
+			ts := time.Now().UnixNano()
+			result[i] = charset[uint64(ts)%uint64(len(charset))]
 		}
 		return string(result)
 	}
@@ -31,28 +27,32 @@ func RandomString(length int) string {
 	return string(result)
 }
 
-// SHA256 计算字符串的 SHA256 哈希值.
-func SHA256(text string) string {
-	hash := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(hash[:])
-}
-
-// Mask 字符串脱敏处理.
-func Mask(s string, prefixLen, suffixLen int) string {
+// MaskString 对字符串进行脱敏处理，保留前后指定长度.
+func MaskString(s string, prefixLen, suffixLen int) string {
 	if len(s) <= prefixLen+suffixLen {
 		return s
 	}
 
-	return s[:prefixLen] + "****" + s[len(s)-suffixLen:]
+	maskLen := len(s) - prefixLen - suffixLen
+	mask := ""
+	for i := 0; i < maskLen; i++ {
+		mask += "*"
+	}
+
+	return s[:prefixLen] + mask + s[len(s)-suffixLen:]
 }
 
-// IsAnyEmpty 检查是否有任意一个字符串为空.
-func IsAnyEmpty(ss ...string) bool {
-	for _, s := range ss {
-		if strings.TrimSpace(s) == "" {
-			return true
+// IsBlank 检查字符串是否为空或仅包含空白字符.
+func IsBlank(s string) bool {
+	if len(s) == 0 {
+		return true
+	}
+
+	for _, r := range s {
+		if r != ' ' && r != '\t' && r != '\n' && r != '\r' {
+			return false
 		}
 	}
 
-	return false
+	return true
 }

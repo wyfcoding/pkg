@@ -4,6 +4,7 @@ package xerrors
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"runtime"
 
@@ -164,7 +165,13 @@ func Wrap(err error, errType ErrorType, msg string) *Error {
 		return e
 	}
 
-	errCode := uint32(errType)
+	// 显式范围检查以消除 G115.
+	var errCode uint32
+	if uint64(errType) <= math.MaxUint32 {
+		errCode = uint32(errType)
+	} else {
+		errCode = uint32(ErrUnknown)
+	}
 	return New(errType, int(errCode), msg, "", err)
 }
 
@@ -228,7 +235,7 @@ func (e *Error) ToGRPCStatus() *status.Status {
 	return status.New(e.GRPCCode(), e.Message)
 }
 
-// FromError 尝试从 error 类型转换回 *Error.
+// FromError 尝试 from error 类型转换回 *Error.
 func FromError(err error) (*Error, bool) {
 	if err == nil {
 		return nil, false
