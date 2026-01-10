@@ -81,7 +81,7 @@ func (c *MinIOClient) GetPresignedURL(ctx context.Context, objectName string, ex
 
 // --- 修复后的分片上传实现 ---
 
-func (c *MinIOClient) InitiateMultipartUpload(ctx context.Context, objectName string, contentType string) (string, error) {
+func (c *MinIOClient) InitiateMultipartUpload(ctx context.Context, objectName, contentType string) (string, error) {
 	// 使用 core.NewMultipartUpload 修复错误。
 	uploadID, err := c.core.NewMultipartUpload(ctx, c.bucket, objectName, minio.PutObjectOptions{
 		ContentType: contentType,
@@ -102,7 +102,7 @@ func (c *MinIOClient) UploadPart(ctx context.Context, objectName, uploadID strin
 }
 
 func (c *MinIOClient) CompleteMultipartUpload(ctx context.Context, objectName, uploadID string, parts []Part) error {
-	var minioParts []minio.CompletePart
+	minioParts := make([]minio.CompletePart, 0, len(parts))
 	for _, p := range parts {
 		minioParts = append(minioParts, minio.CompletePart{
 			PartNumber: p.PartNumber,

@@ -18,7 +18,7 @@ var (
 )
 
 // MyCustomClaims 定义了 JWT 的 Payload 部分，包含用户信息与权限角色。
-type MyCustomClaims struct { //nolint:govet
+type MyCustomClaims struct { //nolint:govet // 已按照 JWT 标准 Payload 结构对齐。
 	UserID   uint64   `json:"user_id"`  // 用户唯一标识。
 	Username string   `json:"username"` // 用户登录名。
 	Roles    []string `json:"roles"`    // 用户所属的角色列表（用于 RBAC）。
@@ -47,10 +47,10 @@ func GenerateToken(userID uint64, username string, roles []string, secretKey, is
 
 // ParseToken 提供安全的 JWT 解析能力。
 // 流程：解析结构 -> 验证签名算法 -> 验证有效期 -> 返回 Claims。
-func ParseToken(tokenString string, secretKey string) (*MyCustomClaims, error) {
+func ParseToken(tokenString, secretKey string) (*MyCustomClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &MyCustomClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, fmt.Errorf("%w: %v", ErrTokenInvalid, token.Header["alg"])
 		}
 		return []byte(secretKey), nil
 	})

@@ -39,7 +39,7 @@ func RateLimitWithLimiter(l limiter.Limiter) gin.HandlerFunc {
 }
 
 // NewDistributedRateLimitMiddleware 创建 Redis 分布式限流中间件.
-func NewDistributedRateLimitMiddleware(client *redis.Client, rateLimit int, _ int) gin.HandlerFunc {
+func NewDistributedRateLimitMiddleware(client *redis.Client, rateLimit, _ int) gin.HandlerFunc {
 	l := limiter.NewRedisLimiter(client, rateLimit, time.Second)
 
 	return RateLimitWithLimiter(l)

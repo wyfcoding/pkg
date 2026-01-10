@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -26,20 +25,22 @@ type timerEntry struct {
 type TimingWheel struct {
 	slots     []*timerEntry // 槽位链表头数组。
 	exitC     chan struct{}
-	tick      time.Duration // 每一格的时间跨度。
-	interval  time.Duration // 一圈的总时间。
+	pool      sync.Pool // 对象池。
 	wg        conc.WaitGroup
 	mu        sync.Mutex
-	pool      sync.Pool // 对象池。
-	wheelSize int       // 槽位数量。
-	current   int       // 当前指针位置。
+	tick      time.Duration // 每一格的时间跨度。
+	interval  time.Duration // 一圈的总时间。
+	wheelSize int           // 槽位数量。
+	current   int           // 当前指针位置。
 	running   bool
 }
+
+//nolint:govet // 已按指针对齐优化。
 
 // NewTimingWheel 创建一个新的时间.
 func NewTimingWheel(tick time.Duration, wheelSize int) (*TimingWheel, error) {
 	if tick <= 0 || wheelSize <= 0 {
-		return nil, errors.New("tick and wheelSize must be positive")
+		return nil, ErrInvalidConfig
 	}
 
 	return &TimingWheel{
@@ -98,14 +99,14 @@ func (tw *TimingWheel) Stop() {
 // AddTask 添加一个延迟任务。
 func (tw *TimingWheel) AddTask(delay time.Duration, task TimerTask) error {
 	if delay < 0 {
-		return errors.New("delay must be non-negative")
+		return ErrInvalidDelay
 	}
 
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
 	if !tw.running {
-		return errors.New("timing wheel is not running")
+		return ErrNotRunning
 	}
 
 	// 计算需要转多少圈。

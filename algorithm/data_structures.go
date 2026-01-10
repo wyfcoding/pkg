@@ -74,9 +74,9 @@ type PortfolioSnapshot struct {
 type SettlementBatch struct {
 	Trades      []*TradeSettlement
 	CompletedAt *int64
+	CreatedAt   int64
 	BatchID     string
 	Status      string
-	CreatedAt   int64
 }
 
 // TradeSettlement 交易清算记.
@@ -255,11 +255,11 @@ type SymbolInfo struct {
 // ExchangeInfo 交易所信.
 type ExchangeInfo struct {
 	TradingDays      []string
-	Name             string
-	Timezone         string
 	TradingStartTime int64
 	TradingEndTime   int64
 	UpdatedAt        int64
+	Name             string
+	Timezone         string
 }
 
 // AssetInfo 资产信.

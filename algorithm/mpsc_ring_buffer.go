@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"errors"
 	"log/slog"
 	"runtime"
 	"sync/atomic"
@@ -25,7 +24,7 @@ type MpscRingBuffer[T any] struct {
 func NewMpscRingBuffer[T any](capacity uint64) (*MpscRingBuffer[T], error) {
 	if capacity == 0 || (capacity&(capacity-1)) != 0 {
 		slog.Error("MpscRingBuffer initialization failed: capacity must be a power of 2", "capacity", capacity)
-		return nil, errors.New("capacity must be a power of 2")
+		return nil, ErrCapacityPowerOf2
 	}
 
 	slog.Info("MpscRingBuffer initialized", "capacity", capacity)

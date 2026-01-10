@@ -3,12 +3,20 @@ package ruleengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
+)
+
+var (
+	// ErrRuleNotFound 规则未找到。
+	ErrRuleNotFound = errors.New("rule not found")
+	// ErrInvalidRuleOutput 规则输出类型错误。
+	ErrInvalidRuleOutput = errors.New("rule output type invalid")
 )
 
 // Result 定义了单条规则执行的结果。
@@ -68,7 +76,7 @@ func (e *Engine) Execute(_ context.Context, ruleID string, facts map[string]any)
 	e.mu.RUnlock()
 
 	if !exists || !ruleExists {
-		return Result{}, fmt.Errorf("rule [%s] not found", ruleID)
+		return Result{}, fmt.Errorf("%w: rule [%s]", ErrRuleNotFound, ruleID)
 	}
 
 	output, err := expr.Run(program, facts)
@@ -78,7 +86,7 @@ func (e *Engine) Execute(_ context.Context, ruleID string, facts map[string]any)
 
 	passed, ok := output.(bool)
 	if !ok {
-		return Result{}, fmt.Errorf("rule [%s] output is not boolean (got %T)", ruleID, output)
+		return Result{}, fmt.Errorf("%w: rule [%s] output is not boolean (got %T)", ErrInvalidRuleOutput, ruleID, output)
 	}
 
 	return Result{

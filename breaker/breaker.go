@@ -16,7 +16,7 @@ var (
 )
 
 // Breaker 封装了 gobreaker 实例，集成了 Prometheus 指标监控。
-type Breaker struct { //nolint:govet
+type Breaker struct {
 	circuitBreaker *gobreaker.CircuitBreaker
 	metrics        *prometheus.GaugeVec
 }
@@ -57,7 +57,7 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 		},
 	}
 
-	metricsVec := m.NewGaugeVec(prometheus.GaugeOpts{
+	metricsVec := m.NewGaugeVec(&prometheus.GaugeOpts{
 		Name: "circuit_breaker_state",
 		Help: "Circuit breaker state (1: Closed, 2: Open, 3: Half-Open)",
 	}, []string{"name"})

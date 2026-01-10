@@ -85,7 +85,7 @@ func (bf *BloomFilter) Contains(data []byte) bool {
 	return true
 }
 
-func (bf *BloomFilter) getHashes(data []byte) (uint, uint) {
+func (bf *BloomFilter) getHashes(data []byte) (h1, h2 uint) {
 	var h uint64 = fnvOffset64
 	for _, b := range data {
 		h ^= uint64(b)

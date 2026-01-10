@@ -37,6 +37,8 @@ func (l *LocalLimiter) Allow(_ context.Context, _ string) (bool, error) {
 }
 
 // redisTokenBucketScript 是经过优化的 Redis Lua 脚本。
+//
+//nolint:gosec // 这是一个 Lua 脚本，不包含硬编码的凭据。
 const redisTokenBucketScript = `
 local key = KEYS[1]
 local rate = tonumber(ARGV[1])

@@ -90,7 +90,7 @@ func (c *BigCache) Exists(_ context.Context, key string) (bool, error) {
 		return true, nil
 	}
 
-	if err == bigcache.ErrEntryNotFound {
+	if errors.Is(err, bigcache.ErrEntryNotFound) {
 		return false, nil
 	}
 

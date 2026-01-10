@@ -3,6 +3,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -35,23 +36,23 @@ func NewMetrics(serviceName string) *Metrics {
 
 	metricsInstance := &Metrics{registry: reg}
 
-	metricsInstance.HTTPRequestsTotal = metricsInstance.NewCounterVec(prometheus.CounterOpts{
+	metricsInstance.HTTPRequestsTotal = metricsInstance.NewCounterVec(&prometheus.CounterOpts{
 		Name: "http_server_requests_total",
 		Help: "Total number of HTTP requests",
 	}, []string{"method", "path", "status"})
 
-	metricsInstance.HTTPRequestDuration = metricsInstance.NewHistogramVec(prometheus.HistogramOpts{
+	metricsInstance.HTTPRequestDuration = metricsInstance.NewHistogramVec(&prometheus.HistogramOpts{
 		Name:    "http_server_request_duration_seconds",
 		Help:    "HTTP request latency in seconds",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
-	metricsInstance.GRPCRequestsTotal = metricsInstance.NewCounterVec(prometheus.CounterOpts{
+	metricsInstance.GRPCRequestsTotal = metricsInstance.NewCounterVec(&prometheus.CounterOpts{
 		Name: "grpc_server_requests_total",
 		Help: "Total number of gRPC requests",
 	}, []string{"service", "method", "status"})
 
-	metricsInstance.GRPCRequestDuration = metricsInstance.NewHistogramVec(prometheus.HistogramOpts{
+	metricsInstance.GRPCRequestDuration = metricsInstance.NewHistogramVec(&prometheus.HistogramOpts{
 		Name:    "grpc_server_request_duration_seconds",
 		Help:    "gRPC request latency in seconds",
 		Buckets: prometheus.DefBuckets,
@@ -63,24 +64,24 @@ func NewMetrics(serviceName string) *Metrics {
 }
 
 // NewCounterVec 创建并注册一个新的计数器指标。
-func (m *Metrics) NewCounterVec(opts prometheus.CounterOpts, labelNames []string) *prometheus.CounterVec {
-	counterVec := prometheus.NewCounterVec(opts, labelNames)
+func (m *Metrics) NewCounterVec(opts *prometheus.CounterOpts, labelNames []string) *prometheus.CounterVec {
+	counterVec := prometheus.NewCounterVec(*opts, labelNames)
 	m.registry.MustRegister(counterVec)
 
 	return counterVec
 }
 
 // NewGaugeVec 创建并注册一个新的仪表盘指标。
-func (m *Metrics) NewGaugeVec(opts prometheus.GaugeOpts, labelNames []string) *prometheus.GaugeVec {
-	gaugeVec := prometheus.NewGaugeVec(opts, labelNames)
+func (m *Metrics) NewGaugeVec(opts *prometheus.GaugeOpts, labelNames []string) *prometheus.GaugeVec {
+	gaugeVec := prometheus.NewGaugeVec(*opts, labelNames)
 	m.registry.MustRegister(gaugeVec)
 
 	return gaugeVec
 }
 
 // NewHistogramVec 创建并注册一个新的直方图指标。
-func (m *Metrics) NewHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
-	histogramVec := prometheus.NewHistogramVec(opts, labelNames)
+func (m *Metrics) NewHistogramVec(opts *prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
+	histogramVec := prometheus.NewHistogramVec(*opts, labelNames)
 	m.registry.MustRegister(histogramVec)
 
 	return histogramVec
@@ -93,7 +94,7 @@ func (m *Metrics) Handler() http.Handler {
 
 // ExposeHTTP 在指定端口启动一个独立的 HTTP 服务器用于暴露指标数据。
 // 返回一个清理函数用于优雅关闭该服务器。
-func (m *Metrics) ExposeHTTP(port string) func() {
+func (m *Metrics) ExposeHTTP(port string) (stop func()) {
 	server := &http.Server{
 		Addr:              ":" + port,
 		Handler:           m.Handler(),
@@ -101,7 +102,7 @@ func (m *Metrics) ExposeHTTP(port string) func() {
 	}
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("metrics server error", "error", err)
 		}
 	}()

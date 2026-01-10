@@ -18,7 +18,7 @@ var (
 )
 
 // InMemCommandBus 高性能内存命令总线实现.
-type InMemCommandBus struct { //nolint:govet
+type InMemCommandBus struct {
 	handlers map[string]func(context.Context, Command) error
 	mu       sync.RWMutex
 }
@@ -96,7 +96,7 @@ func (b *InMemCommandBus) Dispatch(ctx context.Context, cmd Command) error {
 }
 
 // InMemQueryBus 高性能内存查询总线实现.
-type InMemQueryBus struct { //nolint:govet
+type InMemQueryBus struct {
 	handlers map[string]func(context.Context, Query) (any, error)
 	mu       sync.RWMutex
 }

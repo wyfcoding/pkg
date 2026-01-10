@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -38,7 +39,7 @@ func (s *GinServer) Start(ctx context.Context) error {
 	errChan := make(chan error, 1)
 
 	go func() {
-		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- err
 		}
 	}()
@@ -48,7 +49,7 @@ func (s *GinServer) Start(ctx context.Context) error {
 		s.logger.Info("gin server stopping due to context cancellation")
 
 		const shutdownTimeout = 5 * time.Second
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout) //nolint:contextcheck // 这里的 shutdown 必须使用全新的上下文。
 		defer cancel()
 
 		return s.server.Shutdown(shutdownCtx)
@@ -63,7 +64,7 @@ func (s *GinServer) Stop(_ context.Context) error {
 	s.logger.Info("stopping gin server gracefully")
 
 	const shutdownTimeout = 5 * time.Second
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout) //nolint:contextcheck // 这里的 shutdown 必须使用全新的上下文。
 	defer cancel()
 
 	return s.server.Shutdown(shutdownCtx)

@@ -15,7 +15,7 @@ const (
 )
 
 // Assessment 描述了单次风控评估的详细结论。
-type Assessment struct { //nolint:govet
+type Assessment struct { //nolint:govet // 风险评估结果结构，已优化对齐。
 	Level  Level  `json:"level"`  // 最终判定等.
 	Code   string `json:"code"`   // 命中的风险分类代码 (如: "RISK_GEO_IP_MISMATCH".
 	Reason string `json:"reason"` // 风险命中的详细原因说.

@@ -67,95 +67,77 @@ func (g *MinCostMaxFlowGraph) AddEdge(from, to string, capacity, c int64) {
 	})
 }
 
+// spfa 寻找最短增广路.
+func (g *MinCostMaxFlowGraph) spfa(sID, tID int, dist []int64, parent []int, parentEdge []int) bool {
+	n := len(g.adj)
+	inQueue := make([]bool, n)
+	queue := make([]int, 0, n)
+
+	for i := range n {
+		dist[i] = math.MaxInt64
+	}
+
+	dist[sID] = 0
+	queue = append(queue, sID)
+	inQueue[sID] = true
+
+	for len(queue) > 0 {
+		u := queue[0]
+		queue = queue[1:]
+		inQueue[u] = false
+
+		for i, e := range g.adj[u] {
+			if e.cap > e.flow && dist[e.to] > dist[u]+e.cost {
+				dist[e.to] = dist[u] + e.cost
+				parent[e.to] = u
+				parentEdge[e.to] = i
+				if !inQueue[e.to] {
+					queue = append(queue, e.to)
+					inQueue[e.to] = true
+				}
+			}
+		}
+	}
+
+	return dist[tID] != math.MaxInt64
+}
+
 // MinCostMaxFlow 算法实现了最小成本最大流问题。
 func (g *MinCostMaxFlowGraph) MinCostMaxFlow(source, sink string, maxFlow int64) (int64, int64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// 检查源点和汇点是否存.
 	sID, ok1 := g.nodeID[source]
 	tID, ok2 := g.nodeID[sink]
 	if !ok1 || !ok2 {
 		return 0, 0
 	}
 
-	totalFlow := int64(0)
-	totalCost := int64(0)
+	var totalFlow, totalCost int64
 	n := len(g.adj)
-
-	// SPFA 辅助数组 (避免每次分配，但这里简单起见每次分配，或者可以像 mcmf.go 那样优化复用.
-	// 鉴于图大小不定，且 MinCostMaxFlow 调用频率可能不高，直接分配即可。
-	// 若追求极致，可作为成员变量缓存。
 	dist := make([]int64, n)
-	parentEdge := make([]int, n) // 记录前驱边在 adj[parent[v]] 中的索.
-	parent := make([]int, n)     // 记录前驱节.
-	inQueue := make([]bool, n)
-	queue := make([]int, 0, n)
+	parentEdge := make([]int, n)
+	parent := make([]int, n)
 
 	for totalFlow < maxFlow {
-		// --- SPFA --.
-		for i := range n {
-			dist[i] = math.MaxInt64
-			inQueue[i] = false
-		}
-		queue = queue[:0]
-
-		dist[sID] = 0
-		queue = append(queue, sID)
-		inQueue[sID] = true
-
-		for len(queue) > 0 {
-			u := queue[0]
-			queue = queue[1:]
-			inQueue[u] = false
-
-			for i, e := range g.adj[u] {
-				if e.cap > e.flow && dist[e.to] > dist[u]+e.cost {
-					dist[e.to] = dist[u] + e.cost
-					parent[e.to] = u
-					parentEdge[e.to] = i
-					if !inQueue[e.to] {
-						queue = append(queue, e.to)
-						inQueue[e.to] = true
-					}
-				}
-			}
-		}
-
-		if dist[tID] == math.MaxInt64 {
+		if !g.spfa(sID, tID, dist, parent, parentEdge) {
 			break
 		}
 
-		// 寻找瓶颈容.
 		pathFlow := maxFlow - totalFlow
-		curr := tID
-		for curr != sID {
-			p := parent[curr]
-			idx := parentEdge[curr]
-			e := g.adj[p][idx]
-			if e.cap-e.flow < pathFlow {
-				pathFlow = e.cap - e.flow
+		for curr := tID; curr != sID; curr = parent[curr] {
+			if f := g.adj[parent[curr]][parentEdge[curr]].cap - g.adj[parent[curr]][parentEdge[curr]].flow; f < pathFlow {
+				pathFlow = f
 			}
-			curr = p
 		}
 
-		// 更新流.
-		curr = tID
-		for curr != sID {
+		for curr := tID; curr != sID; curr = parent[curr] {
 			p := parent[curr]
 			idx := parentEdge[curr]
-
-			// 正向.
 			g.adj[p][idx].flow += pathFlow
 			totalCost += pathFlow * g.adj[p][idx].cost
-
-			// 反向.
-			revIdx := g.adj[p][idx].rev
-			g.adj[curr][revIdx].flow -= pathFlow
-
-			curr = p
+			g.adj[curr][g.adj[p][idx].rev].flow -= pathFlow
 		}
-
 		totalFlow += pathFlow
 	}
 

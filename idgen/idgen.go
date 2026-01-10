@@ -24,6 +24,8 @@ var (
 	ErrCreateNode = errors.New("failed to create snowflake node")
 	// ErrCreateSonyflake 创建 Sonyflake 实例失败.
 	ErrCreateSonyflake = errors.New("failed to create sonyflake instance")
+	// ErrInvalidMachineID 错误的机器 ID.
+	ErrInvalidMachineID = errors.New("machine_id must be between 0 and 65535")
 )
 
 const (
@@ -89,13 +91,13 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 	}
 
 	if cfg.MachineID < 0 || cfg.MachineID > 65535 {
-		return nil, errors.New("machine_id must be between 0 and 65535")
+		return nil, ErrInvalidMachineID
 	}
 
 	settings := sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: func() (uint16, error) {
-			return uint16(cfg.MachineID), nil
+			return uint16(cfg.MachineID), nil //nolint:gosec // 已在上方检查范围.
 		},
 	}
 

@@ -13,9 +13,9 @@ type SVMPoint struct {
 
 // SVM 结构体实现了支持向量机分类器，支持线性与 RBF 核。
 type SVM struct {
-	mu      sync.RWMutex
 	weights []float64
 	kernel  string // "linear" 或 "rbf"
+	mu      sync.RWMutex
 	bias    float64
 	gamma   float64 // RBF 专用参数
 }

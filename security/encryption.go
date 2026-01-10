@@ -6,8 +6,14 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
+)
+
+var (
+	// ErrCiphertextTooShort 密文长度不足。
+	ErrCiphertextTooShort = errors.New("ciphertext too short")
 )
 
 // GenerateRandomKey 生成加密安全的随机密钥。
@@ -21,7 +27,7 @@ func GenerateRandomKey(length int) ([]byte, error) {
 }
 
 // Encrypt 使用 AES-GCM 算法加密数据。
-func Encrypt(plaintext []byte, key []byte) (string, error) {
+func Encrypt(plaintext, key []byte) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cipher block: %w", err)
@@ -61,7 +67,7 @@ func Decrypt(ciphertextStr string, key []byte) ([]byte, error) {
 
 	nonceSize := aesGCM.NonceSize()
 	if len(data) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
+		return nil, ErrCiphertextTooShort
 	}
 
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]

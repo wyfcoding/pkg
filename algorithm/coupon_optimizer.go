@@ -210,7 +210,9 @@ func (co *CouponOptimizer) GreedyOptimization(
 
 	for _, cd := range discounts {
 		// 尝试添加当前优惠券到已选择的列表中。
-		testCombination := append(selected, cd.coupon)
+		testCombination := make([]Coupon, len(selected), len(selected)+1)
+		copy(testCombination, selected)
+		testCombination = append(testCombination, cd.coupon)
 
 		// 检查加入此优惠券后的组合是否合法。
 		if co.isValidCombination(testCombination) {

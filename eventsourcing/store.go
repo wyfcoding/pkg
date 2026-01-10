@@ -51,7 +51,7 @@ type SnapshotStrategy interface {
 }
 
 // DefaultSnapshotStrategy 默认快照策略（基于版本间隔）。
-type DefaultSnapshotStrategy struct { //nolint:govet
+type DefaultSnapshotStrategy struct {
 	Interval int64
 }
 

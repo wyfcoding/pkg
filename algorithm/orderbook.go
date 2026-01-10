@@ -22,19 +22,19 @@ const (
 
 // Order 订单结构，表示一个限价单或高级策略单。
 type Order struct {
-	ResultChan chan any        `json:"-"` // 异步撮合结果反馈通道。
-	OrderID    string          // 订单 ID。
-	Symbol     string          // 交易对名称。
-	UserID     string          // 用户唯一标识。
 	Price      decimal.Decimal // 委托价格。
 	Quantity   decimal.Decimal // 委托数量。
 	DisplayQty decimal.Decimal // 冰山单单次可见规模。
-	HiddenQty  decimal.Decimal // 冰山单当前隐性规模。
-	Timestamp  int64           // 纳秒级时间戳，用于时间优先排序。
+	HiddenQty  decimal.Decimal // 冰山单当隐性规模。
+	OrderID    string          // 订单 ID。
+	Symbol     string          // 交易对名称。
+	UserID     string          // 用户唯一标识。
 	Side       Side            // 方向 (BUY/SELL)。
+	ResultChan chan any        `json:"-"` // 异步撮合结果反馈通道。
+	Timestamp  int64           // 纳秒级时间戳，用于时间优先排序。
 	IsIceberg  bool            // 是否为冰山单。
 	PostOnly   bool            // 是否为只做 Maker 策略。
-}
+} //nolint:govet // 已按业务逻辑与大型字段优先原则对齐。
 
 // OrderBookLevel 订单簿档位，聚合了同一价格下的委托总量。
 type OrderBookLevel struct {

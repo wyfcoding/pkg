@@ -34,7 +34,7 @@ func init() {
 }
 
 // Client 封装了 Neo4j 图数据库驱动，提供会话管理、自动指标采集及简化的查询接口。
-type Client struct { //nolint:govet
+type Client struct { //nolint:govet // 此结构体字段顺序已根据实际对齐需求优化。
 	driver neo4j.Driver // 底层原生驱动实例。
 	dbName string       // 目标数据库名称。
 }

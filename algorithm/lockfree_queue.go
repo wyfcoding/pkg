@@ -59,20 +59,20 @@ func (q *LockFreeQueue) Push(item any) bool {
 	for {
 		s = &q.slots[pos&q.mask]
 		seq := atomic.LoadUint32(&s.sequence)
-		diff := int32(seq) - int32(pos)
-
-		if diff == 0 {
+		diff := int32(seq) - int32(pos) //nolint:gosec // 环形索引差值安全。
+		switch {
+		case diff == 0:
 			if atomic.CompareAndSwapUint32(&q.tail, pos, pos+1) {
-				break
+				goto breakOuter
 			}
-		} else if diff < 0 {
-			// 队列已.
+		case diff < 0:
 			return false
-		} else {
+		default:
 			pos = atomic.LoadUint32(&q.tail)
 		}
 		runtime.Gosched() // 让出 CPU，降低忙等压.
 	}
+breakOuter:
 
 	s.item = item
 	atomic.StoreUint32(&s.sequence, pos+1)
@@ -87,20 +87,20 @@ func (q *LockFreeQueue) Pop() (any, bool) {
 	for {
 		s = &q.slots[pos&q.mask]
 		seq := atomic.LoadUint32(&s.sequence)
-		diff := int32(seq) - int32(pos+1)
-
-		if diff == 0 {
+		diff := int32(seq) - int32(pos+1) //nolint:gosec // 环形索引差值安全。
+		switch {
+		case diff == 0:
 			if atomic.CompareAndSwapUint32(&q.head, pos, pos+1) {
-				break
+				goto breakOuterPop
 			}
-		} else if diff < 0 {
-			// 队列为.
+		case diff < 0:
 			return nil, false
-		} else {
+		default:
 			pos = atomic.LoadUint32(&q.head)
 		}
 		runtime.Gosched()
 	}
+breakOuterPop:
 
 	item := s.item
 	s.item = nil

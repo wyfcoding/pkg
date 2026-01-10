@@ -46,7 +46,7 @@ func init() {
 	prometheus.MustRegister(redisOps, redisDuration)
 }
 
-type metricsHook struct { //nolint:govet
+type metricsHook struct {
 	addr string
 }
 

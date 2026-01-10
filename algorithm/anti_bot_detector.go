@@ -59,7 +59,7 @@ func NewAntiBotDetector() *AntiBotDetector {
 }
 
 // IsBot 判断一个给定的用户行为是否属于机器人行为.
-func (d *AntiBotDetector) IsBot(behavior *UserBehavior) (bool, string) {
+func (d *AntiBotDetector) IsBot(behavior *UserBehavior) (isBot bool, reason string) {
 	start := time.Now()
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -87,7 +87,7 @@ func (d *AntiBotDetector) IsBot(behavior *UserBehavior) (bool, string) {
 	return false, ""
 }
 
-func (d *AntiBotDetector) checkFrequency(behavior *UserBehavior) (bool, string) {
+func (d *AntiBotDetector) checkFrequency(behavior *UserBehavior) (abnormal bool, reason string) {
 	now := behavior.Timestamp
 
 	if requests, exists := d.userRequests[behavior.UserID]; exists {
@@ -120,7 +120,7 @@ func (d *AntiBotDetector) filterRequests(requests []time.Time, now time.Time, wi
 	return valid
 }
 
-func (d *AntiBotDetector) checkBehaviorPattern(behavior *UserBehavior) (bool, string) {
+func (d *AntiBotDetector) checkBehaviorPattern(behavior *UserBehavior) (suspicious bool, reason string) {
 	behaviors, exists := d.userBehaviors[behavior.UserID]
 	if !exists || len(behaviors) < 5 {
 		return false, ""

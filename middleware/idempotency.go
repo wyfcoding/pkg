@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -41,7 +42,7 @@ func IdempotencyMiddleware(manager idempotency.Manager, ttl time.Duration) gin.H
 		// 锁定 TTL 默认为 5 分钟，防止由于业务异常未调用 Finish 导致的死锁。
 		isFirst, savedResp, err := manager.TryStart(ctx, key, 5*time.Minute)
 		if err != nil {
-			if err == idempotency.ErrInProgress {
+			if errors.Is(err, idempotency.ErrInProgress) {
 				response.ErrorWithStatus(c, http.StatusConflict, "request is being processed, please do not repeat", "idempotency active")
 				c.Abort()
 				return

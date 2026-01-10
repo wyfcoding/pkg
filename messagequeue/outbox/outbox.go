@@ -77,7 +77,7 @@ func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
 }
 
 // PublishInTx 在现有的数据库事务中持久化一条待发送的消息。
-func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, key string, payload any) error {
+func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic, key string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal outbox payload: %w", err)
@@ -111,16 +111,16 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 
 // Processor 离群消息处理器，负责扫描 Outbox 表并异步投递消息。
 type Processor struct {
+	pusher        func(ctx context.Context, topic, key string, payload []byte) error
 	mgr           *Manager
-	pusher        func(ctx context.Context, topic string, key string, payload []byte) error
-	interval      time.Duration
 	stopChan      chan struct{}
+	interval      time.Duration
 	batchSize     int
 	retentionDays int
 }
 
 // NewProcessor 创建处理器。
-func NewProcessor(mgr *Manager, pusher func(ctx context.Context, topic string, key string, payload []byte) error, batchSize int, interval time.Duration) *Processor {
+func NewProcessor(mgr *Manager, pusher func(ctx context.Context, topic, key string, payload []byte) error, batchSize int, interval time.Duration) *Processor {
 	size := batchSize
 	if size <= 0 {
 		size = 100
@@ -174,7 +174,7 @@ func (p *Processor) Stop() {
 func (p *Processor) process() {
 	// 核心架构决策：使用事务 + SKIP LOCKED 确保多实例不抢占同一批消息。
 	err := p.mgr.db.Transaction(func(tx *gorm.DB) error {
-		var messages []Message
+		var messages []*Message
 
 		// 1. 抓取待处理消息并加锁。
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
@@ -204,7 +204,7 @@ func (p *Processor) process() {
 }
 
 // send 执行单条消息发送并更新状态 (在事务内执行状态更新以保证一致性)。
-func (p *Processor) send(tx *gorm.DB, msg Message) {
+func (p *Processor) send(tx *gorm.DB, msg *Message) {
 	ctx := context.Background()
 	if msg.Metadata != "" {
 		var carrier map[string]string
@@ -229,7 +229,7 @@ func (p *Processor) send(tx *gorm.DB, msg Message) {
 		updates["status"] = StatusSent
 	} else {
 		// 指数退避重试。
-		backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour)
+		backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour) //nolint:gosec // 重试次数受控，转换安全.
 		updates["next_retry"] = time.Now().Add(backoff)
 		updates["last_error"] = err.Error()
 

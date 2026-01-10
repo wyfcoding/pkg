@@ -35,8 +35,8 @@ func (n *TrieNode) reset() {
 
 // Trie 结构体实现了字典树（前缀树）数据结构。
 type Trie struct {
-	mu   sync.RWMutex
 	root *TrieNode
+	mu   sync.RWMutex
 }
 
 // NewTrie 创建并返回一个新的 Trie 实例。

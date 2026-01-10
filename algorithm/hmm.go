@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"fmt"
 	"math"
 	"sync"
 )
@@ -138,7 +137,7 @@ func (hmm *HiddenMarkovModel) viterbiInit(dp []float64, obs0, numStates, numObsL
 	}
 }
 
-func (hmm *HiddenMarkovModel) viterbiIter(dp []float64, path []int, obsIdx []int, numStates, numObsLib int) {
+func (hmm *HiddenMarkovModel) viterbiIter(dp []float64, path, obsIdx []int, numStates, numObsLib int) {
 	for t := 1; t < len(obsIdx); t++ {
 		obsT := obsIdx[t]
 		baseCurr := t * numStates
@@ -206,7 +205,7 @@ func (hmm *HiddenMarkovModel) Validate() error {
 	}
 
 	if sumInit < 0.99 || sumInit > 1.01 {
-		return fmt.Errorf("initial probabilities sum to %f, expected 1.0", sumInit)
+		return ErrInvalidProbabilities
 	}
 
 	for i := range numStates {
@@ -216,7 +215,7 @@ func (hmm *HiddenMarkovModel) Validate() error {
 		}
 
 		if sumTrans < 0.99 || sumTrans > 1.01 {
-			return fmt.Errorf("transition probabilities from state %s sum to %f, expected 1.0", hmm.states[i], sumTrans)
+			return ErrInvalidProbabilities
 		}
 	}
 
@@ -227,7 +226,7 @@ func (hmm *HiddenMarkovModel) Validate() error {
 		}
 
 		if sumEmit < 0.99 || sumEmit > 1.01 {
-			return fmt.Errorf("emission probabilities from state %s sum to %f, expected 1.0", hmm.states[i], sumEmit)
+			return ErrInvalidProbabilities
 		}
 	}
 

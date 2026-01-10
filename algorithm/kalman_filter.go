@@ -28,13 +28,13 @@ func NewKalmanFilter(q, r, initialValue float64) *KalmanFilter {
 func (f *KalmanFilter) Update(measurement float64) float64 {
 	// 1. 预测阶段。
 	// p = p + q。
-	f.p = f.p + f.q
+	f.p += f.q
 
 	// 2. 更新阶段。
 	// 计算卡尔曼增益 k = p / (p + r)。
 	f.k = f.p / (f.p + f.r)
 	// 更新估算值 x = x + k * (measurement - x)。
-	f.x = f.x + f.k*(measurement-f.x)
+	f.x += f.k * (measurement - f.x)
 	// 更新协方差 p = (1 - k) * p。
 	f.p = (1 - f.k) * f.p
 

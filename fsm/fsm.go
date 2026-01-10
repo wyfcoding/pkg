@@ -29,8 +29,8 @@ type Handler func(ctx context.Context, from, to State, args ...any) error
 type Machine struct {
 	transitions map[State]map[Event]State
 	handlers    map[State]map[State]Handler
-	mu          sync.RWMutex
 	current     State
+	mu          sync.RWMutex
 }
 
 // NewMachine 创建一个新的状态机.

@@ -19,14 +19,14 @@ func FormatDate(t time.Time) string {
 // ParseTime 解析一个形如 "YYYY-MM-DD HH:MM:SS" 的时间字符串。
 // s: 待解析的时间字符串。
 // 返回解析后的时间对象和可能发生的错误。
-func ParseTime(s string) (time.Time, error) {
+func ParseTime(s string) (t time.Time, err error) {
 	return time.Parse("2006-01-02 15:04:05", s)
 }
 
 // ParseDate 解析一个形如 "YYYY-MM-DD" 的日期字符串。
 // s: 待解析的日期字符串。
 // 返回解析后的时间对象（时、分、秒、纳秒为零）和可能发生的错误。
-func ParseDate(s string) (time.Time, error) {
+func ParseDate(s string) (t time.Time, err error) {
 	return time.Parse("2006-01-02", s)
 }
 

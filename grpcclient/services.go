@@ -30,7 +30,7 @@ func InitClients(services map[string]config.ServiceAddr, metricsInstance *metric
 	elem := val.Elem()
 	typ := elem.Type()
 
-	var conns []*grpc.ClientConn
+	conns := make([]*grpc.ClientConn, 0, elem.NumField())
 
 	factory := NewClientFactory(logging.Default(), metricsInstance, cbCfg)
 

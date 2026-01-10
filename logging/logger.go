@@ -34,14 +34,14 @@ var (
 
 // Config 定义日志配置结构.
 type Config struct {
-	Service    string `json:"service"`
-	Module     string `json:"module"`
-	Level      string `json:"level"`
-	File       string `json:"file"`
-	MaxSize    int    `json:"max_size"`
-	MaxBackups int    `json:"max_backups"`
-	MaxAge     int    `json:"max_age"`
-	Compress   bool   `json:"compress"`
+	Service    string `json:"service"`     // 服务名称。
+	Module     string `json:"module"`      // 模块名称。
+	Level      string `json:"level"`       // 日志级别。
+	File       string `json:"file"`        // 日志文件路径。
+	MaxSize    int    `json:"max_size"`    // 单个文件最大大小 (MB)。
+	MaxBackups int    `json:"max_backups"` // 最大备份数。
+	MaxAge     int    `json:"max_age"`     // 最大保留天数。
+	Compress   bool   `json:"compress"`    // 是否启用压缩。
 }
 
 // Logger 结构体封装了原生的 *slog.Logger.
@@ -57,6 +57,8 @@ type TraceHandler struct {
 }
 
 // Handle 实现日志条目的最终处理.
+//
+//nolint:gocritic // slog.Record 按照标准库设计必须传值，此处忽略 heavy parameter 告警.
 func (h *TraceHandler) Handle(ctx context.Context, record slog.Record) error {
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
@@ -235,7 +237,7 @@ func DebugContext(ctx context.Context, msg string, args ...any) {
 }
 
 // LogDuration 记录操作耗时.
-func LogDuration(ctx context.Context, operation string, args ...any) func() {
+func LogDuration(ctx context.Context, operation string, args ...any) (done func()) {
 	start := time.Now()
 
 	return func() {
@@ -318,13 +320,14 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (stri
 		fields = append(fields, slog.Int64("rows", rows))
 	}
 
-	if err != nil && !errors.Is(err, logger.ErrRecordNotFound) {
+	switch {
+	case err != nil && !errors.Is(err, logger.ErrRecordNotFound):
 		fields = append(fields, slog.Any("error", err))
 		l.loggerInstance.ErrorContext(ctx, "gorm trace error", fields...)
-	} else if l.SlowThreshold != 0 && elapsed > l.SlowThreshold {
+	case l.SlowThreshold != 0 && elapsed > l.SlowThreshold:
 		fields = append(fields, slog.String("type", "slow_query"))
 		l.loggerInstance.WarnContext(ctx, "gorm trace slow query", fields...)
-	} else {
+	default:
 		l.loggerInstance.DebugContext(ctx, "gorm trace", fields...)
 	}
 }

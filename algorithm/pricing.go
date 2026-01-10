@@ -2,8 +2,6 @@
 package algorithm
 
 import (
-	"errors"
-	"fmt"
 	"math"
 
 	"github.com/shopspring/decimal"
@@ -40,7 +38,7 @@ func NewBlackScholesCalculator() *BlackScholesCalculator {
 func (bsc *BlackScholesCalculator) CalculateCallPrice(spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
 	// 验证输入。
 	if spot.LessThanOrEqual(decimal.Zero) || strike.LessThanOrEqual(decimal.Zero) || expiry.LessThanOrEqual(decimal.Zero) || vol.LessThanOrEqual(decimal.Zero) {
-		return decimal.Zero, fmt.Errorf("invalid input parameters")
+		return decimal.Zero, ErrInvalidInput
 	}
 
 	// 转换为 float64 进行计算。
@@ -65,7 +63,7 @@ func (bsc *BlackScholesCalculator) CalculateCallPrice(spot, strike, expiry, rate
 func (bsc *BlackScholesCalculator) CalculatePutPrice(spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
 	// 验证输入。
 	if spot.LessThanOrEqual(decimal.Zero) || strike.LessThanOrEqual(decimal.Zero) || expiry.LessThanOrEqual(decimal.Zero) || vol.LessThanOrEqual(decimal.Zero) {
-		return decimal.Zero, fmt.Errorf("invalid input parameters")
+		return decimal.Zero, ErrInvalidInput
 	}
 
 	// 转换为 float64 进行计算。
@@ -104,7 +102,7 @@ func (bsc *BlackScholesCalculator) CalculateDelta(optionType string, spot, strik
 	case OptionTypePut:
 		delta = math.Exp(-qFloat*tFloat) * (normCDF(d1) - 1)
 	default:
-		return decimal.Zero, fmt.Errorf("invalid option type")
+		return decimal.Zero, ErrInvalidOptionType
 	}
 
 	return decimal.NewFromFloat(delta), nil
@@ -161,7 +159,7 @@ func (bsc *BlackScholesCalculator) CalculateTheta(optionType string, spot, strik
 	case OptionTypePut:
 		theta = -sFloat*math.Exp(-qFloat*tFloat)*normPDF(d1)*sigmaFloat/(2*math.Sqrt(tFloat)) + rFloat*kFloat*math.Exp(-rFloat*tFloat)*normCDF(-d2) - qFloat*sFloat*math.Exp(-qFloat*tFloat)*normCDF(-d1)
 	default:
-		return decimal.Zero, errors.New("invalid option type")
+		return decimal.Zero, ErrInvalidOptionType
 	}
 
 	return decimal.NewFromFloat(theta / 365), nil // 转换为每日 theta。
@@ -185,7 +183,7 @@ func (bsc *BlackScholesCalculator) CalculateRho(optionType string, spot, strike,
 	case OptionTypePut:
 		rho = -kFloat * tFloat * math.Exp(-rFloat*tFloat) * normCDF(-d2) / 100
 	default:
-		return decimal.Zero, errors.New("invalid option type")
+		return decimal.Zero, ErrInvalidOptionType
 	}
 
 	return decimal.NewFromFloat(rho), nil
@@ -239,7 +237,7 @@ func (bsc *BlackScholesCalculator) CalculateImpliedVolatility(optionType string,
 			break
 		}
 
-		sigma = sigma - diff/vega
+		sigma -= diff / vega
 		if sigma < 0 {
 			sigma = 0.001
 		}

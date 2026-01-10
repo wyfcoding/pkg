@@ -70,9 +70,7 @@ func (cf *CuckooFilter) Add(data []byte) bool {
 
 	for range maxKicks {
 		slot := rand.IntN(bucketSize)
-		oldFp := cf.buckets[currIdx][slot]
-		cf.buckets[currIdx][slot] = fp
-		fp = oldFp
+		cf.buckets[currIdx][slot], fp = fp, cf.buckets[currIdx][slot]
 
 		currIdx = (currIdx ^ cf.getHashOfFingerprint(fp)) & cf.mask
 

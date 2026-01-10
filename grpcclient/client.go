@@ -2,6 +2,7 @@ package grpcclient
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -84,7 +85,7 @@ func (f *ClientFactory) circuitBreakerInterceptor(b *breaker.Breaker) grpc.Unary
 			err := invoker(ctx, method, req, reply, cc, opts...)
 			return nil, err
 		})
-		if err == breaker.ErrServiceUnavailable {
+		if err != nil && errors.Is(err, breaker.ErrServiceUnavailable) {
 			return status.Error(codes.Unavailable, "circuit breaker open")
 		}
 		return err

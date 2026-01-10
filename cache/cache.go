@@ -72,17 +72,17 @@ func NewRedisCache(cfg config.RedisConfig, cbCfg config.CircuitBreakerConfig, lo
 	}, m)
 
 	// 2. 复用 pkg/metrics 注册指标
-	hits := m.NewCounterVec(prometheus.CounterOpts{
+	hits := m.NewCounterVec(&prometheus.CounterOpts{
 		Name: "cache_hits_total",
 		Help: "Total number of cache hits",
 	}, []string{"service"})
 
-	misses := m.NewCounterVec(prometheus.CounterOpts{
+	misses := m.NewCounterVec(&prometheus.CounterOpts{
 		Name: "cache_misses_total",
 		Help: "Total number of cache misses",
 	}, []string{"service"})
 
-	duration := m.NewHistogramVec(prometheus.HistogramOpts{
+	duration := m.NewHistogramVec(&prometheus.HistogramOpts{
 		Name:    "cache_operation_duration_seconds",
 		Help:    "Duration of cache operations",
 		Buckets: prometheus.DefBuckets,

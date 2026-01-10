@@ -1,19 +1,7 @@
 package algorithm
 
 import (
-	"errors"
 	"math"
-)
-
-var (
-	// ErrEmptyData 矩阵数据不能为空.
-	ErrEmptyData = errors.New("empty data")
-	// ErrDimMismatch 维度不匹配.
-	ErrDimMismatch = errors.New("dimension mismatch")
-	// ErrNotSquare 不是方阵.
-	ErrNotSquare = errors.New("matrix must be square")
-	// ErrNotPositiveDefinite 不是正定矩阵.
-	ErrNotPositiveDefinite = errors.New("matrix is not positive definite")
 )
 
 // Matrix 定义基础矩阵结构.

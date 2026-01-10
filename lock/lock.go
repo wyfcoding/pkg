@@ -105,8 +105,8 @@ func (l *RedisLock) Lock(ctx context.Context, key string, ttl time.Duration) (st
 }
 
 // LockWithWatchdog 具备自动续期能力的锁实现.
-func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.Duration) (string, func(), error) {
-	token, err := l.Lock(ctx, key, ttl)
+func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.Duration) (token string, cancel func(), err error) {
+	token, err = l.Lock(ctx, key, ttl)
 	if err != nil {
 		return "", nil, err
 	}

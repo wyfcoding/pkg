@@ -40,6 +40,6 @@ type Storage interface {
 
 // Part 描述了分片上传中的单个片段元数据。
 type Part struct {
-	PartNumber int    // 分片顺序编号（从 1 开始.
 	ETag       string // 分片的实体标签，由服务端返回用于后续校.
+	PartNumber int    // 分片顺序编号（从 1 开始.
 }

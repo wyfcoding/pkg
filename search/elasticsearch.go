@@ -101,14 +101,14 @@ func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metr
 		Config: cfg.BreakerConfig,
 	}, metricsInstance)
 
-	reqTotal := metricsInstance.NewCounterVec(prometheus.CounterOpts{
+	reqTotal := metricsInstance.NewCounterVec(&prometheus.CounterOpts{
 		Namespace: "pkg",
 		Subsystem: "es",
 		Name:      "requests_total",
 		Help:      "Elasticsearch client request count",
 	}, []string{"index", "op", "status"})
 
-	reqDuration := metricsInstance.NewHistogramVec(prometheus.HistogramOpts{
+	reqDuration := metricsInstance.NewHistogramVec(&prometheus.HistogramOpts{
 		Namespace: "pkg",
 		Subsystem: "es",
 		Name:      "request_duration_seconds",

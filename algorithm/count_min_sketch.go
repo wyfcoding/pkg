@@ -135,7 +135,7 @@ func (cms *CountMinSketch) Merge(other *CountMinSketch) error {
 	return nil
 }
 
-func getCMSHashes(data []byte) (uint32, uint32) {
+func getCMSHashes(data []byte) (h1, h2 uint32) {
 	var h uint64 = fnvOffset64
 	for _, b := range data {
 		h ^= uint64(b)

@@ -67,14 +67,14 @@ func NewProducer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Met
 		RequiredAcks: kafkago.RequireOne,
 	}
 
-	producedTotal := m.NewCounterVec(prometheus.CounterOpts{
+	producedTotal := m.NewCounterVec(&prometheus.CounterOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "produced_total",
 		Help:      "Total number of messages produced",
 	}, []string{"topic", "status"})
 
-	duration := m.NewHistogramVec(prometheus.HistogramOpts{
+	duration := m.NewHistogramVec(&prometheus.HistogramOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "producer_duration_seconds",
@@ -152,7 +152,7 @@ func (p *Producer) Close() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("failed to close producers: %v", errs)
+		return fmt.Errorf("failed to close producers: %w", errors.Join(errs...))
 	}
 
 	return nil
@@ -179,14 +179,14 @@ func NewConsumer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Met
 		CommitInterval: 0,
 	})
 
-	consumedTotal := m.NewCounterVec(prometheus.CounterOpts{
+	consumedTotal := m.NewCounterVec(&prometheus.CounterOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "consumed_total",
 		Help:      "Total number of messages consumed",
 	}, []string{"topic", "status"})
 
-	consumeLag := m.NewHistogramVec(prometheus.HistogramOpts{
+	consumeLag := m.NewHistogramVec(&prometheus.HistogramOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "consume_lag_seconds",

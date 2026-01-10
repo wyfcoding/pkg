@@ -1,8 +1,7 @@
-// Package algos - 并发安全的队列数据结.
+// Package algorithm - 并发安全的队列数据结.
 package algorithm
 
 import (
-	"errors"
 	"log/slog"
 	"sync"
 )
@@ -36,7 +35,7 @@ func (cq *ConcurrentQueue) Dequeue() (any, error) {
 	defer cq.mu.Unlock()
 
 	if len(cq.items) == 0 {
-		return nil, errors.New("queue is empty")
+		return nil, ErrEmptyData
 	}
 
 	item := cq.items[0]
@@ -61,7 +60,7 @@ func (cq *ConcurrentQueue) Peek() (any, error) {
 	defer cq.mu.Unlock()
 
 	if len(cq.items) == 0 {
-		return nil, errors.New("queue is empty")
+		return nil, ErrEmptyData
 	}
 
 	return cq.items[0], nil
@@ -117,7 +116,7 @@ func (cs *ConcurrentStack) Pop() (any, error) {
 
 	n := len(cs.items)
 	if n == 0 {
-		return nil, errors.New("stack is empty")
+		return nil, ErrEmptyData
 	}
 
 	item := cs.items[n-1]
@@ -133,7 +132,7 @@ func (cs *ConcurrentStack) Peek() (any, error) {
 	defer cs.mu.Unlock()
 
 	if len(cs.items) == 0 {
-		return nil, errors.New("stack is empty")
+		return nil, ErrEmptyData
 	}
 
 	return cs.items[len(cs.items)-1], nil
@@ -190,7 +189,7 @@ func (crb *ConcurrentRingBuffer) Write(item any) error {
 	defer crb.mu.Unlock()
 
 	if crb.size == crb.capacity {
-		return errors.New("ring buffer is full")
+		return ErrBufferFull
 	}
 
 	crb.buffer[crb.tail] = item
@@ -206,7 +205,7 @@ func (crb *ConcurrentRingBuffer) Read() (any, error) {
 	defer crb.mu.Unlock()
 
 	if crb.size == 0 {
-		return nil, errors.New("ring buffer is empty")
+		return nil, ErrBufferEmpty
 	}
 
 	item := crb.buffer[crb.head]

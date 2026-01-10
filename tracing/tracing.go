@@ -19,7 +19,7 @@ import (
 )
 
 // InitTracer 执行追踪系统的初始化配置.
-func InitTracer(cfg config.TracingConfig) (func(context.Context) error, error) {
+func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error, err error) {
 	ctx := context.Background()
 
 	exporter, err := otlptracegrpc.New(ctx,
@@ -60,10 +60,10 @@ func InitTracer(cfg config.TracingConfig) (func(context.Context) error, error) {
 }
 
 // StartSpan 在当前上下文开启一个新的子 Span.
-func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (newCtx context.Context, span trace.Span) {
 	tracer := otel.Tracer("github.com/wyfcoding/pkg/tracing")
 	//nolint:spancheck // Span 由调用方负责关闭.
-	newCtx, span := tracer.Start(ctx, name, opts...)
+	newCtx, span = tracer.Start(ctx, name, opts...)
 
 	return newCtx, span
 }

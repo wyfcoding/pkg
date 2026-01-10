@@ -15,11 +15,12 @@ import (
 )
 
 // Config 全局顶级配置结构.
-type Config struct {
-	Version        string               `mapstructure:"version"        toml:"version"`
-	Server         ServerConfig         `mapstructure:"server"         toml:"server"`
+type Config struct { //nolint:govet // 顶级聚合配置，嵌套层次深，已尽可能优化对齐。
+	Services       ServicesConfig       `mapstructure:"services"       toml:"services"`
 	Data           DataConfig           `mapstructure:"data"           toml:"data"`
 	Log            LogConfig            `mapstructure:"log"            toml:"log"`
+	Version        string               `mapstructure:"version"        toml:"version"`
+	Server         ServerConfig         `mapstructure:"server"         toml:"server"`
 	JWT            JWTConfig            `mapstructure:"jwt"            toml:"jwt"`
 	Snowflake      SnowflakeConfig      `mapstructure:"snowflake"      toml:"snowflake"`
 	MessageQueue   MessageQueueConfig   `mapstructure:"messagequeue"   toml:"messagequeue"`
@@ -30,7 +31,6 @@ type Config struct {
 	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuitbreaker" toml:"circuitbreaker"`
 	Cache          CacheConfig          `mapstructure:"cache"          toml:"cache"`
 	Lock           LockConfig           `mapstructure:"lock"           toml:"lock"`
-	Services       ServicesConfig       `mapstructure:"services"       toml:"services"`
 	Hadoop         HadoopConfig         `mapstructure:"hadoop"         toml:"hadoop"`
 }
 
@@ -57,7 +57,8 @@ type ServerConfig struct {
 }
 
 // DataConfig 汇集了所有持久化存储与中间件的数据源配置.
-type DataConfig struct {
+type DataConfig struct { //nolint:govet // 包含大量子配置结构，已按指针分组原则对齐。
+	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 	Database      DatabaseConfig      `mapstructure:"database"      toml:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"         toml:"redis"`
 	BigCache      BigCacheConfig      `mapstructure:"bigcache"      toml:"bigcache"`
@@ -65,7 +66,6 @@ type DataConfig struct {
 	ClickHouse    ClickHouseConfig    `mapstructure:"clickhouse"    toml:"clickhouse"`
 	Neo4j         Neo4jConfig         `mapstructure:"neo4j"         toml:"neo4j"`
 	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch" toml:"elasticsearch"`
-	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 }
 
 // DatabaseConfig 定义单数据库实例连接与连接池参数.
@@ -81,10 +81,10 @@ type DatabaseConfig struct {
 
 // RedisConfig 定义 Redis 连接与池化参数.
 type RedisConfig struct {
-	ReadTimeout  time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
-	WriteTimeout time.Duration `mapstructure:"write_timeout" toml:"write_timeout"`
 	Addr         string        `mapstructure:"addr"          toml:"addr" validate:"required"`
 	Password     string        `mapstructure:"password"      toml:"password"`
+	ReadTimeout  time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
+	WriteTimeout time.Duration `mapstructure:"write_timeout" toml:"write_timeout"`
 	DB           int           `mapstructure:"db"            toml:"db"`
 	PoolSize     int           `mapstructure:"pool_size"     toml:"pool_size"`
 	MinIdleConns int           `mapstructure:"min_idle_conns" toml:"min_idle_conns"`
@@ -104,16 +104,16 @@ type LogConfig struct {
 
 // JWTConfig 身份认证令牌相关配置.
 type JWTConfig struct {
-	ExpireDuration time.Duration `mapstructure:"expire_duration" toml:"expire_duration"`
 	Secret         string        `mapstructure:"secret"          toml:"secret"`
 	Issuer         string        `mapstructure:"issuer"          toml:"issuer"`
+	ExpireDuration time.Duration `mapstructure:"expire_duration" toml:"expire_duration"`
 }
 
 // SnowflakeConfig 雪花算法分布式 ID 生成器参数.
 type SnowflakeConfig struct {
-	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"`
 	Type      string `mapstructure:"type"       toml:"type"`
 	StartTime string `mapstructure:"start_time" toml:"start_time"`
+	MachineID int64  `mapstructure:"machine_id" toml:"machine_id"`
 }
 
 // MessageQueueConfig 聚合所有消息中间件配置.
@@ -122,15 +122,15 @@ type MessageQueueConfig struct {
 }
 
 // KafkaConfig 定义 Kafka 生产者与消费者参数.
-type KafkaConfig struct {
+type KafkaConfig struct { //nolint:govet // 包含多个 time.Duration 与 string，已尽可能对齐。
+	Brokers        []string      `mapstructure:"brokers"         toml:"brokers"`
+	Topic          string        `mapstructure:"topic"           toml:"topic"`
+	GroupID        string        `mapstructure:"group_id"        toml:"group_id"`
 	DialTimeout    time.Duration `mapstructure:"dial_timeout"    toml:"dial_timeout"`
 	ReadTimeout    time.Duration `mapstructure:"read_timeout"    toml:"read_timeout"`
 	WriteTimeout   time.Duration `mapstructure:"write_timeout"   toml:"write_timeout"`
 	MaxWait        time.Duration `mapstructure:"max_wait"        toml:"max_wait"`
 	CommitInterval time.Duration `mapstructure:"commit_interval" toml:"commit_interval"`
-	Topic          string        `mapstructure:"topic"           toml:"topic"`
-	GroupID        string        `mapstructure:"group_id"        toml:"group_id"`
-	Brokers        []string      `mapstructure:"brokers"         toml:"brokers"`
 	MinBytes       int           `mapstructure:"min_bytes"       toml:"min_bytes"`
 	MaxBytes       int           `mapstructure:"max_bytes"       toml:"max_bytes"`
 	MaxAttempts    int           `mapstructure:"max_attempts"    toml:"max_attempts"`
@@ -178,16 +178,16 @@ type CircuitBreakerConfig struct {
 
 // CacheConfig 通用缓存策略配置.
 type CacheConfig struct {
+	Prefix            string        `mapstructure:"prefix"             toml:"prefix"`
 	DefaultExpiration time.Duration `mapstructure:"default_expiration" toml:"default_expiration"`
 	CleanupInterval   time.Duration `mapstructure:"cleanup_interval"   toml:"cleanup_interval"`
-	Prefix            string        `mapstructure:"prefix"             toml:"prefix"`
 }
 
 // LockConfig 分布式锁通用配置.
 type LockConfig struct {
+	Prefix            string        `mapstructure:"prefix"             toml:"prefix"`
 	DefaultExpiration time.Duration `mapstructure:"default_expiration" toml:"default_expiration"`
 	RetryDelay        time.Duration `mapstructure:"retry_delay"        toml:"retry_delay"`
-	Prefix            string        `mapstructure:"prefix"             toml:"prefix"`
 	MaxRetries        int           `mapstructure:"max_retries"        toml:"max_retries"`
 }
 

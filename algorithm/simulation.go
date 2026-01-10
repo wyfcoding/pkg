@@ -2,7 +2,6 @@
 package algorithm
 
 import (
-	"errors"
 	"math"
 	"math/rand/v2"
 	"runtime"
@@ -143,7 +142,7 @@ func NewMonteCarlo(gbm *GeometricBrownianMotion) *MonteCarlo {
 // CalculateOptionPrice 使用蒙特卡洛方法计算期权价.
 func (mc *MonteCarlo) CalculateOptionPrice(optionType string, strikePrice decimal.Decimal, steps, paths int, riskFreeRate decimal.Decimal) (decimal.Decimal, error) {
 	if optionType != "CALL" && optionType != "PUT" {
-		return decimal.Zero, errors.New("invalid option type")
+		return decimal.Zero, ErrInvalidOptionType
 	}
 
 	// 模拟多条路.
