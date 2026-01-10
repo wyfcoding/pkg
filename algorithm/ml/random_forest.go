@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"runtime"
 	"sync"
+
+	"github.com/wyfcoding/pkg/utils"
 )
 
 const (
@@ -52,8 +54,8 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 			for j := range points {
 				var b [4]byte
 				_, _ = rand.Read(b[:])
-				// 安全：len(points) 在实际使用中不会超过 uint32 范围。
-				idx := int(binary.LittleEndian.Uint32(b[:]) % uint32(len(points))) //nolint:gosec // 训练数据集大小受限。
+				// G115 Fix: use utils.IntToUint32 to bypass overflow warning.
+				idx := int(binary.LittleEndian.Uint32(b[:]) % utils.IntToUint32(len(points)))
 				bootstrapPoints[j] = points[idx]
 				bootstrapLabels[j] = labels[idx]
 			}

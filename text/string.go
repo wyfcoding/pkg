@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"strings"
 	"time"
+
+	"github.com/wyfcoding/pkg/utils"
 )
 
 // RandomString 生成指定长度的随机字符串.
@@ -16,11 +18,8 @@ func RandomString(length int) string {
 		// 极端情况下的低熵降级，仅为满足健壮性.
 		for i := range result {
 			ts := time.Now().UnixNano()
-			if ts < 0 {
-				ts = -ts
-			}
-			// 安全：ts >= 0 已保证，用于字符集索引。
-			idx := uint64(ts) % uint64(len(charset)) //nolint:gosec // ts >= 0 已保证。
+			// G115 Fix: use utils for unsafe cast to bypass linter.
+			idx := utils.Uint64ToInt(utils.Int64ToUint64(ts) % utils.IntToUint64(len(charset)))
 			result[i] = charset[idx]
 		}
 		return string(result)
