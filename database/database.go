@@ -14,7 +14,6 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/schema"
 	"gorm.io/plugin/opentelemetry/tracing"
 )
 
@@ -64,29 +63,8 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 	}
 
 	gormDB, err := gorm.Open(dialer, &gorm.Config{
-		Logger:                                   logging.NewGormLogger(logger, defaultSlowThreshold),
-		NowFunc:                                  nil,
-		DryRun:                                   false,
-		PrepareStmt:                              true,
-		CreateBatchSize:                          0,
-		SkipDefaultTransaction:                   false,
-		NamingStrategy:                           schema.NamingStrategy{}, //nolint:exhaustruct // 经过审计，此处忽略是安全的。
-		FullSaveAssociations:                     false,
-		QueryFields:                              false,
-		TranslateError:                           false,
-		PropagateUnscoped:                        false,
-		ConnPool:                                 nil,
-		Dialector:                                nil,
-		Plugins:                                  map[string]gorm.Plugin{},
-		DisableAutomaticPing:                     false,
-		DisableForeignKeyConstraintWhenMigrating: false,
-		IgnoreRelationshipsWhenMigrating:         false,
-		DisableNestedTransaction:                 false,
-		AllowGlobalUpdate:                        false,
-		PrepareStmtMaxSize:                       0,
-		PrepareStmtTTL:                           0,
-		DefaultTransactionTimeout:                0,
-		DefaultContextTimeout:                    0,
+		Logger:      logging.NewGormLogger(logger, defaultSlowThreshold),
+		PrepareStmt: true,
 	})
 	if err != nil {
 		return nil, xerrors.WrapInternal(err, "failed to open database connection")
