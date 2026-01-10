@@ -195,7 +195,7 @@ func (b *Builder) Build() *App {
 
 	if metricsPort != "" {
 		metricsInstance = metrics.NewMetrics(b.serviceName)
-		metricsCleanup := metricsInstance.ExposeHttp(metricsPort)
+		metricsCleanup := metricsInstance.ExposeHTTP(metricsPort)
 		b.appOpts = append(b.appOpts, WithCleanup(metricsCleanup))
 	} else {
 		// 即使不暴露 HTTP 端口，也初始化一个默认的 Metrics 实例用于内部采集
@@ -221,11 +221,11 @@ func (b *Builder) Build() *App {
 	// 熔断器会在错误率过高时自动拒绝请求，防止雪崩效应。
 	if cfg.CircuitBreaker.Enabled {
 		logger.Logger.Info("circuit breaker middleware enabled")
-		b.ginMiddleware = append(b.ginMiddleware, middleware.HttpCircuitBreaker(cfg.CircuitBreaker, metricsInstance))
+		b.ginMiddleware = append(b.ginMiddleware, middleware.HTTPCircuitBreaker(cfg.CircuitBreaker, metricsInstance))
 	}
 
 	// 3.3 注入标准 Metrics 中间件
-	b.ginMiddleware = append(b.ginMiddleware, middleware.HttpMetricsMiddleware(metricsInstance))
+	b.ginMiddleware = append(b.ginMiddleware, middleware.HTTPMetricsMiddleware(metricsInstance))
 	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GrpcMetricsInterceptor(metricsInstance))
 
 	// 5. 依赖注入与核心业务初始化。

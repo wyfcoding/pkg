@@ -58,9 +58,9 @@ func IsEmpty(s string) bool {
 }
 
 // IsValidLength 校验字符串（以 rune 为单位，支持 Unicode）是否在指定长度闭区间内。
-func IsValidLength(s string, min, max int) bool {
+func IsValidLength(s string, minLen, maxLen int) bool {
 	length := len([]rune(s))
-	return length >= min && length <= max
+	return length >= minLen && length <= maxLen
 }
 
 // ... (数字校验函数保持不变) ...
@@ -72,6 +72,6 @@ func IsNonNegative(n int64) bool {
 	return n >= 0
 }
 
-func IsInRange(n, min, max int64) bool {
-	return n >= min && n <= max
+func IsInRange(n, minVal, maxVal int64) bool {
+	return n >= minVal && n <= maxVal
 }

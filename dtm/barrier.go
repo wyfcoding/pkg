@@ -10,7 +10,7 @@ import (
 )
 
 // CallWithGorm 是一项核心架构优化，旨在通过反射方式解耦 DTM 的具体实现。
-// 它将 interface{} 类型的 barrier 对象映射至 DTM 的事务屏障逻辑，并自动开启 GORM 事务。
+// 它将 any 类型的 barrier 对象映射至 DTM 的事务屏障逻辑，并自动开启 GORM 事务。
 // 优势：避免了业务模块直接依赖 dtmcli 等底层库，减少了依赖冲突风险。
 func CallWithGorm(ctx context.Context, barrier any, db *gorm.DB, fn func(tx *gorm.DB) error) error {
 	val := reflect.ValueOf(barrier)

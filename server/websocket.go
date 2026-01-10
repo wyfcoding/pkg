@@ -12,7 +12,7 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true }, // 生产环境应严格校验域
+	CheckOrigin: func(_ *http.Request) bool { return true }, // 生产环境应严格校验域
 }
 
 // Client 表示一个 WebSocket 客户端连接

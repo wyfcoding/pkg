@@ -2,7 +2,7 @@ package algorithm
 
 import (
 	"math"
-	"sort"
+	"slices"
 )
 
 // WarehouseInfo 结构体定义了仓库的基本信息和能力。
@@ -120,8 +120,14 @@ func (wa *WarehouseAllocator) AllocateOptimal(
 	}
 
 	// 按照综合评分降序排序仓库，优先处理评分高的仓库。
-	sort.Slice(scores, func(i, j int) bool {
-		return scores[i].score > scores[j].score
+	slices.SortFunc(scores, func(a, b warehouseScore) int {
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
+		}
+		return 0
 	})
 
 	// 贪心分配：从评分最高的仓库开始分配商品。
@@ -209,8 +215,14 @@ func (wa *WarehouseAllocator) AllocateByDistance(
 	}
 
 	// 按照距离升序排序仓库，距离越近越优先。
-	sort.Slice(distances, func(i, j int) bool {
-		return distances[i].distance < distances[j].distance
+	slices.SortFunc(distances, func(a, b warehouseDist) int {
+		if a.distance < b.distance {
+			return -1
+		}
+		if a.distance > b.distance {
+			return 1
+		}
+		return 0
 	})
 
 	results := make([]AllocationResult, 0)

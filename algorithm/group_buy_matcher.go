@@ -1,7 +1,7 @@
 package algorithm
 
 import (
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -90,20 +90,27 @@ func (m *GroupBuyMatcher) FindBestGroup(
 // matchFastest 实现“最快成团”策略。
 // 优先选择剩余人数最少（即离成团最近）的团。如果剩余人数相同，则优先选择剩余时间更长的团。
 func (m *GroupBuyMatcher) matchFastest(groups []GroupBuyGroup) *GroupBuyGroup {
-	sort.Slice(groups, func(i, j int) bool {
+	slices.SortFunc(groups, func(a, b GroupBuyGroup) int {
 		// 计算剩余需要的人数。
-		remainI := groups[i].RequiredCount - groups[i].CurrentCount
-		remainJ := groups[j].RequiredCount - groups[j].CurrentCount
+		remainI := a.RequiredCount - a.CurrentCount
+		remainJ := b.RequiredCount - b.CurrentCount
 
 		// 优先按照剩余人数升序排序（剩余人数越少，排名越靠前）。
-		if remainI != remainJ {
-			return remainI < remainJ
+		if remainI < remainJ {
+			return -1
+		}
+		if remainI > remainJ {
+			return 1
 		}
 
-		// 如果剩余人数相同，则按照过期时间降序排序（剩余时间越长，越不容易过期，但这个策略名字似乎应该更侧重于时间紧迫）。
-		// 原始代码是 After(groups[j].ExpireAt)，这意味着是剩余时间越长越优先，可能与“最快成团”的直觉有些出入。
-		// 如果“最快成团”是想优先即将过期且人凑得差不多的，则这里可能需要调整逻辑。
-		return groups[i].ExpireAt.After(groups[j].ExpireAt)
+		// 如果剩余人数相同，则按照过期时间降序排序
+		if a.ExpireAt.After(b.ExpireAt) {
+			return -1
+		}
+		if b.ExpireAt.After(a.ExpireAt) {
+			return 1
+		}
+		return 0
 	})
 
 	return &groups[0] // 返回排序后的第一个团。
@@ -132,11 +139,16 @@ func (m *GroupBuyMatcher) matchNearest(
 	// 如果有同地区的团，优先在同地区中寻找距离最近的。
 	if len(sameRegion) > 0 {
 		// 按照用户到拼团组的距离升序排序。
-		sort.Slice(sameRegion, func(i, j int) bool {
-			// haversineDistance 函数未在此文件中定义，假定其在其他地方可用。
-			distI := HaversineDistance(userLat, userLon, sameRegion[i].Lat, sameRegion[i].Lon)
-			distJ := HaversineDistance(userLat, userLon, sameRegion[j].Lat, sameRegion[j].Lon)
-			return distI < distJ
+		slices.SortFunc(sameRegion, func(a, b GroupBuyGroup) int {
+			distI := HaversineDistance(userLat, userLon, a.Lat, a.Lon)
+			distJ := HaversineDistance(userLat, userLon, b.Lat, b.Lon)
+			if distI < distJ {
+				return -1
+			}
+			if distI > distJ {
+				return 1
+			}
+			return 0
 		})
 		return &sameRegion[0]
 	}
@@ -144,10 +156,16 @@ func (m *GroupBuyMatcher) matchNearest(
 	// 如果没有同地区团，则在其他地区的团中寻找距离最近的。
 	if len(otherRegion) > 0 {
 		// 按照用户到拼团组的距离升序排序。
-		sort.Slice(otherRegion, func(i, j int) bool {
-			distI := HaversineDistance(userLat, userLon, otherRegion[i].Lat, otherRegion[i].Lon)
-			distJ := HaversineDistance(userLat, userLon, otherRegion[j].Lat, otherRegion[j].Lon)
-			return distI < distJ
+		slices.SortFunc(otherRegion, func(a, b GroupBuyGroup) int {
+			distI := HaversineDistance(userLat, userLon, a.Lat, a.Lon)
+			distJ := HaversineDistance(userLat, userLon, b.Lat, b.Lon)
+			if distI < distJ {
+				return -1
+			}
+			if distI > distJ {
+				return 1
+			}
+			return 0
 		})
 		return &otherRegion[0]
 	}
@@ -158,8 +176,14 @@ func (m *GroupBuyMatcher) matchNearest(
 // matchNewest 实现“最新创建”策略。
 // 优先选择最新创建的拼团组。
 func (m *GroupBuyMatcher) matchNewest(groups []GroupBuyGroup) *GroupBuyGroup {
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].CreatedAt.After(groups[j].CreatedAt) // 按照创建时间降序排序。
+	slices.SortFunc(groups, func(a, b GroupBuyGroup) int {
+		if a.CreatedAt.After(b.CreatedAt) {
+			return -1
+		}
+		if b.CreatedAt.After(a.CreatedAt) {
+			return 1
+		}
+		return 0
 	})
 
 	return &groups[0] // 返回排序后的第一个团。
@@ -168,11 +192,17 @@ func (m *GroupBuyMatcher) matchNewest(groups []GroupBuyGroup) *GroupBuyGroup {
 // matchAlmostFull 实现“即将成团”策略。
 // 优先选择当前人数最多（即离成团最接近）的拼团组。
 func (m *GroupBuyMatcher) matchAlmostFull(groups []GroupBuyGroup) *GroupBuyGroup {
-	sort.Slice(groups, func(i, j int) bool {
+	slices.SortFunc(groups, func(a, b GroupBuyGroup) int {
 		// 计算成团进度率（完成度）。
-		rateI := float64(groups[i].CurrentCount) / float64(groups[i].RequiredCount)
-		rateJ := float64(groups[j].CurrentCount) / float64(groups[j].RequiredCount)
-		return rateI > rateJ // 按照完成度降序排序。
+		rateI := float64(a.CurrentCount) / float64(a.RequiredCount)
+		rateJ := float64(b.CurrentCount) / float64(b.RequiredCount)
+		if rateI > rateJ {
+			return -1
+		}
+		if rateI < rateJ {
+			return 1
+		}
+		return 0
 	})
 
 	return &groups[0] // 返回排序后的第一个团。
@@ -244,8 +274,14 @@ func (m *GroupBuyMatcher) SmartMatch(
 	}
 
 	// 按照综合评分降序排序。
-	sort.Slice(scores, func(i, j int) bool {
-		return scores[i].score > scores[j].score
+	slices.SortFunc(scores, func(a, b groupScore) int {
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
+		}
+		return 0
 	})
 
 	return scores[0].group // 返回评分最高的拼团组。

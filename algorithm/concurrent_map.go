@@ -2,86 +2,11 @@
 package algorithm
 
 import (
-	"log/slog"
+	"math/bits"
 	"sync"
 )
 
-// shard 是ConcurrentMap的一个分片。
-// 每个分片包含一个独立的读写锁和一个map，用于存储一部分键值对。
-// 优化：添加 Padding 防止伪共享 (False Sharing)。
-// 读写锁(24字节) + map(8字节) = 32字节。在 64 字节缓存行下，两个相邻 shard 可能会共享缓存行。
-type shard[K comparable, V any] struct {
-	sync.RWMutex
-	items map[K]V
-	_     [32]byte // 填充至 approx 64 bytes (实际 struct layout 可能有 align，32 byte padding 足够推开)
-}
-
-// --- Generic ConcurrentMap (Incomplete) ---
-
-// ConcurrentMap 是一个分片式的并发map的通用结构模板。
-// 通过将键值对分散到不同的分片（shard）中，可以显著减少多goroutine并发访问时的锁竞争。
-// 注意：这个泛型版本缺少一个关键的 `getShard` 方法，因为它需要一个通用的哈希函数来处理泛型键 `K`。
-// 实际使用请参考 `ConcurrentStringMap`。
-type ConcurrentMap[K comparable, V any] struct {
-	shards     []*shard[K, V]
-	shardCount uint64
-}
-
-// NewConcurrentMap 创建一个通用的并发map。
-// shardCount 指定了分片的数量，该值越大，理论上锁竞争越小，但内存开销也越大。
-// 如果shardCount小于等于0，则使用默认值32。
-func NewConcurrentMap[K comparable, V any](shardCount int) *ConcurrentMap[K, V] {
-	if shardCount <= 0 {
-		shardCount = 32 // 默认分片数
-	}
-	slog.Info("ConcurrentMap initialized", "shard_count", shardCount)
-	m := &ConcurrentMap[K, V]{
-		shards:     make([]*shard[K, V], shardCount),
-		shardCount: uint64(shardCount),
-	}
-	for i := 0; i < shardCount; i++ {
-		m.shards[i] = &shard[K, V]{items: make(map[K]V)}
-	}
-	return m
-}
-
-// --- 针对字符串键优化的并发 Map ---
-
-// ConcurrentStringMap 是一个针对字符串键优化的并发安全map。
-// 它内部使用了分片技术来提高并发性能。
-type ConcurrentStringMap[V any] struct {
-	shards     []*shard[string, V]
-	shardCount uint64
-}
-
-// NewConcurrentStringMap 创建一个针对字符串键的并发map。
-func NewConcurrentStringMap[V any](shardCount int) *ConcurrentStringMap[V] {
-	if shardCount <= 0 {
-		shardCount = 32
-	}
-	// 确保 shardCount 是 2 的幂，以优化取模运算 (hash % count -> hash & mask)
-	// 虽然下面 getShard 暂时用的取模，但为了扩展性建议尽量用 2 的幂。
-	// 这里暂不强制修改 shardCount 逻辑以免影响现有调用，但在高频场景下建议改为位运算。
-	slog.Info("ConcurrentStringMap initialized", "shard_count", shardCount)
-	m := &ConcurrentStringMap[V]{
-		shards:     make([]*shard[string, V], shardCount),
-		shardCount: uint64(shardCount),
-	}
-	for i := 0; i < shardCount; i++ {
-		m.shards[i] = &shard[string, V]{items: make(map[string]V)}
-	}
-	return m
-}
-
-// getShard 根据给定的键，通过哈希计算决定其应属于哪个分片。
-func (m *ConcurrentStringMap[V]) getShard(key string) *shard[string, V] {
-	hash := fnv32(key)
-	// 使用取模运算将哈希值映射到分片索引
-	return m.shards[uint64(hash)%m.shardCount]
-}
-
 // fnv32 实现了一个非加密的哈希函数 FNV-1a (32-bit)。
-// 它用于将字符串键均匀地映射到不同的分片。
 func fnv32(key string) uint32 {
 	const (
 		offset32 = 2166136261
@@ -95,43 +20,90 @@ func fnv32(key string) uint32 {
 	return hash
 }
 
-// Set 向map中设置一个键值对。
-// 这个操作是并发安全的。
-func (m *ConcurrentStringMap[V]) Set(key string, value V) {
-	// 1. 找到键对应的分片
-	shard := m.getShard(key)
-	// 2. 锁定该分片（写锁）
-	shard.Lock()
-	// 3. 在分片的map中设置值
-	shard.items[key] = value
-	// 4. 解锁
-	shard.Unlock()
+// shard 是ConcurrentMap的一个分片。
+type shard[K comparable, V any] struct {
+	sync.RWMutex
+	items map[K]V
+	_     [32]byte // 填充至 approx 64 bytes
 }
 
-// Get 从map中获取一个键对应的值。
-// 如果键存在，返回其值和 true；否则，返回零值和 false。
-// 这个操作是并发安全的。
-func (m *ConcurrentStringMap[V]) Get(key string) (V, bool) {
-	// 1. 找到键对应的分片
-	shard := m.getShard(key)
-	// 2. 锁定该分片（读锁）
-	shard.RLock()
-	// 3. 从分片的map中读取值
-	val, ok := shard.items[key]
-	// 4. 解锁
-	shard.RUnlock()
-	return val, ok
+// HashFunc 定义了将键 K 映射为 uint32 的函数。
+type HashFunc[K comparable] func(key K) uint32
+
+// ConcurrentMap 是一个分片式的并发map。
+type ConcurrentMap[K comparable, V any] struct {
+	shards []shard[K, V] // 优化：使用 slice of structs 减少指针跳转
+	mask   uint64        // 掩码，用于快速计算索引 (shardCount - 1)
+	hash   HashFunc[K]
 }
 
-// Remove 从map中删除一个键值对。
-// 这个操作是并发安全的。
-func (m *ConcurrentStringMap[V]) Remove(key string) {
-	// 1. 找到键对应的分片
-	shard := m.getShard(key)
-	// 2. 锁定该分片（写锁）
-	shard.Lock()
-	// 3. 从分片的map中删除键
-	delete(shard.items, key)
-	// 4. 解锁
-	shard.Unlock()
+// NewConcurrentMap 创建一个通用的并发map。
+// 优化：shardCount 强制调整为 2 的幂，以利用位运算加速。
+func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K]) *ConcurrentMap[K, V] {
+	if shardCount <= 0 {
+		shardCount = 32
+	}
+
+	// 向上取整到最近的 2 的幂
+	if (shardCount & (shardCount - 1)) != 0 {
+		shardCount = 1 << (64 - bits.LeadingZeros64(uint64(shardCount-1)))
+	}
+
+	if hashFunc == nil {
+		panic("hashFunc cannot be nil")
+	}
+
+	m := &ConcurrentMap[K, V]{
+		shards: make([]shard[K, V], shardCount),
+		mask:   uint64(shardCount - 1),
+		hash:   hashFunc,
+	}
+	for i := 0; i < shardCount; i++ {
+		m.shards[i].items = make(map[K]V)
+	}
+	return m
+}
+
+func (m *ConcurrentMap[K, V]) getShard(key K) *shard[K, V] {
+	h := m.hash(key)
+	return &m.shards[uint64(h)&m.mask]
+}
+
+// Set 设置键值对
+func (m *ConcurrentMap[K, V]) Set(key K, value V) {
+	s := m.getShard(key)
+	s.Lock()
+	defer s.Unlock()
+	s.items[key] = value
+}
+
+// Get 获取值
+func (m *ConcurrentMap[K, V]) Get(key K) (V, bool) {
+	s := m.getShard(key)
+	s.RLock()
+	defer s.RUnlock()
+	v, ok := s.items[key]
+	return v, ok
+}
+
+// Remove 删除键
+func (m *ConcurrentMap[K, V]) Remove(key K) {
+	s := m.getShard(key)
+	s.Lock()
+	defer s.Unlock()
+	delete(s.items, key)
+}
+
+// --- 针对字符串键优化的具体实现 ---
+
+// ConcurrentStringMap 是一个针对字符串键优化的并发安全map。
+type ConcurrentStringMap[V any] struct {
+	*ConcurrentMap[string, V]
+}
+
+// NewConcurrentStringMap 创建一个针对字符串键的并发map。
+func NewConcurrentStringMap[V any](shardCount int) *ConcurrentStringMap[V] {
+	return &ConcurrentStringMap[V]{
+		ConcurrentMap: NewConcurrentMap[string, V](shardCount, fnv32),
+	}
 }

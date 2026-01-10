@@ -58,13 +58,14 @@ func ParseToken(tokenString string, secretKey string) (*MyCustomClaims, error) {
 		slog.Warn("jwt parse failed", "error", err)
 		if errors.Is(err, jwt.ErrTokenMalformed) {
 			return nil, ErrTokenMalformed
-		} else if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, ErrTokenExpired
-		} else if errors.Is(err, jwt.ErrTokenNotValidYet) {
-			return nil, ErrTokenNotValidYet
-		} else {
-			return nil, ErrTokenInvalid
 		}
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, ErrTokenExpired
+		}
+		if errors.Is(err, jwt.ErrTokenNotValidYet) {
+			return nil, ErrTokenNotValidYet
+		}
+		return nil, ErrTokenInvalid
 	}
 
 	if claims, ok := token.Claims.(*MyCustomClaims); ok && token.Valid {

@@ -2,7 +2,7 @@ package algorithm
 
 import (
 	"math"
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -101,7 +101,7 @@ func (dt *DecisionTree) buildTree(points []*DTPoint, labels []int, depth int) *T
 		for i, p := range points {
 			values[i] = p.Data[feature]
 		}
-		sort.Float64s(values)
+		slices.Sort(values)
 
 		// 尝试切分
 		for i := 0; i < numSamples-1; i++ {

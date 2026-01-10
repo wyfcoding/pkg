@@ -5,67 +5,120 @@ import (
 )
 
 // TrieNode 结构体代表字典树中的一个节点。
-// 每个节点可以有多个子节点，对应着字符串中的下一个字符。
 type TrieNode struct {
-	children map[rune]*TrieNode // 指向子节点的map，键是字符（rune），值是对应的子节点。
-	isEnd    bool               // 标记是否是某个单词的结尾。
-	value    any                // 如果是单词结尾，可以存储与该单词相关联的值。
+	children map[rune]*TrieNode
+	isEnd    bool
+	value    any
+}
+
+var trieNodePool = sync.Pool{
+	New: func() any {
+		return &TrieNode{
+			children: make(map[rune]*TrieNode),
+		}
+	},
+}
+
+func newTrieNode() *TrieNode {
+	node := trieNodePool.Get().(*TrieNode)
+	return node
+}
+
+// Reset 重置节点以便复用
+func (n *TrieNode) reset() {
+	for k := range n.children {
+		delete(n.children, k)
+	}
+	n.isEnd = false
+	n.value = nil
 }
 
 // Trie 结构体实现了字典树（前缀树）数据结构。
-// 字典树用于高效地存储和检索字符串集合，尤其擅长处理前缀搜索、自动完成和拼写检查等场景。
 type Trie struct {
-	root *TrieNode    // 字典树的根节点，不代表任何字符。
-	mu   sync.RWMutex // 读写锁，用于保护字典树的并发访问。
+	root *TrieNode
+	mu   sync.RWMutex
 }
 
 // NewTrie 创建并返回一个新的 Trie 实例。
 func NewTrie() *Trie {
 	return &Trie{
-		root: &TrieNode{ // 初始化根节点。
-			children: make(map[rune]*TrieNode),
-		},
+		root: newTrieNode(),
 	}
 }
 
 // Insert 将一个单词及其关联的值插入到字典树中。
-// word: 要插入的单词。
-// value: 与该单词关联的值。
 func (t *Trie) Insert(word string, value any) {
-	t.mu.Lock()         // 加写锁，以确保插入操作的线程安全。
-	defer t.mu.Unlock() // 确保函数退出时解锁。
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	node := t.root            // 从根节点开始遍历。
-	for _, ch := range word { // 遍历单词中的每一个字符。
+	node := t.root
+	for _, ch := range word {
 		if node.children[ch] == nil {
-			// 如果当前字符没有对应的子节点，则创建一个新节点。
-			node.children[ch] = &TrieNode{
-				children: make(map[rune]*TrieNode),
-			}
+			node.children[ch] = newTrieNode()
 		}
-		node = node.children[ch] // 移动到下一个节点。
+		node = node.children[ch]
 	}
-	node.isEnd = true  // 标记当前节点是单词的结尾。
-	node.value = value // 存储与单词关联的值。
+	node.isEnd = true
+	node.value = value
 }
 
 // Search 精确搜索字典树中是否存在指定的单词，并返回其关联的值。
-// word: 要搜索的单词。
-// 返回值：
-//   - interface{}: 如果找到单词，返回其关联的值；否则返回 nil。
-//   - bool: 如果找到单词且 `isEnd` 为 true，则返回 true；否则返回 false。
 func (t *Trie) Search(word string) (any, bool) {
-	t.mu.RLock()         // 搜索操作只需要读锁。
-	defer t.mu.RUnlock() // 确保函数退出时解锁。
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
-	node := t.root            // 从根节点开始遍历。
-	for _, ch := range word { // 遍历单词中的每一个字符。
+	node := t.root
+	for _, ch := range word {
 		if node.children[ch] == nil {
-			return nil, false // 如果路径中断，则单词不存在。
+			return nil, false
 		}
-		node = node.children[ch] // 移动到下一个节点。
+		node = node.children[ch]
 	}
-	return node.value, node.isEnd // 返回找到节点的值和isEnd状态。
+	return node.value, node.isEnd
+}
+
+// Remove 从字典树中移除一个单词。
+// 如果节点不再被使用（无子节点且不是单词结尾），它将被回收到 sync.Pool 中以减少内存压力。
+func (t *Trie) Remove(word string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	return t.remove(t.root, word, 0)
+}
+
+// remove 递归删除辅助函数
+func (t *Trie) remove(node *TrieNode, word string, depth int) bool {
+	if depth == len(word) {
+		if !node.isEnd {
+			return false // 单词不存在
+		}
+		node.isEnd = false
+		node.value = nil
+		// 如果该节点没有子节点，说明可以被移除
+		return len(node.children) == 0
+	}
+
+	ch := rune(word[depth])
+	child, ok := node.children[ch]
+	if !ok {
+		return false // 路径中断，单词不存在
+	}
+
+	shouldDeleteChild := t.remove(child, word, depth+1)
+
+	if shouldDeleteChild {
+		delete(node.children, ch)
+		// 回收子节点到对象池
+		child.reset()
+		trieNodePool.Put(child)
+
+		// 检查当前节点是否也需要被移除：
+		// 1. 不是其他单词的结尾
+		// 2. 没有其他子节点了
+		return !node.isEnd && len(node.children) == 0
+	}
+
+	return false
 }
 
 // StartsWith 查找所有以给定前缀开头的单词所关联的值。

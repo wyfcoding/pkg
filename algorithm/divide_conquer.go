@@ -20,70 +20,60 @@ func NewDivideAndConquerProcessor(data []int64) *DivideAndConquerProcessor {
 }
 
 // MergeSort 对处理器中的数据执行归并排序。
-// 这是一种经典的分治算法，时间复杂度为 O(n log n)，适用于大规模数据的排序，例如订单或库存列表的排序。
-// 返回一个包含排序后数据的新切片，原始数据不会被修改。
+// 这是一种经典的分治算法，时间复杂度为 O(n log n)。
+// 优化：复用辅助数组，避免递归过程中的内存分配。
 func (dcp *DivideAndConquerProcessor) MergeSort() []int64 {
-	dcp.mu.Lock()         // 加写锁，以确保在排序过程中数据不会被修改。
-	defer dcp.mu.Unlock() // 确保函数退出时解锁。
+	dcp.mu.Lock()
+	defer dcp.mu.Unlock()
 
 	if len(dcp.data) <= 1 {
-		return dcp.data // 1个或0个元素的数组已经是排序好的。
+		return dcp.data
 	}
 
-	result := make([]int64, len(dcp.data)) // 创建一个副本进行排序，不修改原始数据。
+	result := make([]int64, len(dcp.data))
 	copy(result, dcp.data)
-	dcp.mergeSort(result, 0, len(result)-1) // 调用递归的归并排序函数。
+
+	// 预分配辅助数组
+	temp := make([]int64, len(dcp.data))
+	dcp.mergeSort(result, temp, 0, len(result)-1)
 	return result
 }
 
 // mergeSort 是归并排序的递归实现。
-// arr: 待排序的切片。
-// left, right: 当前子数组的起始和结束索引。
-func (dcp *DivideAndConquerProcessor) mergeSort(arr []int64, left, right int) {
+func (dcp *DivideAndConquerProcessor) mergeSort(arr, temp []int64, left, right int) {
 	if left < right {
-		mid := (left + right) / 2        // 计算中间索引。
-		dcp.mergeSort(arr, left, mid)    // 递归排序左半部分。
-		dcp.mergeSort(arr, mid+1, right) // 递归排序右半部分。
-		dcp.merge(arr, left, mid, right) // 合并两个已排序的子数组。
+		mid := (left + right) / 2
+		dcp.mergeSort(arr, temp, left, mid)
+		dcp.mergeSort(arr, temp, mid+1, right)
+		dcp.merge(arr, temp, left, mid, right)
 	}
 }
 
 // merge 合并两个有序子数组。
-// arr: 包含两个有序子数组的切片。
-// left, mid, right: 定义两个子数组的边界。
-func (dcp *DivideAndConquerProcessor) merge(arr []int64, left, mid, right int) {
-	// 创建临时切片存储左右两部分。
-	leftArr := make([]int64, mid-left+1)
-	rightArr := make([]int64, right-mid)
+func (dcp *DivideAndConquerProcessor) merge(arr, temp []int64, left, mid, right int) {
+	// 将数据复制到辅助数组
+	copy(temp[left:right+1], arr[left:right+1])
 
-	copy(leftArr, arr[left:mid+1])
-	copy(rightArr, arr[mid+1:right+1])
+	i := left    // 左半部分指针
+	j := mid + 1 // 右半部分指针
+	k := left    // 原数组指针
 
-	i, j, k := 0, 0, left // i: leftArr索引, j: rightArr索引, k: arr索引。
-
-	// 比较左右两个子数组的元素，并将较小的元素放回原数组。
-	for i < len(leftArr) && j < len(rightArr) {
-		if leftArr[i] <= rightArr[j] {
-			arr[k] = leftArr[i]
+	for i <= mid && j <= right {
+		if temp[i] <= temp[j] {
+			arr[k] = temp[i]
 			i++
 		} else {
-			arr[k] = rightArr[j]
+			arr[k] = temp[j]
 			j++
 		}
 		k++
 	}
 
-	// 将剩余的左半部分元素拷贝回原数组。
-	for i < len(leftArr) {
-		arr[k] = leftArr[i]
+	// 复制左半部分剩余元素
+	// 右半部分剩余元素不需要复制，因为它们已经在原数组的正确位置
+	for i <= mid {
+		arr[k] = temp[i]
 		i++
-		k++
-	}
-
-	// 将剩余的右半部分元素拷贝回原数组。
-	for j < len(rightArr) {
-		arr[k] = rightArr[j]
-		j++
 		k++
 	}
 }
@@ -137,7 +127,7 @@ func (dcp *DivideAndConquerProcessor) mergeCount(arr []int64, left, mid, right i
 	copy(rightArr, arr[mid+1:right+1])
 
 	i, j, k := 0, 0, left
-	var count int64 = 0 // 记录逆序对数量。
+	var count int64 // 记录逆序对数量。
 
 	// 比较左右两个子数组的元素，并将较小的元素放回原数组。
 	for i < len(leftArr) && j < len(rightArr) {

@@ -10,9 +10,10 @@ package algorithm
 import (
 	"hash/crc32"
 	"log/slog"
-	"sort"
+	"slices"
 	"strconv"
 	"sync"
+	"unsafe"
 )
 
 // Hash 定义哈希计算函数的类型原型。
@@ -61,7 +62,7 @@ func (ch *ConsistentHash) Add(nodes ...string) {
 		}
 		slog.Info("node added to consistent_hash ring", "node", node, "virtual_nodes", ch.replicas)
 	}
-	sort.Ints(ch.keys)
+	slices.Sort(ch.keys)
 }
 
 // Get 根据输入的键名查找其在哈希环上顺时针方向最近的物理节点。
@@ -73,11 +74,11 @@ func (ch *ConsistentHash) Get(key string) string {
 		return ""
 	}
 
-	hash := int(ch.hash([]byte(key)))
+	// 优化：使用 unsafe 转换 string 到 []byte 避免内存分配
+	buf := unsafe.Slice(unsafe.StringData(key), len(key))
+	hash := int(ch.hash(buf))
 
-	idx := sort.Search(len(ch.keys), func(i int) bool {
-		return ch.keys[i] >= hash
-	})
+	idx, _ := slices.BinarySearch(ch.keys, hash)
 
 	if idx == len(ch.keys) {
 		idx = 0
@@ -91,6 +92,8 @@ func (ch *ConsistentHash) Remove(node string) {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 
+	// 1. 计算该节点所有虚拟节点的哈希值，并标记删除
+	toRemove := make(map[int]struct{}, ch.replicas)
 	buf := make([]byte, 0, 64)
 
 	for i := 0; i < ch.replicas; i++ {
@@ -99,11 +102,18 @@ func (ch *ConsistentHash) Remove(node string) {
 		buf = append(buf, node...)
 
 		hash := int(ch.hash(buf))
-		idx := sort.SearchInts(ch.keys, hash)
-		if idx < len(ch.keys) && ch.keys[idx] == hash {
-			ch.keys = append(ch.keys[:idx], ch.keys[idx+1:]...)
-		}
+		toRemove[hash] = struct{}{}
 		delete(ch.hashMap, hash)
 	}
+
+	// 2. 一次遍历重建 keys 切片，避免多次内存移动
+	newKeys := make([]int, 0, len(ch.keys)-len(toRemove))
+	for _, k := range ch.keys {
+		if _, ok := toRemove[k]; !ok {
+			newKeys = append(newKeys, k)
+		}
+	}
+	ch.keys = newKeys
+
 	slog.Info("node removed from consistent_hash ring", "node", node)
 }

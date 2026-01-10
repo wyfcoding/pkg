@@ -9,7 +9,7 @@ import (
 
 // ConcurrentQueue 并发安全的队列
 // 使用互斥锁保证线程安全
-// 时间复杂度：入队 O(1)，出队 O(1)
+// 时间复杂度：入队 O(1)，出队 O(1) (amortized)
 type ConcurrentQueue struct {
 	mu    sync.Mutex
 	items []any
@@ -40,7 +40,18 @@ func (cq *ConcurrentQueue) Dequeue() (any, error) {
 	}
 
 	item := cq.items[0]
+	// 防止内存泄漏：将引用置空，允许 GC 回收对象
+	cq.items[0] = nil
 	cq.items = cq.items[1:]
+
+	// 缩容优化：如果长度小于容量的 1/4 且容量大于 256，则重新分配内存
+	// 这可以防止底层数组头部由于切片操作而长期占用内存
+	if n, c := len(cq.items), cap(cq.items); n > 0 && n < c/4 && c > 256 {
+		newItems := make([]any, n, c/2)
+		copy(newItems, cq.items)
+		cq.items = newItems
+	}
+
 	return item, nil
 }
 
@@ -74,6 +85,7 @@ func (cq *ConcurrentQueue) IsEmpty() bool {
 func (cq *ConcurrentQueue) Clear() {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
+	// 重置时保留一个较小的容量，或者完全释放
 	cq.items = make([]any, 0)
 }
 
@@ -103,12 +115,15 @@ func (cs *ConcurrentStack) Pop() (any, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	if len(cs.items) == 0 {
+	n := len(cs.items)
+	if n == 0 {
 		return nil, fmt.Errorf("stack is empty")
 	}
 
-	item := cs.items[len(cs.items)-1]
-	cs.items = cs.items[:len(cs.items)-1]
+	item := cs.items[n-1]
+	// 防止内存泄漏
+	cs.items[n-1] = nil
+	cs.items = cs.items[:n-1]
 	return item, nil
 }
 
@@ -147,6 +162,7 @@ func (cs *ConcurrentStack) Clear() {
 
 // ConcurrentRingBuffer 并发安全的环形缓冲区
 // 用于高性能的固定大小缓冲
+// 建议：对于极致性能场景，请优先使用 lockfree_queue.go 或 ring_buffer.go
 type ConcurrentRingBuffer struct {
 	mu       sync.Mutex
 	buffer   []any
@@ -194,6 +210,8 @@ func (crb *ConcurrentRingBuffer) Read() (any, error) {
 	}
 
 	item := crb.buffer[crb.head]
+	// 避免内存泄漏
+	crb.buffer[crb.head] = nil
 	crb.head = (crb.head + 1) % crb.capacity
 	crb.size--
 
@@ -225,6 +243,10 @@ func (crb *ConcurrentRingBuffer) IsEmpty() bool {
 func (crb *ConcurrentRingBuffer) Clear() {
 	crb.mu.Lock()
 	defer crb.mu.Unlock()
+	// 重置所有元素为 nil
+	for i := range crb.buffer {
+		crb.buffer[i] = nil
+	}
 	crb.head = 0
 	crb.tail = 0
 	crb.size = 0

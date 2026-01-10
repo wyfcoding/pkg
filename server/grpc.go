@@ -70,7 +70,7 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 
 // Stop 执行 gRPC 服务器的优雅关停。
 // 它会等待所有活跃的 RPC 调用完成后再退出。
-func (s *GRPCServer) Stop(ctx context.Context) error {
+func (s *GRPCServer) Stop(_ context.Context) error {
 	s.logger.Info("stopping grpc server gracefully")
 	s.server.GracefulStop()
 	return nil

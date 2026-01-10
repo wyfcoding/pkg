@@ -87,7 +87,8 @@ func (sl *SkipList[K, V]) Insert(key K, value V) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
-	update := make([]*SkipListNode[K, V], maxLevel)
+	// 优化：使用栈分配数组避免切片逃逸到堆
+	var update [maxLevel]*SkipListNode[K, V]
 	curr := sl.header
 
 	// 1. 从最高有效层向下搜寻插入位置
@@ -154,7 +155,7 @@ func (sl *SkipList[K, V]) Delete(key K) bool {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
-	update := make([]*SkipListNode[K, V], maxLevel)
+	var update [maxLevel]*SkipListNode[K, V]
 	curr := sl.header
 
 	for i := sl.level - 1; i >= 0; i-- {

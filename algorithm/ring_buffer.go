@@ -2,6 +2,7 @@ package algorithm
 
 import (
 	"errors"
+	"math/bits"
 	"runtime"
 	"sync/atomic"
 )
@@ -9,20 +10,20 @@ import (
 // RingBuffer 是一个高性能、并发安全的 MPMC (Multi-Producer Multi-Consumer) 无锁队列。
 // 它通过序列号 (Sequence) 解决槽位竞争与数据可见性问题，并采用缓存行填充防止伪共享。
 type RingBuffer[T any] struct {
-	_       [64]byte // 缓存行填充
-	head    uint64   // 消费者索引
-	_       [64]byte // 缓存行填充
-	tail    uint64   // 生产者索引
-	_       [64]byte // 缓存行填充
-	mask    uint64
-	slots   []rbSlot[T]
+	_     [64]byte // 缓存行填充
+	head  uint64   // 消费者索引
+	_     [64]byte // 缓存行填充
+	tail  uint64   // 生产者索引
+	_     [64]byte // 缓存行填充
+	mask  uint64
+	slots []rbSlot[T]
 }
 
 // rbSlot 包装了队列中的元素和序列号
 type rbSlot[T any] struct {
 	sequence uint64
 	data     T
-	// 还可以添加 padding，但 sequence(8) + interface{}(16) = 24，加 padding 到 64 可能会浪费空间。
+	// 还可以添加 padding，但 sequence(8) + any(16) = 24，加 padding 到 64 可能会浪费空间。
 	// 在极高并发下，每个 slot 独占缓存行最佳，但会增加 2-3 倍内存开销。
 	// 考虑到通用性，这里暂不强制 slot 级 padding，但在 slot 数组分配时要注意对齐。
 }
@@ -35,8 +36,15 @@ var (
 // NewRingBuffer 创建一个具有给定容量的新 RingBuffer。
 // 容量必须是 2 的幂。
 func NewRingBuffer[T any](capacity uint64) (*RingBuffer[T], error) {
-	if capacity < 2 || (capacity&(capacity-1)) != 0 {
-		return nil, errors.New("capacity must be a power of 2 and at least 2")
+	if capacity < 2 {
+		return nil, errors.New("capacity must be at least 2")
+	}
+
+	// 确保 capacity 是 2 的幂
+	if (capacity & (capacity - 1)) != 0 {
+		// 向上取整到最近的 2 的幂
+		// 例如：3 -> 4, 5 -> 8
+		capacity = 1 << (64 - bits.LeadingZeros64(capacity-1))
 	}
 
 	rb := &RingBuffer[T]{
@@ -74,8 +82,6 @@ func (rb *RingBuffer[T]) Offer(item T) error {
 			// sequence < tail 说明 slot 被上一轮占用且未释放，或 sequence 回绕（极少见）
 			// 队列满
 			return ErrBufferFull
-		} else {
-			// sequence > tail 说明 tail 已经被其他生产者推进了，重试
 		}
 		runtime.Gosched()
 	}
@@ -107,8 +113,6 @@ func (rb *RingBuffer[T]) Poll() (T, error) {
 		} else if diff < 0 {
 			// sequence < head + 1 说明 slot 数据尚未准备好（生产者正在写或队列空）
 			return item, ErrBufferEmpty
-		} else {
-			// sequence > head + 1 说明 head 已被其他消费者推进
 		}
 		runtime.Gosched()
 	}

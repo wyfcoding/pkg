@@ -69,12 +69,41 @@ func (m *Matrix) MultiplyVector(x []float64) ([]float64, error) {
 	y := make([]float64, m.Rows)
 	for i := 0; i < m.Rows; i++ {
 		sum := 0.0
+		rowOffset := i * m.Cols
 		for j := 0; j < m.Cols; j++ {
-			sum += m.Get(i, j) * x[j]
+			sum += m.Data[rowOffset+j] * x[j]
 		}
 		y[i] = sum
 	}
 	return y, nil
+}
+
+// Multiply 矩阵乘法: C = A * B
+func (m *Matrix) Multiply(b *Matrix) (*Matrix, error) {
+	if m.Cols != b.Rows {
+		return nil, errors.New("matrix dimension mismatch for multiplication")
+	}
+	res := NewMatrix(m.Rows, b.Cols)
+
+	// Cache-friendly optimization (ikj loop order)
+	// i: row of A
+	// k: col of A / row of B
+	// j: col of B
+	for i := 0; i < m.Rows; i++ {
+		rowOffsetA := i * m.Cols
+		rowOffsetC := i * res.Cols
+
+		for k := 0; k < m.Cols; k++ {
+			valA := m.Data[rowOffsetA+k]
+			rowOffsetB := k * b.Cols
+
+			for j := 0; j < b.Cols; j++ {
+				// C[i][j] += A[i][k] * B[k][j]
+				res.Data[rowOffsetC+j] += valA * b.Data[rowOffsetB+j]
+			}
+		}
+	}
+	return res, nil
 }
 
 // Cholesky 分解: A = L * L^T

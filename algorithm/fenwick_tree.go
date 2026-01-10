@@ -47,7 +47,7 @@ func (ft *FenwickTree) Query(idx int) int64 {
 	defer ft.mu.RUnlock() // 确保函数退出时解锁。
 
 	idx++ // 将0-indexed索引转换为1-indexed。
-	var sum int64 = 0
+	var sum int64
 	// 从 idx 开始向下遍历树状数组，累加所有受影响的节点。
 	for idx > 0 {
 		sum += ft.tree[idx]

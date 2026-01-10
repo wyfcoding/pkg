@@ -14,7 +14,7 @@
 package algorithm
 
 import (
-	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -48,9 +48,9 @@ type OrderBookLevel struct {
 // OrderBook 订单簿核心结构，管理买卖双边挂单
 type OrderBook struct {
 	mu     sync.RWMutex
-	bids   *RBTree           // 买单红黑树（价格从高到低）
-	asks   *RBTree           // 卖单红黑树（价格从低到高）
-	orders map[string]*Order // 订单索引映射，O(1) 查找
+	bids   *RBTree            // 买单红黑树（价格从高到低）
+	asks   *RBTree            // 卖单红黑树（价格从低到高）
+	orders map[string]*RBNode // 订单索引映射，直接映射到红黑树节点，实现 O(1) 定位 O(log N) 删除
 }
 
 // NewOrderBook 创建订单簿
@@ -58,7 +58,7 @@ func NewOrderBook() *OrderBook {
 	return &OrderBook{
 		bids:   NewRBTree(true),  // 买单：价格高的优先
 		asks:   NewRBTree(false), // 卖单：价格低的优先
-		orders: make(map[string]*Order),
+		orders: make(map[string]*RBNode),
 	}
 }
 
@@ -67,13 +67,13 @@ func (ob *OrderBook) AddOrder(order *Order) {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
-	ob.orders[order.OrderID] = order
-
+	var node *RBNode
 	if order.Side == "BUY" {
-		ob.bids.Insert(order)
+		node = ob.bids.Insert(order)
 	} else {
-		ob.asks.Insert(order)
+		node = ob.asks.Insert(order)
 	}
+	ob.orders[order.OrderID] = node
 }
 
 // RemoveOrder 移除订单
@@ -81,17 +81,17 @@ func (ob *OrderBook) RemoveOrder(orderID string) {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
-	order, ok := ob.orders[orderID]
+	node, ok := ob.orders[orderID]
 	if !ok {
 		return
 	}
 
 	delete(ob.orders, orderID)
 
-	if order.Side == "BUY" {
-		ob.bids.Delete(order)
+	if node.Order.Side == "BUY" {
+		ob.bids.DeleteNode(node)
 	} else {
-		ob.asks.Delete(order)
+		ob.asks.DeleteNode(node)
 	}
 }
 
@@ -232,151 +232,118 @@ func NewMatchingEngine() *MatchingEngine {
 	}
 }
 
-// Match 撮合订单
+// Match 撮合订单。使用高度抽象的逻辑消除买卖方向的代码冗余。
 func (me *MatchingEngine) Match(order *Order) []*Trade {
 	me.mu.Lock()
 	defer me.mu.Unlock()
 
 	trades := make([]*Trade, 0)
 
-	// Post-Only 预检：如果 PostOnly 为 true，且订单会立即产生成交（作为 Taker），则拒绝执行并直接返回
-	if order.PostOnly {
-		if order.Side == "BUY" {
-			bestAsk := me.orderBook.GetBestAsk()
-			if bestAsk != nil && bestAsk.Price.LessThanOrEqual(order.Price) {
-				// 作为 Taker 成交，违反 Post-Only 规则
-				return trades
-			}
-		} else {
-			bestBid := me.orderBook.GetBestBid()
-			if bestBid != nil && bestBid.Price.GreaterThanOrEqual(order.Price) {
-				return trades
-			}
-		}
+	// 1. Post-Only 检查
+	if order.PostOnly && me.wouldMatch(order) {
+		return trades
 	}
 
+	// 2. 确定对手方树 (买单找卖方树，卖单找买方树)
+	var sideTree *RBTree
 	if order.Side == "BUY" {
-		// 买单与卖单撮合
-		for order.Quantity.GreaterThan(decimal.Zero) {
-			bestAsk := me.orderBook.GetBestAsk()
-			if bestAsk == nil || bestAsk.Price.GreaterThan(order.Price) {
-				break
-			}
-
-			// 计算成交数量
-			matchQty := order.Quantity
-			if bestAsk.Quantity.LessThan(matchQty) {
-				matchQty = bestAsk.Quantity
-			}
-
-			// 创建交易记录
-			trade := &Trade{
-				TradeID:     generateTradeID(),
-				Symbol:      order.Symbol,
-				BuyOrderID:  order.OrderID,
-				SellOrderID: bestAsk.OrderID,
-				BuyUserID:   order.UserID,
-				SellUserID:  bestAsk.UserID,
-				Price:       bestAsk.Price,
-				Quantity:    matchQty,
-				Timestamp:   order.Timestamp,
-			}
-			trades = append(trades, trade)
-
-			// 更新订单数量
-			order.Quantity = order.Quantity.Sub(matchQty)
-			bestAsk.Quantity = bestAsk.Quantity.Sub(matchQty)
-
-			// 如果卖单已完全成交，检查是否为冰山单需要刷新
-			if bestAsk.Quantity.Equal(decimal.Zero) {
-				if bestAsk.IsIceberg && bestAsk.HiddenQty.GreaterThan(decimal.Zero) {
-					// 刷新卖方冰山单：从隐藏量中提取显性量
-					refreshQty := bestAsk.DisplayQty
-					if refreshQty.GreaterThan(bestAsk.HiddenQty) {
-						refreshQty = bestAsk.HiddenQty
-					}
-					bestAsk.Quantity = refreshQty
-					bestAsk.HiddenQty = bestAsk.HiddenQty.Sub(refreshQty)
-
-					// 刷新时间戳以失去当前价位的时间优先权（符合行业标准）
-					bestAsk.Timestamp = time.Now().UnixNano()
-
-					// 重新插入订单簿（先删后加）
-					me.orderBook.RemoveOrder(bestAsk.OrderID)
-					me.orderBook.AddOrder(bestAsk)
-				} else {
-					me.orderBook.RemoveOrder(bestAsk.OrderID)
-				}
-			}
-		}
+		sideTree = me.orderBook.asks
 	} else {
-		// 卖单与买单撮合
-		for order.Quantity.GreaterThan(decimal.Zero) {
-			bestBid := me.orderBook.GetBestBid()
-			if bestBid == nil || bestBid.Price.LessThan(order.Price) {
-				break
-			}
+		sideTree = me.orderBook.bids
+	}
 
-			// 计算成交数量
-			matchQty := order.Quantity
-			if bestBid.Quantity.LessThan(matchQty) {
-				matchQty = bestBid.Quantity
-			}
+	// 3. 循环撮合直到订单填满或对手方耗尽
+	for order.Quantity.GreaterThan(decimal.Zero) {
+		bestCounter := sideTree.GetBest()
+		// 如果对手方为空，或者价格不匹配，则停止撮合
+		if bestCounter == nil || !me.canMatch(order, bestCounter) {
+			break
+		}
 
-			// 创建交易记录
-			trade := &Trade{
-				TradeID:     generateTradeID(),
-				Symbol:      order.Symbol,
-				BuyOrderID:  bestBid.OrderID,
-				SellOrderID: order.OrderID,
-				BuyUserID:   bestBid.UserID,
-				SellUserID:  order.UserID,
-				Price:       bestBid.Price,
-				Quantity:    matchQty,
-				Timestamp:   time.Now().UnixNano(),
-			}
-			trades = append(trades, trade)
+		// 执行单笔成交
+		matchQty := decimal.Min(order.Quantity, bestCounter.Quantity)
+		trade := me.executeTrade(order, bestCounter, matchQty)
+		trades = append(trades, trade)
 
-			// 更新订单数量
-			order.Quantity = order.Quantity.Sub(matchQty)
-			bestBid.Quantity = bestBid.Quantity.Sub(matchQty)
+		// 更新剩余数量
+		order.Quantity = order.Quantity.Sub(matchQty)
+		bestCounter.Quantity = bestCounter.Quantity.Sub(matchQty)
 
-			// 如果买单已完全成交，检查是否为冰山单需要刷新
-			if bestBid.Quantity.Equal(decimal.Zero) {
-				if bestBid.IsIceberg && bestBid.HiddenQty.GreaterThan(decimal.Zero) {
-					// 刷新买方冰山单
-					refreshQty := bestBid.DisplayQty
-					if refreshQty.GreaterThan(bestBid.HiddenQty) {
-						refreshQty = bestBid.HiddenQty
-					}
-					bestBid.Quantity = refreshQty
-					bestBid.HiddenQty = bestBid.HiddenQty.Sub(refreshQty)
-
-					// 刷新时间戳以失去时间优先权
-					bestBid.Timestamp = time.Now().UnixNano()
-
-					// 重新插入订单簿
-					me.orderBook.RemoveOrder(bestBid.OrderID)
-					me.orderBook.AddOrder(bestBid)
-				} else {
-					me.orderBook.RemoveOrder(bestBid.OrderID)
-				}
-			}
+		// 处理对手方订单完成后的状态（包括冰山单刷新）
+		if bestCounter.Quantity.Equal(decimal.Zero) {
+			me.handleFinishedOrder(bestCounter)
 		}
 	}
 
-	// 如果订单还有剩余，添加到订单簿。
-	// 注意：如果是冰山单，首次进入订单簿时应仅显示显示量，并将剩余量存入 HiddenQty
+	// 4. 剩余委托转入订单簿
 	if order.Quantity.GreaterThan(decimal.Zero) {
-		if order.IsIceberg && order.Quantity.GreaterThan(order.DisplayQty) {
-			order.HiddenQty = order.Quantity.Sub(order.DisplayQty)
-			order.Quantity = order.DisplayQty
-		}
-		me.orderBook.AddOrder(order)
+		me.enqueueRemaining(order)
 	}
 
 	me.trades = append(me.trades, trades...)
 	return trades
+}
+
+// wouldMatch 预检 Post-Only 订单是否会立即成交
+func (me *MatchingEngine) wouldMatch(order *Order) bool {
+	if order.Side == "BUY" {
+		bestAsk := me.orderBook.GetBestAsk()
+		return bestAsk != nil && bestAsk.Price.LessThanOrEqual(order.Price)
+	}
+	bestBid := me.orderBook.GetBestBid()
+	return bestBid != nil && bestBid.Price.GreaterThanOrEqual(order.Price)
+}
+
+// canMatch 价格匹配检查
+func (me *MatchingEngine) canMatch(order, counter *Order) bool {
+	if order.Side == "BUY" {
+		return counter.Price.LessThanOrEqual(order.Price)
+	}
+	return counter.Price.GreaterThanOrEqual(order.Price)
+}
+
+// executeTrade 生成交易记录
+func (me *MatchingEngine) executeTrade(taker, maker *Order, qty decimal.Decimal) *Trade {
+	t := AcquireTrade()
+	t.TradeID = generateTradeID()
+	t.Symbol = taker.Symbol
+	t.Quantity = qty
+	t.Price = maker.Price // 成交价以 Maker (挂单) 为准
+	t.Timestamp = time.Now().UnixNano()
+
+	if taker.Side == "BUY" {
+		t.BuyOrderID, t.BuyUserID = taker.OrderID, taker.UserID
+		t.SellOrderID, t.SellUserID = maker.OrderID, maker.UserID
+	} else {
+		t.BuyOrderID, t.BuyUserID = maker.OrderID, maker.UserID
+		t.SellOrderID, t.SellUserID = taker.OrderID, taker.UserID
+	}
+	return t
+}
+
+// handleFinishedOrder 处理成交完的订单（包括冰山单逻辑）
+func (me *MatchingEngine) handleFinishedOrder(o *Order) {
+	if o.IsIceberg && o.HiddenQty.GreaterThan(decimal.Zero) {
+		refreshQty := decimal.Min(o.DisplayQty, o.HiddenQty)
+		o.Quantity = refreshQty
+		o.HiddenQty = o.HiddenQty.Sub(refreshQty)
+		o.Timestamp = time.Now().UnixNano() // 刷新时间戳以失去时间优先权
+
+		// 在红黑树中重新定位
+		me.orderBook.RemoveOrder(o.OrderID)
+		me.orderBook.AddOrder(o)
+	} else {
+		me.orderBook.RemoveOrder(o.OrderID)
+	}
+}
+
+// enqueueRemaining 处理 Taker 剩余委托进入订单簿
+func (me *MatchingEngine) enqueueRemaining(o *Order) {
+	if o.IsIceberg && o.Quantity.GreaterThan(o.DisplayQty) {
+		o.HiddenQty = o.Quantity.Sub(o.DisplayQty)
+		o.Quantity = o.DisplayQty
+	}
+	me.orderBook.AddOrder(o)
 }
 
 // GetTrades 获取所有交易记录
@@ -405,5 +372,5 @@ func (me *MatchingEngine) GetAsks(depth int) []*OrderBookLevel {
 
 // generateTradeID 生成交易 ID
 func generateTradeID() string {
-	return fmt.Sprintf("TRD%d", idgen.GenID())
+	return "TRD" + strconv.FormatUint(idgen.GenID(), 10)
 }

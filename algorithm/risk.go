@@ -4,7 +4,7 @@ package algorithm
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 
 	"github.com/shopspring/decimal"
 )
@@ -35,7 +35,7 @@ func (rc *RiskCalculator) CalculateVaR(returns []decimal.Decimal, confidenceLeve
 	}
 
 	// 排序
-	sort.Float64s(floatReturns)
+	slices.Sort(floatReturns)
 
 	// 计算 VaR（历史方法）
 	index := int(float64(len(floatReturns)) * (1 - confidenceLevel))
@@ -60,7 +60,7 @@ func (rc *RiskCalculator) CalculateCVaR(returns []decimal.Decimal, confidenceLev
 	}
 
 	// 排序
-	sort.Float64s(floatReturns)
+	slices.Sort(floatReturns)
 
 	// 计算 CVaR
 	index := int(float64(len(floatReturns)) * (1 - confidenceLevel))

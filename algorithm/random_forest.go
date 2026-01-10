@@ -1,7 +1,8 @@
 package algorithm
 
 import (
-	"math/rand/v2" // 使用 Go 1.22+ 提供的新的 rand/v2 包。
+	"math/rand/v2"
+	"runtime"
 	"sync"
 )
 
@@ -33,28 +34,40 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 	rf.mu.Lock()         // 训练过程需要加写锁。
 	defer rf.mu.Unlock() // 确保函数退出时解锁。
 
+	// 并发控制
+	numWorkers := runtime.GOMAXPROCS(0)
+	sem := make(chan struct{}, numWorkers)
+	var wg sync.WaitGroup
+
 	// 为森林中的每一棵树进行训练。
 	for i := 0; i < rf.numTrees; i++ {
-		// 步骤1: Bootstrap采样 (有放回随机采样)。
-		// 从原始数据集中有放回地随机抽取与原始数据集相同数量的样本，
-		// 形成一个Bootstrap数据集。
-		bootstrapPoints := make([]*DTPoint, len(points))
-		bootstrapLabels := make([]int, len(labels))
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}        // Acquire token
+			defer func() { <-sem }() // Release token
 
-		for j := range points {
-			// 随机选择一个索引 (有放回采样)
-			idx := rand.IntN(len(points))
-			bootstrapPoints[j] = points[idx]
-			bootstrapLabels[j] = labels[idx]
-		}
+			// 步骤1: Bootstrap采样 (有放回随机采样)。
+			// 从原始数据集中有放回地随机抽取与原始数据集相同数量的样本，
+			// 形成一个Bootstrap数据集。
+			bootstrapPoints := make([]*DTPoint, len(points))
+			bootstrapLabels := make([]int, len(labels))
 
-		// 步骤2: 训练决策树。
-		// 为每个Bootstrap数据集训练一个决策树。
-		// 修正：补全 NewDecisionTree 的参数 (maxDepth, minSample, criterion)
-		tree := NewDecisionTree(10, 5, "gini")
-		tree.Fit(bootstrapPoints, bootstrapLabels) // 使用Bootstrap样本训练决策树。
-		rf.trees[i] = tree                         // 将训练好的决策树添加到森林中。
+			for j := range points {
+				// 随机选择一个索引 (有放回采样)
+				idx := rand.IntN(len(points))
+				bootstrapPoints[j] = points[idx]
+				bootstrapLabels[j] = labels[idx]
+			}
+
+			// 步骤2: 训练决策树。
+			// 为每个Bootstrap数据集训练一个决策树。
+			tree := NewDecisionTree(10, 5, "gini")
+			tree.Fit(bootstrapPoints, bootstrapLabels) // 使用Bootstrap样本训练决策树。
+			rf.trees[i] = tree                         // 将训练好的决策树添加到森林中。
+		}(i)
 	}
+	wg.Wait()
 }
 
 // Predict 使用训练好的随机森林模型对新的数据点进行预测。

@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"sort"
 	"sync"
 )
 
@@ -74,64 +73,100 @@ func (sa *SuffixArray) LongestRepeatedSubstring() string {
 
 func (sa *SuffixArray) build() {
 	n := len(sa.text)
-	// 初始化：sa[i] = i，rank[i] = text[i] 的ASCII值。
-	// 此时，sa 存储的是所有后缀的起始索引，rank 存储的是长度为1的后缀的排名。
-	for i := range n {
-		sa.sa[i] = i
-		sa.rank[i] = int(sa.text[i])
+	m := 256 // 初始字符集大小
+	if n > m {
+		m = n
+	}
+	if m < 256 {
+		m = 256
 	}
 
-	// 倍增法迭代：每次迭代将比较的后缀长度加倍 (k -> 2k)。
-	for k := 1; k < n; k *= 2 {
-		// 根据当前长度 k 的排名和长度 k 的下一段后缀的排名，对后缀进行排序。
-		sort.Slice(sa.sa, func(i, j int) bool {
-			a, b := sa.sa[i], sa.sa[j]
-			// 首先比较当前长度 k 的后缀排名。
-			if sa.rank[a] != sa.rank[b] {
-				return sa.rank[a] < sa.rank[b]
-			}
-			// 如果当前长度 k 的后缀排名相同，则比较长度为 k 的下一段后缀的排名。
-			ra := 0
-			rb := 0
-			// 确保索引不越界。
-			if a+k < n {
-				ra = sa.rank[a+k]
-			}
-			if b+k < n {
-				rb = sa.rank[b+k]
-			}
-			return ra < rb
-		})
+	x := make([]int, n)
+	y := make([]int, n)
+	c := make([]int, m)
 
-		// 根据新的排序结果更新 rank 数组。
-		newRank := make([]int, n)
-		newRank[sa.sa[0]] = 0 // 排名第一的后缀的排名为0。
-		for i := 1; i < n; i++ {
-			newRank[sa.sa[i]] = newRank[sa.sa[i-1]] // 默认与前一个后缀排名相同。
-			a, b := sa.sa[i-1], sa.sa[i]
-			// 如果当前后缀与前一个后缀在长度 k 上不相同，则排名增加。
-			if sa.rank[a] != sa.rank[b] {
-				newRank[sa.sa[i]]++
-			} else {
-				// 如果长度 k 上相同，则比较长度 k 的下一段后缀。
-				ra, rb := 0, 0
-				if a+k < n {
-					ra = sa.rank[a+k]
-				}
-				if b+k < n {
-					rb = sa.rank[b+k]
-				}
-				if ra != rb {
-					newRank[sa.sa[i]]++
-				}
+	// 初始排序 (k=0)
+	for i := 0; i < n; i++ {
+		x[i] = int(sa.text[i])
+		c[x[i]]++
+	}
+	for i := 1; i < m; i++ {
+		c[i] += c[i-1]
+	}
+	for i := n - 1; i >= 0; i-- {
+		sa.sa[c[x[i]]-1] = i
+		c[x[i]]--
+	}
+
+	// 倍增排序
+	for k := 1; k < n; k <<= 1 {
+		p := 0
+		// 1. 处理第二关键字
+		for i := n - k; i < n; i++ {
+			y[p] = i
+			p++
+		}
+		for i := 0; i < n; i++ {
+			if sa.sa[i] >= k {
+				y[p] = sa.sa[i] - k
+				p++
 			}
 		}
-		sa.rank = newRank // 更新 rank 数组。
+
+		// 2. 基数排序处理第一关键字
+		for i := 0; i < m; i++ {
+			c[i] = 0
+		}
+		for i := 0; i < n; i++ {
+			c[x[y[i]]]++
+		}
+		for i := 1; i < m; i++ {
+			c[i] += c[i-1]
+		}
+		for i := n - 1; i >= 0; i-- {
+			sa.sa[c[x[y[i]]]-1] = y[i]
+			c[x[y[i]]]--
+		}
+
+		// 3. 更新排名数组 x，并存入 y 暂存旧排名
+		x, y = y, x
+		p = 1
+		x[sa.sa[0]] = 0
+		for i := 1; i < n; i++ {
+			if sa.isEqual(y, sa.sa[i-1], sa.sa[i], k) {
+				x[sa.sa[i]] = p - 1
+			} else {
+				x[sa.sa[i]] = p
+				p++
+			}
+		}
+		if p >= n {
+			break
+		}
+		m = p // 更新字符集大小为当前排名总数
 	}
+
+	// 填充最终排名
+	copy(sa.rank, x)
+}
+
+func (sa *SuffixArray) isEqual(rank []int, i, j, k int) bool {
+	n := len(sa.text)
+	if rank[i] != rank[j] {
+		return false
+	}
+	ri, rj := -1, -1
+	if i+k < n {
+		ri = rank[i+k]
+	}
+	if j+k < n {
+		rj = rank[j+k]
+	}
+	return ri == rj
 }
 
 // Search 在原始文本中搜索模式 (pattern) 的所有出现位置。
-// 使用二分查找利用后缀数组的有序性。
+// 优化：避免切片产生的分配，直接进行字节比较。
 func (sa *SuffixArray) Search(pattern string) []int {
 	sa.mu.RLock()
 	defer sa.mu.RUnlock()
@@ -142,34 +177,36 @@ func (sa *SuffixArray) Search(pattern string) []int {
 		return nil
 	}
 
-	// 1. 寻找左边界 (第一个 >= pattern 的位置)
+	// 1. 寻找左边界
 	l, r := 0, n-1
 	first := -1
 	for l <= r {
 		mid := l + (r-l)/2
-		suffix := sa.getSuffix(sa.sa[mid], m)
-		if suffix >= pattern {
-			first = mid
+		cmp := sa.compare(sa.sa[mid], pattern)
+		if cmp >= 0 {
+			if cmp == 0 {
+				first = mid
+			}
 			r = mid - 1
 		} else {
 			l = mid + 1
 		}
 	}
 
-	if first == -1 || sa.getSuffix(sa.sa[first], m) != pattern {
+	if first == -1 {
 		return nil
 	}
 
-	// 2. 寻找右边界 (最后一个 == pattern 的位置)
+	// 2. 寻找右边界
 	l, r = first, n-1
 	last := first
 	for l <= r {
 		mid := l + (r-l)/2
-		suffix := sa.getSuffix(sa.sa[mid], m)
-		if suffix == pattern {
+		cmp := sa.compare(sa.sa[mid], pattern)
+		if cmp == 0 {
 			last = mid
 			l = mid + 1
-		} else if suffix > pattern {
+		} else if cmp > 0 {
 			r = mid - 1
 		} else {
 			l = mid + 1
@@ -183,10 +220,22 @@ func (sa *SuffixArray) Search(pattern string) []int {
 	return results
 }
 
-// getSuffix 获取从 start 开始长度为 length 的后缀（处理越界）
-func (sa *SuffixArray) getSuffix(start, length int) string {
-	end := min(start+length, len(sa.text))
-	return sa.text[start:end]
+// compare 比较后缀与模式串，不产生分配。
+func (sa *SuffixArray) compare(start int, pattern string) int {
+	n := len(sa.text)
+	m := len(pattern)
+	for i := 0; i < m; i++ {
+		if start+i >= n {
+			return -1 // 后缀更短
+		}
+		if sa.text[start+i] < pattern[i] {
+			return -1
+		}
+		if sa.text[start+i] > pattern[i] {
+			return 1
+		}
+	}
+	return 0 // 前缀匹配成功
 }
 
 // Count 统计模式串出现的次数

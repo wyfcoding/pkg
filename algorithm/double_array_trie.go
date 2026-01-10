@@ -1,7 +1,7 @@
 package algorithm
 
 import (
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -34,10 +34,10 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 	}
 
 	// 1. 排序 Keys，这对构建效率至关重要
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	// 2. 构建临时的标准 Trie
-	root := newTrieNode()
+	root := newDATNode()
 	for _, key := range keys {
 		root.insert(key)
 	}
@@ -53,9 +53,9 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 	dat.check[0] = 0 // root 的 check 通常设为 0
 
 	// 使用 BFS 遍历 Trie 并填充数组
-	// queue 存储 (trieNode, datIndex)
+	// queue 存储 (datTrieNode, datIndex)
 	type nodeState struct {
-		node     *trieNode
+		node     *datTrieNode
 		datIndex int
 	}
 	queue := []*nodeState{{node: root, datIndex: 0}}
@@ -63,6 +63,12 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 	// 记录已使用的 check 位置，用于寻找空闲位置
 	used := make([]bool, allocSize)
 	used[0] = true
+
+	// 优化：记录第一个空闲的 check 位置
+	firstFree := 1
+	for firstFree < len(dat.check) && dat.check[firstFree] != 0 {
+		firstFree++
+	}
 
 	for len(queue) > 0 {
 		curr := queue[0]
@@ -75,13 +81,15 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 
 		// 寻找合适的 Base 值
 		// 使得对于所有子节点 c，check[base + c.code] == 0 (表示空闲)
-		base := 1
-		for {
-			// 简单的首次适应算法 (First Fit)
-			if base == 0 {
-				base++
-			} // base 通常从 1 开始
+		// 优化：利用 firstFree 快速定位可能的 base
+		// base + children[0].code >= firstFree  =>  base >= firstFree - children[0].code
+		minBase := 1
+		if val := firstFree - int(children[0].code); val > 1 {
+			minBase = val
+		}
 
+		base := minBase
+		for {
 			valid := true
 			for _, child := range children {
 				idx := base + int(child.code)
@@ -117,6 +125,13 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 		for _, child := range children {
 			childIdx := base + int(child.code)
 			dat.check[childIdx] = curr.datIndex
+			// 标记被占用
+			// 如果占用了 firstFree，则需要更新 firstFree
+			if childIdx == firstFree {
+				for firstFree < len(dat.check) && dat.check[firstFree] != 0 {
+					firstFree++
+				}
+			}
 
 			// 如果是叶子节点（单词结尾），通常用 base 存储负值来标记
 			// 这里我们简单地用一个独立的方式标记，或者假设所有节点都是有效路径
@@ -133,7 +148,18 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 	// 压缩数组（去掉末尾未使用的部分）
 	dat.shrink()
 
+	// 4. 释放临时 Trie
+	releaseTrieNodes(root)
+
 	return nil
+}
+
+func releaseTrieNodes(n *datTrieNode) {
+	for _, child := range n.children {
+		releaseTrieNodes(child)
+	}
+	n.reset()
+	datTrieNodePool.Put(n)
 }
 
 // ExactMatch 执行双数组 Trie 的精确匹配。
@@ -229,45 +255,65 @@ func (dat *DoubleArrayTrie) shrink() {
 
 // --- 辅助的内部 Trie 结构 ---
 
-type trieNode struct {
-	children map[rune]*trieNode
+type datTrieNode struct {
+	children map[rune]*datTrieNode
 	isEnd    bool
 }
 
-func newTrieNode() *trieNode {
-	return &trieNode{children: make(map[rune]*trieNode)}
+var datTrieNodePool = sync.Pool{
+	New: func() any {
+		return &datTrieNode{children: make(map[rune]*datTrieNode)}
+	},
 }
 
-func (n *trieNode) insert(key string) {
+func newDATNode() *datTrieNode {
+	node := datTrieNodePool.Get().(*datTrieNode)
+	return node
+}
+
+func (n *datTrieNode) reset() {
+	for k := range n.children {
+		delete(n.children, k)
+	}
+	n.isEnd = false
+}
+
+func (n *datTrieNode) insert(key string) {
 	node := n
 	for _, ch := range key {
 		if ch == 0 {
 			continue // rune(0) is reserved
 		}
 		if node.children[ch] == nil {
-			node.children[ch] = newTrieNode()
+			node.children[ch] = newDATNode()
 		}
 		node = node.children[ch]
 	}
 	// 插入结束符节点，用 0 表示
 	if node.children[0] == nil {
-		node.children[0] = newTrieNode()
+		node.children[0] = newDATNode()
 	}
 	node.children[0].isEnd = true
 }
 
 type childNode struct {
 	code rune
-	node *trieNode
+	node *datTrieNode
 }
 
-func (n *trieNode) sortedChildren() []childNode {
+func (n *datTrieNode) sortedChildren() []childNode {
 	children := make([]childNode, 0, len(n.children))
 	for k, v := range n.children {
 		children = append(children, childNode{code: k, node: v})
 	}
-	sort.Slice(children, func(i, j int) bool {
-		return children[i].code < children[j].code
+	slices.SortFunc(children, func(a, b childNode) int {
+		if a.code < b.code {
+			return -1
+		}
+		if a.code > b.code {
+			return 1
+		}
+		return 0
 	})
 	return children
 }

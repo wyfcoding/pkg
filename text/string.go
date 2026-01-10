@@ -3,7 +3,7 @@ package text
 import (
 	"crypto/md5"   // 导入MD5哈希算法库。
 	"encoding/hex" // 导入hex编码解码库。
-	"math/rand"    // 导入随机数生成库。
+	"math/rand/v2" // 导入随机数生成库 (v2)。
 	"strings"      // 导入字符串操作库。
 	"time"         // 导入时间操作库。
 )
@@ -15,10 +15,10 @@ import (
 func RandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	// 使用当前时间戳作为随机数种子，确保每次生成的随机数序列不同。
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[r.Intn(len(charset))] // 从字符集中随机选择字符。
+		b[i] = charset[r.IntN(len(charset))] // 从字符集中随机选择字符。
 	}
 	return string(b)
 }

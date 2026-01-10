@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"container/list"
 	"log/slog"
 	"sync"
 	"time"
@@ -9,15 +8,16 @@ import (
 
 // ACNode AC自动机节点
 type ACNode struct {
-	children map[rune]*ACNode
-	fail     *ACNode  // 失败指针
-	patterns []string // 以该节点结尾的所有模式串
+	children   map[rune]*ACNode
+	fail       *ACNode // 失败指针
+	patternIdx []int   // 以该节点结尾的模式串在 ac.patterns 中的索引 (Memory Optimized)
 }
 
 // AhoCorasick AC自动机
 type AhoCorasick struct {
-	root *ACNode
-	mu   sync.RWMutex
+	root     *ACNode
+	patterns []string // 存储所有注册的模式串
+	mu       sync.RWMutex
 }
 
 // NewAhoCorasick 创建AC自动机
@@ -26,6 +26,7 @@ func NewAhoCorasick() *AhoCorasick {
 		root: &ACNode{
 			children: make(map[rune]*ACNode),
 		},
+		patterns: make([]string, 0),
 	}
 }
 
@@ -35,6 +36,10 @@ func (ac *AhoCorasick) AddPatterns(patterns ...string) {
 	defer ac.mu.Unlock()
 
 	for _, p := range patterns {
+		// 存储模式串并获取索引
+		idx := len(ac.patterns)
+		ac.patterns = append(ac.patterns, p)
+
 		curr := ac.root
 		for _, r := range p {
 			if _, ok := curr.children[r]; !ok {
@@ -44,7 +49,7 @@ func (ac *AhoCorasick) AddPatterns(patterns ...string) {
 			}
 			curr = curr.children[r]
 		}
-		curr.patterns = append(curr.patterns, p)
+		curr.patternIdx = append(curr.patternIdx, idx)
 	}
 }
 
@@ -54,19 +59,18 @@ func (ac *AhoCorasick) Build() {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
 
-	queue := list.New()
+	queue := make([]*ACNode, 0, 64)
 
 	// 第一层节点的失败指针指向根节点
 	for _, child := range ac.root.children {
 		child.fail = ac.root
-		queue.PushBack(child)
+		queue = append(queue, child)
 	}
 
 	// BFS 构造
-	for queue.Len() > 0 {
-		element := queue.Front()
-		queue.Remove(element)
-		u := element.Value.(*ACNode)
+	for len(queue) > 0 {
+		u := queue[0]
+		queue = queue[1:]
 
 		for r, v := range u.children {
 			f := u.fail
@@ -80,11 +84,11 @@ func (ac *AhoCorasick) Build() {
 			if v.fail == nil {
 				v.fail = ac.root
 			}
-			// 优化：合并后缀模式串
-			if len(v.fail.patterns) > 0 {
-				v.patterns = append(v.patterns, v.fail.patterns...)
+			// 优化：合并后缀模式串的索引 (Integer copy is fast)
+			if len(v.fail.patternIdx) > 0 {
+				v.patternIdx = append(v.patternIdx, v.fail.patternIdx...)
 			}
-			queue.PushBack(v)
+			queue = append(queue, v)
 		}
 	}
 	slog.Info("AhoCorasick build completed", "duration", time.Since(start))
@@ -113,8 +117,9 @@ func (ac *AhoCorasick) Match(text string) map[string][]int {
 		}
 
 		// 收集匹配结果
-		if len(curr.patterns) > 0 {
-			for _, p := range curr.patterns {
+		if len(curr.patternIdx) > 0 {
+			for _, idx := range curr.patternIdx {
+				p := ac.patterns[idx]
 				results[p] = append(results[p], i-len(p)+1)
 			}
 		}
@@ -141,7 +146,7 @@ func (ac *AhoCorasick) Contains(text string) bool {
 			}
 			curr = curr.fail
 		}
-		if len(curr.patterns) > 0 {
+		if len(curr.patternIdx) > 0 {
 			return true
 		}
 	}

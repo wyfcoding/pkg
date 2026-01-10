@@ -42,7 +42,12 @@ func NewMpscRingBuffer[T any](capacity uint64) (*MpscRingBuffer[T], error) {
 
 // Offer 生产者写入数据
 // 这是一个无锁操作，使用 CAS 循环直到成功预留位置
+// 注意：不支持写入 nil 元素，因为 nil 被用作“槽位为空”的标记。
 func (rb *MpscRingBuffer[T]) Offer(item *T) bool {
+	if item == nil {
+		return false // 不允许写入 nil
+	}
+
 	var tail, head uint64
 
 	for {

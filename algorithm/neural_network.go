@@ -3,7 +3,7 @@ package algorithm
 import (
 	"log/slog"
 	"math"
-	"math/rand/v2" // 使用 Go 1.22+ 提供的新的 rand/v2 包。
+	"math/rand/v2"
 	"sync"
 )
 

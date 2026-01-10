@@ -28,8 +28,11 @@ func NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
 		node.Hash = hash[:]
 	} else {
 		// 中间节点：连接左右子节点的哈希值并再次哈希
-		prevHashes := append(left.Hash, right.Hash...)
-		hash := sha256.Sum256(prevHashes)
+		// 优化：使用栈上数组避免 append 造成的堆分配
+		var buf [64]byte
+		copy(buf[:32], left.Hash)
+		copy(buf[32:], right.Hash)
+		hash := sha256.Sum256(buf[:])
 		node.Hash = hash[:]
 	}
 
@@ -60,7 +63,8 @@ func NewMerkleTree(data [][]byte) *MerkleTree {
 			nodes = append(nodes, nodes[len(nodes)-1])
 		}
 
-		var nextLevel []*MerkleNode
+		// 预分配下一层节点的切片容量，避免扩容开销
+		nextLevel := make([]*MerkleNode, 0, len(nodes)/2)
 		for i := 0; i < len(nodes); i += 2 {
 			node := NewMerkleNode(nodes[i], nodes[i+1], nil)
 			nextLevel = append(nextLevel, node)

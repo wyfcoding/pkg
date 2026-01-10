@@ -9,12 +9,23 @@ import (
 type contextKey string
 
 const (
-	UserIDKey   contextKey = "user_id"   // 用户唯一标识 Key
-	TenantIDKey contextKey = "tenant_id" // 租户 ID Key
-	RoleKey     contextKey = "user_role" // 用户角色 Key
-	IPKey       contextKey = "client_ip" // 客户端 IP Key
+	UserIDKey   contextKey = "user_id"    // 用户唯一标识 Key
+	TenantIDKey contextKey = "tenant_id"  // 租户 ID Key
+	RoleKey     contextKey = "user_role"  // 用户角色 Key
+	IPKey       contextKey = "client_ip"  // 客户端 IP Key
 	UAKey       contextKey = "user_agent" // 用户代理 Key
+	DBTxKey     contextKey = "db_tx"      // 数据库事务 Key
 )
+
+// WithTx 将 GORM 事务实例注入到 Context 中。
+func WithTx(ctx context.Context, tx any) context.Context {
+	return context.WithValue(ctx, DBTxKey, tx)
+}
+
+// GetTx 从 Context 中尝试提取 GORM 事务实例。
+func GetTx(ctx context.Context) any {
+	return ctx.Value(DBTxKey)
+}
 
 // WithUserID 将用户 ID 注入到给定的 Context 中。
 func WithUserID(ctx context.Context, userID string) context.Context {

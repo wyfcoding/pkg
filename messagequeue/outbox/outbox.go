@@ -34,8 +34,8 @@ const (
 	StatusFailed                       // 发送失败（超过最大重试次数）
 )
 
-// OutboxMessage 离群消息实体模型
-type OutboxMessage struct {
+// Message 离群消息实体模型
+type Message struct {
 	gorm.Model
 	Topic      string        `gorm:"column:topic;type:varchar(255);not null;index" json:"topic"` // 消息主题
 	Key        string        `gorm:"column:key;type:varchar(255);index" json:"key"`              // 消息键
@@ -49,7 +49,7 @@ type OutboxMessage struct {
 }
 
 // TableName 指定表名
-func (OutboxMessage) TableName() string {
+func (Message) TableName() string {
 	return "sys_outbox_messages"
 }
 
@@ -87,7 +87,7 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 		m.logger.WarnContext(ctx, "failed to marshal tracing metadata", "error", err)
 	}
 
-	msg := &OutboxMessage{
+	msg := &Message{
 		Topic:     topic,
 		Key:       key,
 		Payload:   data,
@@ -164,7 +164,7 @@ func (p *Processor) process() {
 	// 核心架构决策：使用事务 + SKIP LOCKED 确保多实例不抢占同一批消息
 	// 这样即便有 100 个节点在扫描，它们也不会抓取重复的 ID。
 	err := p.mgr.db.Transaction(func(tx *gorm.DB) error {
-		var messages []OutboxMessage
+		var messages []Message
 
 		// 1. 抓取待处理消息并加锁
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
@@ -192,7 +192,7 @@ func (p *Processor) process() {
 }
 
 // send 执行单条消息发送并更新状态 (在事务内执行状态更新以保证一致性)
-func (p *Processor) send(tx *gorm.DB, msg OutboxMessage) {
+func (p *Processor) send(tx *gorm.DB, msg Message) {
 	ctx := context.Background()
 	if msg.Metadata != "" {
 		var carrier map[string]string
@@ -235,7 +235,7 @@ func (p *Processor) send(tx *gorm.DB, msg OutboxMessage) {
 // cleanup 定期清理旧数据，防止表膨胀
 func (p *Processor) cleanup() {
 	deadline := time.Now().AddDate(0, 0, -p.retentionDays)
-	result := p.mgr.db.Where("status = ? AND updated_at < ?", StatusSent, deadline).Delete(&OutboxMessage{})
+	result := p.mgr.db.Where("status = ? AND updated_at < ?", StatusSent, deadline).Delete(&Message{})
 	if result.Error != nil {
 		p.mgr.logger.Error("failed to cleanup old outbox messages", "error", result.Error)
 	} else if result.RowsAffected > 0 {

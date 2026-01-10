@@ -13,7 +13,7 @@
 package algorithm
 
 import (
-	"hash/fnv"
+	"errors"
 	"log/slog"
 	"math"
 	"sync"
@@ -28,7 +28,14 @@ type BloomFilter struct {
 }
 
 // NewBloomFilter 根据预估容量与允许的误报率，科学计算并初始化布隆过滤器。
-func NewBloomFilter(n uint, p float64) *BloomFilter {
+func NewBloomFilter(n uint, p float64) (*BloomFilter, error) {
+	if n == 0 {
+		return nil, errors.New("n (expected elements) must be greater than 0")
+	}
+	if p <= 0 || p >= 1 {
+		return nil, errors.New("p (false positive rate) must be in range (0, 1)")
+	}
+
 	m := uint(math.Ceil(-float64(n) * math.Log(p) / math.Pow(math.Log(2), 2)))
 	k := uint(math.Ceil(float64(m) / float64(n) * math.Log(2)))
 
@@ -38,7 +45,7 @@ func NewBloomFilter(n uint, p float64) *BloomFilter {
 		bits:   make([]uint64, (m+63)/64),
 		size:   m,
 		hashes: k,
-	}
+	}, nil
 }
 
 // Add 向布隆过滤器中插入新的数据。
@@ -48,8 +55,12 @@ func (bf *BloomFilter) Add(data []byte) {
 
 	h1, h2 := bf.hash(data)
 	for i := uint(0); i < bf.hashes; i++ {
+		// 使用 h1 + i*h2 模拟多次哈希 (Kirsch-Mitzenmacher optimization)
+		// 注意：这里可能会溢出，利用 uint 的溢出特性是安全的
 		idx := (h1 + i*h2) % bf.size
-		bf.bits[idx/64] |= (1 << (idx % 64))
+		// idx / 64 -> idx >> 6
+		// idx % 64 -> idx & 63
+		bf.bits[idx>>6] |= (1 << (idx & 63))
 	}
 }
 
@@ -62,17 +73,23 @@ func (bf *BloomFilter) Contains(data []byte) bool {
 	h1, h2 := bf.hash(data)
 	for i := uint(0); i < bf.hashes; i++ {
 		idx := (h1 + i*h2) % bf.size
-		if bf.bits[idx/64]&(1<<(idx%64)) == 0 {
+		if bf.bits[idx>>6]&(1<<(idx&63)) == 0 {
 			return false
 		}
 	}
 	return true
 }
 
-// hash 使用 FNV-1a 生成两个 64 位哈希值
+// hash 使用 FNV-1a 生成两个 64 位哈希值 (Zero Allocation)
 func (bf *BloomFilter) hash(data []byte) (uint, uint) {
-	h := fnv.New64a()
-	h.Write(data)
-	v := h.Sum64()
-	return uint(v >> 32), uint(v)
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+	var h uint64 = offset64
+	for _, b := range data {
+		h ^= uint64(b)
+		h *= prime64
+	}
+	return uint(h >> 32), uint(h)
 }

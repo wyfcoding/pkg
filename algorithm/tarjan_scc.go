@@ -9,10 +9,6 @@
 // - 空间复杂度: O(V)，用于存储递归栈和节点状态。
 package algorithm
 
-import (
-	"math"
-)
-
 // Graph 定义了一个基于邻接表的有向图
 type Graph struct {
 	nodes int     // 顶点总数
@@ -81,10 +77,10 @@ func (t *TarjanSCC) strongConnect(v int) {
 		if t.indices[w] == -1 {
 			// 邻居未被访问，递归访问
 			t.strongConnect(w)
-			t.lowlink[v] = int(math.Min(float64(t.lowlink[v]), float64(t.lowlink[w])))
+			t.lowlink[v] = min(t.lowlink[v], t.lowlink[w])
 		} else if t.onStack[w] {
 			// 邻居在栈中，说明构成环
-			t.lowlink[v] = int(math.Min(float64(t.lowlink[v]), float64(t.indices[w])))
+			t.lowlink[v] = min(t.lowlink[v], t.indices[w])
 		}
 	}
 

@@ -26,7 +26,7 @@ type LockFreeQueue struct {
 // 优化：调整结构体大小为 64 字节，以匹配常见的 CPU 缓存行大小，防止伪共享。
 type slot struct {
 	sequence uint32
-	// Go 编译器会自动在此处插入 4 字节的 padding 以满足 interface{} 的 8 字节对齐要求
+	// Go 编译器会自动在此处插入 4 字节的 padding 以满足 any 的 8 字节对齐要求
 	item any      // 16 bytes
 	_    [40]byte // Padding: 4 (seq) + 4 (implicit) + 16 (item) + 40 (explicit) = 64 bytes.
 }
@@ -132,7 +132,6 @@ func countLeadingZeros(x uint32) int {
 		x <<= 2
 	}
 	if x <= 0x7FFFFFFF {
-		n += 1
-	}
+		        n++	}
 	return n
 }

@@ -11,8 +11,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// HttpMetricsMiddleware (Gin)
-func HttpMetricsMiddleware(m *metrics.Metrics) gin.HandlerFunc {
+// HTTPMetricsMiddleware (Gin)
+func HTTPMetricsMiddleware(m *metrics.Metrics) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
@@ -24,8 +24,8 @@ func HttpMetricsMiddleware(m *metrics.Metrics) gin.HandlerFunc {
 		}
 		statusStr := strconv.Itoa(c.Writer.Status())
 
-		m.HttpRequestsTotal.WithLabelValues(c.Request.Method, path, statusStr).Inc()
-		m.HttpRequestDuration.WithLabelValues(c.Request.Method, path).Observe(duration)
+		m.HTTPRequestsTotal.WithLabelValues(c.Request.Method, path, statusStr).Inc()
+		m.HTTPRequestDuration.WithLabelValues(c.Request.Method, path).Observe(duration)
 	}
 }
 
@@ -37,8 +37,8 @@ func GrpcMetricsInterceptor(m *metrics.Metrics) grpc.UnaryServerInterceptor {
 		duration := time.Since(start).Seconds()
 
 		st, _ := status.FromError(err)
-		m.GrpcRequestsTotal.WithLabelValues("server", info.FullMethod, st.Code().String()).Inc()
-		m.GrpcRequestDuration.WithLabelValues("server", info.FullMethod).Observe(duration)
+		m.GRPCRequestsTotal.WithLabelValues("server", info.FullMethod, st.Code().String()).Inc()
+		m.GRPCRequestDuration.WithLabelValues("server", info.FullMethod).Observe(duration)
 
 		return resp, err
 	}

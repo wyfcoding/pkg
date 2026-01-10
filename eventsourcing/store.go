@@ -59,7 +59,7 @@ func NewDefaultSnapshotStrategy(interval int64) *DefaultSnapshotStrategy {
 	return &DefaultSnapshotStrategy{Interval: interval}
 }
 
-func (s *DefaultSnapshotStrategy) ShouldSnapshot(aggregate Aggregate, eventsLen int) bool {
+func (s *DefaultSnapshotStrategy) ShouldSnapshot(aggregate Aggregate, _ int) bool {
 	// 简单的策略：如果当前版本是间隔的倍数，则快照
 	// 注意：这只是一个近似策略，实际可能需要更复杂的判断逻辑
 	return aggregate.Version()%s.Interval == 0

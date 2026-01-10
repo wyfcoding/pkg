@@ -82,7 +82,7 @@ func NewFromConfig(cfg Config) *Logger {
 		logLevel = slog.LevelInfo
 	}
 
-	replaceAttr := func(groups []string, a slog.Attr) slog.Attr {
+	replaceAttr := func(_ []string, a slog.Attr) slog.Attr {
 		if a.Key == slog.TimeKey {
 			a.Key = "timestamp"
 		}
@@ -261,7 +261,7 @@ func NewGormLogger(logger *Logger, slowThreshold time.Duration) *GormLogger {
 // 鉴于slog的设计，通常不直接在运行时动态更改现有logger实例的级别，
 // 而是通过创建新的Handler或在HandlerOptions中配置。
 // 此处直接返回自身，表示沿用当前logger的配置。
-func (l *GormLogger) LogMode(level logger.LogLevel) logger.Interface {
+func (l *GormLogger) LogMode(_ logger.LogLevel) logger.Interface {
 	// GORM的LogLevel与slog的LogLevel映射关系需要自行定义，或者在此处根据level做过滤。
 	// 目前简单返回自身，意味着GORM的日志级别控制将主要依赖于NewLogger中配置的slog级别。
 	return l

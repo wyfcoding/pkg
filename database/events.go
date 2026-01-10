@@ -84,7 +84,7 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 	for _, event := range events {
 		payload, err := json.Marshal(event)
 		if err != nil {
-			db.AddError(fmt.Errorf("failed to marshal domain event: %w", err))
+			_ = db.AddError(fmt.Errorf("failed to marshal domain event: %w", err))
 			continue
 		}
 
@@ -99,7 +99,7 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 		// 在当前同一个事务中将消息持久化至 sys_outbox_messages 表
 		// 使用 NewDB: true 开启一个干净的会话，避免干扰主操作的错误状态
 		if err := db.Session(&gorm.Session{NewDB: true}).Create(record).Error; err != nil {
-			db.AddError(fmt.Errorf("failed to create outbox record: %w", err))
+			_ = db.AddError(fmt.Errorf("failed to create outbox record: %w", err))
 		}
 	}
 

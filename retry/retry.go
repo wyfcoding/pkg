@@ -4,15 +4,15 @@ package retry
 import (
 	"context"
 	"log/slog"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 )
 
-// RetryFunc 定义了可被重试执行的业务函数原型。
-type RetryFunc func() error
+// Func 定义了可被重试执行的业务函数原型。
+type Func func() error
 
-// RetryConfig 封装了重试策略的详细控制参数。
-type RetryConfig struct {
+// Config 封装了重试策略的详细控制参数。
+type Config struct {
 	MaxRetries     int           // 最大重试次数（不含首次尝试）
 	InitialBackoff time.Duration // 首次重试前的初始等待时间
 	MaxBackoff     time.Duration // 重试等待时间的上限（封顶值）
@@ -26,8 +26,8 @@ type RetryConfig struct {
 // DefaultRetryConfig 返回一个默认的、通用的重试配置。
 // 默认配置为：最大重试3次，初始等待100毫秒，最长等待2秒，时间倍率为2.0，抖动为10%。
 // 这个配置适用于大多数常规的、对延迟不极端敏感的场景。
-func DefaultRetryConfig() RetryConfig {
-	return RetryConfig{
+func DefaultRetryConfig() Config {
+	return Config{
 		MaxRetries:     3,
 		InitialBackoff: 100 * time.Millisecond,
 		MaxBackoff:     2 * time.Second,
@@ -37,7 +37,7 @@ func DefaultRetryConfig() RetryConfig {
 }
 
 // 核心逻辑：执行 -> 失败 -> 计算退避时间 -> 等待（支持上下文取消）-> 重试。
-func Retry(ctx context.Context, fn RetryFunc, cfg RetryConfig) error {
+func Retry(ctx context.Context, fn Func, cfg Config) error {
 	var err error
 	backoff := cfg.InitialBackoff
 

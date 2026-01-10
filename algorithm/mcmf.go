@@ -10,52 +10,64 @@ type MCMFEdge struct {
 }
 
 // MCMF 最小费用最大流算法
+// 优化：复用内存 buffer，减少 GC 压力
 type MCMF struct {
-	nodes int
-	adj   [][]MCMFEdge
-	dist  []int
-	pNode []int
-	pEdge []int
+	nodes   int
+	adj     [][]MCMFEdge
+	dist    []int
+	pNode   []int
+	pEdge   []int
+	inQueue []bool // 复用 buffer
+	queue   []int  // 复用 buffer
 }
 
 func NewMCMF(n int) *MCMF {
 	return &MCMF{
-		nodes: n,
-		adj:   make([][]MCMFEdge, n),
-		dist:  make([]int, n),
-		pNode: make([]int, n),
-		pEdge: make([]int, n),
+		nodes:   n,
+		adj:     make([][]MCMFEdge, n),
+		dist:    make([]int, n),
+		pNode:   make([]int, n),
+		pEdge:   make([]int, n),
+		inQueue: make([]bool, n),
+		queue:   make([]int, 0, n),
 	}
 }
 
-func (m *MCMF) AddEdge(u, v, cap, cost int) {
-	m.adj[u] = append(m.adj[u], MCMFEdge{v, cap, 0, cost, len(m.adj[v])})
+func (m *MCMF) AddEdge(u, v, capacity, cost int) {
+	m.adj[u] = append(m.adj[u], MCMFEdge{v, capacity, 0, cost, len(m.adj[v])})
 	m.adj[v] = append(m.adj[v], MCMFEdge{u, 0, 0, -cost, len(m.adj[u]) - 1})
 }
 
 // spfa 寻找最短路径
 func (m *MCMF) spfa(s, t int) bool {
+	// 重置 dist
 	for i := range m.dist {
 		m.dist[i] = math.MaxInt32
 	}
-	inQueue := make([]bool, m.nodes)
-	queue := []int{s}
-	m.dist[s] = 0
-	inQueue[s] = true
+	// 重置 inQueue (O(N))
+	for i := range m.inQueue {
+		m.inQueue[i] = false
+	}
+	// 重置 queue
+	m.queue = m.queue[:0]
 
-	for len(queue) > 0 {
-		u := queue[0]
-		queue = queue[1:]
-		inQueue[u] = false
+	m.dist[s] = 0
+	m.queue = append(m.queue, s)
+	m.inQueue[s] = true
+
+	for len(m.queue) > 0 {
+		u := m.queue[0]
+		m.queue = m.queue[1:]
+		m.inQueue[u] = false
 
 		for i, e := range m.adj[u] {
 			if e.Cap > e.Flow && m.dist[e.To] > m.dist[u]+e.Cost {
 				m.dist[e.To] = m.dist[u] + e.Cost
 				m.pNode[e.To] = u
 				m.pEdge[e.To] = i
-				if !inQueue[e.To] {
-					queue = append(queue, e.To)
-					inQueue[e.To] = true
+				if !m.inQueue[e.To] {
+					m.queue = append(m.queue, e.To)
+					m.inQueue[e.To] = true
 				}
 			}
 		}

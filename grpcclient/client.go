@@ -72,8 +72,8 @@ func (f *ClientFactory) metricsInterceptor(target string) grpc.UnaryClientInterc
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		duration := time.Since(start).Seconds()
 		st, _ := status.FromError(err)
-		f.metrics.GrpcRequestsTotal.WithLabelValues("client", target+":"+method, st.Code().String()).Inc()
-		f.metrics.GrpcRequestDuration.WithLabelValues("client", target+":"+method).Observe(duration)
+		f.metrics.GRPCRequestsTotal.WithLabelValues("client", target+":"+method, st.Code().String()).Inc()
+		f.metrics.GRPCRequestDuration.WithLabelValues("client", target+":"+method).Observe(duration)
 		return err
 	}
 }
@@ -104,6 +104,6 @@ func (f *ClientFactory) retryInterceptor(maxRetries int) grpc.UnaryClientInterce
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		return retry.Retry(ctx, func() error {
 			return invoker(ctx, method, req, reply, cc, opts...)
-		}, retry.RetryConfig{MaxRetries: maxRetries})
+		}, retry.Config{MaxRetries: maxRetries})
 	}
 }

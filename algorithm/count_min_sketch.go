@@ -2,10 +2,9 @@ package algorithm
 
 import (
 	"errors"
-	"hash/fnv"
 	"log/slog"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"sync/atomic"
 	"time"
 )
@@ -40,9 +39,8 @@ func NewCountMinSketch(epsilon, delta float64) (*CountMinSketch, error) {
 
 func generateSeeds(depth uint) []uint32 {
 	seeds := make([]uint32, depth)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := range seeds {
-		seeds[i] = r.Uint32()
+		seeds[i] = rand.Uint32()
 	}
 	return seeds
 }
@@ -123,10 +121,16 @@ func (cms *CountMinSketch) Merge(other *CountMinSketch) error {
 	return nil
 }
 
-// hash 使用 FNV-1a 算法生成两个基础哈希值
+// hash 使用 FNV-1a 算法生成两个基础哈希值 (Zero Allocation)
 func hash(data []byte) (uint32, uint32) {
-	h := fnv.New64a()
-	h.Write(data)
-	sum := h.Sum64()
-	return uint32(sum), uint32(sum >> 32)
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+	var h uint64 = offset64
+	for _, b := range data {
+		h ^= uint64(b)
+		h *= prime64
+	}
+	return uint32(h), uint32(h >> 32)
 }

@@ -16,10 +16,10 @@ type Metrics struct {
 	registry *prometheus.Registry // 内部独立的 Prometheus 注册中心
 
 	// 预定义的标准指标，减少各业务模块的样板代码
-	HttpRequestsTotal   *prometheus.CounterVec   // HTTP 请求总量 (维度: method, path, status)
-	HttpRequestDuration *prometheus.HistogramVec // HTTP 请求耗时分布
-	GrpcRequestsTotal   *prometheus.CounterVec   // gRPC 请求总量 (维度: service, method, status)
-	GrpcRequestDuration *prometheus.HistogramVec // gRPC 请求耗时分布
+	HTTPRequestsTotal   *prometheus.CounterVec   // HTTP 请求总量 (维度: method, path, status)
+	HTTPRequestDuration *prometheus.HistogramVec // HTTP 请求耗时分布
+	GRPCRequestsTotal   *prometheus.CounterVec   // gRPC 请求总量 (维度: service, method, status)
+	GRPCRequestDuration *prometheus.HistogramVec // gRPC 请求耗时分布
 }
 
 // NewMetrics 初始化并返回一个新的指标采集器。
@@ -32,23 +32,23 @@ func NewMetrics(serviceName string) *Metrics {
 	m := &Metrics{registry: reg}
 
 	// 初始化各标准指标...
-	m.HttpRequestsTotal = m.NewCounterVec(prometheus.CounterOpts{
+	m.HTTPRequestsTotal = m.NewCounterVec(prometheus.CounterOpts{
 		Name: "http_server_requests_total",
 		Help: "Total number of HTTP requests",
 	}, []string{"method", "path", "status"})
 
-	m.HttpRequestDuration = m.NewHistogramVec(prometheus.HistogramOpts{
+	m.HTTPRequestDuration = m.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "http_server_request_duration_seconds",
 		Help:    "HTTP request latency in seconds",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
-	m.GrpcRequestsTotal = m.NewCounterVec(prometheus.CounterOpts{
+	m.GRPCRequestsTotal = m.NewCounterVec(prometheus.CounterOpts{
 		Name: "grpc_server_requests_total",
 		Help: "Total number of gRPC requests",
 	}, []string{"service", "method", "status"})
 
-	m.GrpcRequestDuration = m.NewHistogramVec(prometheus.HistogramOpts{
+	m.GRPCRequestDuration = m.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "grpc_server_request_duration_seconds",
 		Help:    "gRPC request latency in seconds",
 		Buckets: prometheus.DefBuckets,
@@ -84,9 +84,9 @@ func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 }
 
-// ExposeHttp 在指定端口启动一个独立的 HTTP 服务器用于暴露指标数据。
+// ExposeHTTP 在指定端口启动一个独立的 HTTP 服务器用于暴露指标数据。
 // 返回一个清理函数用于优雅关闭该服务器。
-func (m *Metrics) ExposeHttp(port string) func() {
+func (m *Metrics) ExposeHTTP(port string) func() {
 	srv := &http.Server{
 		Addr:    ":" + port,
 		Handler: m.Handler(),

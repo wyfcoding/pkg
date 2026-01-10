@@ -2,7 +2,7 @@ package algorithm
 
 import (
 	"log/slog"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -42,8 +42,14 @@ func (o *BinPackingOptimizer) FFD(items []Item) []*Bin {
 	// 1. 复制并排序
 	sortedItems := make([]Item, len(items))
 	copy(sortedItems, items)
-	sort.Slice(sortedItems, func(i, j int) bool {
-		return sortedItems[i].Volume > sortedItems[j].Volume
+	slices.SortFunc(sortedItems, func(a, b Item) int {
+		if a.Volume > b.Volume {
+			return -1
+		}
+		if a.Volume < b.Volume {
+			return 1
+		}
+		return 0
 	})
 
 	bins := make([]*Bin, 0)

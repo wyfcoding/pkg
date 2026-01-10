@@ -1,6 +1,8 @@
 // Package algos 提供红黑树数据结构和订单簿实现
 package algorithm
 
+import "sync"
+
 // Color 红黑树节点颜色
 type Color bool
 
@@ -27,6 +29,30 @@ type RBTree struct {
 	// false 表示按价格升序排列（卖单树，低价优先）。
 	IsMaxTree bool
 	Size      int // 树中节点的总数。
+}
+
+var rbNodePool = sync.Pool{
+	New: func() any {
+		return &RBNode{}
+	},
+}
+
+func newRBNode(order *Order, color Color) *RBNode {
+	node := rbNodePool.Get().(*RBNode)
+	node.Order = order
+	node.Color = color
+	node.Left = nil
+	node.Right = nil
+	node.Parent = nil
+	return node
+}
+
+func releaseRBNode(node *RBNode) {
+	node.Order = nil
+	node.Left = nil
+	node.Right = nil
+	node.Parent = nil
+	rbNodePool.Put(node)
 }
 
 // NewRBTree 创建并返回一个指定排序方向的红黑树。
@@ -94,8 +120,9 @@ func (t *RBTree) Less(a, b *Order) bool {
 
 // Insert 向红黑树中插入一个新的订单。
 // 插入后会调用 insertFixup 保持红黑树的 5 个基本性质。
-func (t *RBTree) Insert(order *Order) {
-	z := &RBNode{Order: order, Color: Red}
+// 返回新创建的节点，以便调用者保存以实现 O(1) 定位。
+func (t *RBTree) Insert(order *Order) *RBNode {
+	z := newRBNode(order, Red)
 	var y *RBNode
 	x := t.Root
 
@@ -121,39 +148,29 @@ func (t *RBTree) Insert(order *Order) {
 	// 插入修正：通过旋转和重新着色恢复红黑树平衡。
 	t.insertFixup(z)
 	t.Size++
+	return z
 }
 
-// insertFixup 恢复红黑树性质：
-// 1. 每个节点是红色或黑色。
-// 2. 根节点是黑色。
-// 3. 每个叶节点（NIL）是黑色。
-// 4. 如果一个节点是红色的，则它的两个子节点都是黑色的。
-// 5. 对每个节点，从该节点到其所有后代叶节点的简单路径上，均包含相同数目的黑色节点。
+// insertFixup 恢复红黑树性质
 func (t *RBTree) insertFixup(z *RBNode) {
-	// 逻辑实现...
 	for z.Parent != nil && z.Parent.Color == Red {
-		// ... (省略具体实现代码的重复部分，仅展示注释增强)
 		if z.Parent == z.Parent.Parent.Left {
-			y := z.Parent.Parent.Right // 叔叔节点
+			y := z.Parent.Parent.Right // 叔叔
 			if y != nil && y.Color == Red {
-				// 情况 1: 叔叔节点也是红色 -> 重新着色
 				z.Parent.Color = Black
 				y.Color = Black
 				z.Parent.Parent.Color = Red
 				z = z.Parent.Parent
 			} else {
 				if z == z.Parent.Right {
-					// 情况 2: 叔叔是黑色，当前是右孩子 -> 左旋转变为情况 3
 					z = z.Parent
 					t.leftRotate(z)
 				}
-				// 情况 3: 叔叔是黑色，当前是左孩子 -> 右旋并着色
 				z.Parent.Color = Black
 				z.Parent.Parent.Color = Red
 				t.rightRotate(z.Parent.Parent)
 			}
 		} else {
-			// 对称情况处理
 			y := z.Parent.Parent.Left
 			if y != nil && y.Color == Red {
 				z.Parent.Color = Black
@@ -212,14 +229,13 @@ func (t *RBTree) rightRotate(y *RBNode) {
 	y.Parent = x
 }
 
-// Delete 删除订单
+// Delete 根据 Order 寻找并删除节点（O(log N) 搜索）。
 func (t *RBTree) Delete(order *Order) {
 	z := t.find(order)
 	if z == nil {
 		return
 	}
-	t.deleteNode(z)
-	t.Size--
+	t.DeleteNode(z)
 }
 
 // find 查找指定订单的节点
@@ -238,8 +254,8 @@ func (t *RBTree) find(order *Order) *RBNode {
 	return nil
 }
 
-// deleteNode 删除指定节点
-func (t *RBTree) deleteNode(z *RBNode) {
+// DeleteNode 删除指定节点（O(1) 定位 + O(log N) 修复）。
+func (t *RBTree) DeleteNode(z *RBNode) {
 	var y, x *RBNode
 	if z.Left == nil || z.Right == nil {
 		y = z
@@ -272,6 +288,8 @@ func (t *RBTree) deleteNode(z *RBNode) {
 	if y.Color == Black && x != nil {
 		t.deleteFixup(x)
 	}
+	releaseRBNode(y)
+	t.Size--
 }
 
 // successor 查找后继节点

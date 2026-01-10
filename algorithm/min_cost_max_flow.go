@@ -6,144 +6,158 @@ import (
 )
 
 // MinCostMaxFlowGraph 结构体代表一个最小成本最大流网络图。
-// 这种图的每条边除了有容量限制外，还有单位流量的成本。
-// 算法目标是在满足最大流的同时，使总成本最小。
+// 优化：内部使用整数 ID 和邻接表代替字符串 Map，显著提升性能。
 type MinCostMaxFlowGraph struct {
-	capacity map[string]map[string]int64 // capacity[u][v] 表示从节点u到节点v的边的容量。
-	cost     map[string]map[string]int64 // cost[u][v] 表示从节点u到节点v的单位流量成本。
-	flow     map[string]map[string]int64 // flow[u][v] 表示从节点u到节点v的当前流量。
-	nodes    map[string]bool             // 图中所有节点的集合。
-	mu       sync.RWMutex                // 读写锁，用于保护图的并发访问。
+	nodeID map[string]int // 字符串节点到整数 ID 的映射
+	adj    [][]mcmfEdge   // 邻接表
+	mu     sync.RWMutex   // 读写锁
+}
+
+type mcmfEdge struct {
+	to   int
+	rev  int   // 反向边在 adj[to] 中的索引
+	cap  int64 // 容量
+	cost int64 // 单位流量成本
+	flow int64 // 当前流量
 }
 
 // NewMinCostMaxFlowGraph 创建并返回一个新的 MinCostMaxFlowGraph 实例。
 func NewMinCostMaxFlowGraph() *MinCostMaxFlowGraph {
 	return &MinCostMaxFlowGraph{
-		capacity: make(map[string]map[string]int64),
-		cost:     make(map[string]map[string]int64),
-		flow:     make(map[string]map[string]int64),
-		nodes:    make(map[string]bool),
+		nodeID: make(map[string]int),
+		adj:    make([][]mcmfEdge, 0),
 	}
+}
+
+// getID 获取或创建节点的整数 ID
+func (g *MinCostMaxFlowGraph) getID(name string) int {
+	if id, ok := g.nodeID[name]; ok {
+		return id
+	}
+	id := len(g.adj)
+	g.nodeID[name] = id
+	g.adj = append(g.adj, make([]mcmfEdge, 0))
+	return id
 }
 
 // AddEdge 向最小成本最大流网络图中添加一条边。
-// from: 边的起始节点。
-// to: 边的结束节点。
-// cap: 边的容量。
-// c: 边的单位流量成本。
-// 注意：在残余网络中，反向边的成本是负值。
-func (g *MinCostMaxFlowGraph) AddEdge(from, to string, cap, c int64) {
-	g.mu.Lock()         // 加写锁，以确保修改图的线程安全。
-	defer g.mu.Unlock() // 确保函数退出时解锁。
+func (g *MinCostMaxFlowGraph) AddEdge(from, to string, capacity, c int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	// 确保起始和结束节点在容量、成本和流量图中都有对应的内层map。
-	if g.capacity[from] == nil {
-		g.capacity[from] = make(map[string]int64)
-		g.cost[from] = make(map[string]int64)
-		g.flow[from] = make(map[string]int64)
-	}
-	if g.capacity[to] == nil {
-		g.capacity[to] = make(map[string]int64)
-		g.cost[to] = make(map[string]int64)
-		g.flow[to] = make(map[string]int64)
-	}
+	u := g.getID(from)
+	v := g.getID(to)
 
-	g.capacity[from][to] += cap // 增加正向边的容量（处理并行边）。
-	g.cost[from][to] = c        // 设置正向边的成本。
-	g.cost[to][from] = -c       // 设置反向边的成本为负值。
-	g.nodes[from] = true        // 记录节点。
-	g.nodes[to] = true          // 记录节点。
+	// 添加正向边
+	g.adj[u] = append(g.adj[u], mcmfEdge{
+		to:   v,
+		rev:  len(g.adj[v]), // 反向边将是 v 的下一个边
+		cap:  capacity,
+		cost: c,
+		flow: 0,
+	})
+
+	// 添加反向边 (容量 0，成本 -c)
+	g.adj[v] = append(g.adj[v], mcmfEdge{
+		to:   u,
+		rev:  len(g.adj[u]) - 1, // 正向边是 u 的最后一个边
+		cap:  0,
+		cost: -c,
+		flow: 0,
+	})
 }
 
 // MinCostMaxFlow 算法实现了最小成本最大流问题。
-// 它通过反复寻找从源点到汇点的最短增广路径（使用SPFA算法），并沿着该路径增加流量，
-// 直到无法再增加流量或达到最大流量限制为止。
-// 应用场景：多仓库配送成本最小化、物流路径优化、资源调度等。
-// source: 流的源点。
-// sink: 流的汇点。
-// maxFlow: 需要达到的最大流量目标。
-// 返回实际达到的总流量和对应的最小总成本。
 func (g *MinCostMaxFlowGraph) MinCostMaxFlow(source, sink string, maxFlow int64) (int64, int64) {
-	g.mu.Lock()         // 加写锁，因为会修改流量矩阵和总成本。
-	defer g.mu.Unlock() // 确保函数退出时解锁。
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	totalFlow := int64(0) // 累计的总流量。
-	totalCost := int64(0) // 累计的总成本。
-
-	for totalFlow < maxFlow { // 当总流量未达到最大流量目标时，继续寻找增广路径。
-		// 使用SPFA算法在残余网络中寻找一条从源点到汇点的最短（最小成本）增广路径。
-		dist, parent := g.spfa(source)
-
-		// 如果无法从源点到达汇点，或者最短路径成本为无穷大，则终止算法。
-		if dist[sink] == math.MaxInt64 {
-			break
-		}
-
-		// 找到当前增广路径上的最小剩余容量（瓶颈容量）。
-		pathFlow := maxFlow - totalFlow // 路径流量不能超过还需要发送的流量。
-		for v := sink; v != source; v = parent[v] {
-			u := parent[v]
-			// 剩余容量 = 边的容量 - 边的当前流量。
-			residual := g.capacity[u][v] - g.flow[u][v]
-			if residual < pathFlow {
-				pathFlow = residual
-			}
-		}
-
-		// 沿着增广路径更新流量和总成本。
-		for v := sink; v != source; v = parent[v] {
-			u := parent[v]
-			g.flow[u][v] += pathFlow             // 正向边增加流量。
-			g.flow[v][u] -= pathFlow             // 反向边减少流量。
-			totalCost += pathFlow * g.cost[u][v] // 累加成本。
-		}
-
-		totalFlow += pathFlow // 将本次增广路径的流量累加到总流量中。
+	// 检查源点和汇点是否存在
+	sID, ok1 := g.nodeID[source]
+	tID, ok2 := g.nodeID[sink]
+	if !ok1 || !ok2 {
+		return 0, 0
 	}
 
-	return totalFlow, totalCost
-}
+	totalFlow := int64(0)
+	totalCost := int64(0)
+	n := len(g.adj)
 
-// spfa (Shortest Path Faster Algorithm) 算法用于在有负权边的图中寻找最短路径。
-// 在最小成本最大流算法中，SPFA用于在残余网络中寻找最小成本增广路径。
-// source: 搜索的起始节点。
-// 返回一个 map，其中键是节点，值是从源点到该节点的最小成本；另一个map存储路径中的前驱节点。
-func (g *MinCostMaxFlowGraph) spfa(source string) (map[string]int64, map[string]string) {
-	dist := make(map[string]int64)    // 存储从源点到各个节点的最短距离。
-	parent := make(map[string]string) // 存储路径中的前驱节点。
-	inQueue := make(map[string]bool)  // 标记节点是否在队列中，用于优化。
+	// SPFA 辅助数组 (避免每次分配，但这里简单起见每次分配，或者可以像 mcmf.go 那样优化复用)
+	// 鉴于图大小不定，且 MinCostMaxFlow 调用频率可能不高，直接分配即可。
+	// 若追求极致，可作为成员变量缓存。
+	dist := make([]int64, n)
+	parentEdge := make([]int, n) // 记录前驱边在 adj[parent[v]] 中的索引
+	parent := make([]int, n)     // 记录前驱节点
+	inQueue := make([]bool, n)
+	queue := make([]int, 0, n)
 
-	// 初始化距离：所有节点距离设为无穷大，源点距离设为0。
-	for node := range g.nodes {
-		dist[node] = math.MaxInt64
-	}
-	dist[source] = 0
+	for totalFlow < maxFlow {
+		// --- SPFA ---
+		for i := 0; i < n; i++ {
+			dist[i] = math.MaxInt64
+			inQueue[i] = false
+		}
+		queue = queue[:0]
 
-	queue := []string{source} // SPFA队列，初始化为源点。
-	inQueue[source] = true    // 标记源点在队列中。
+		dist[sID] = 0
+		queue = append(queue, sID)
+		inQueue[sID] = true
 
-	for len(queue) > 0 {
-		u := queue[0]      // 取出队列头节点。
-		queue = queue[1:]  // 队列出队。
-		inQueue[u] = false // 标记 u 不再队列中。
+		for len(queue) > 0 {
+			u := queue[0]
+			queue = queue[1:]
+			inQueue[u] = false
 
-		// 遍历节点 u 的所有邻接点 v。
-		for v := range g.capacity[u] {
-			// 只有在残余网络中仍有容量的边才考虑。
-			if g.capacity[u][v] > g.flow[u][v] {
-				// 尝试通过 u 优化到 v 的距离。
-				newDist := dist[u] + g.cost[u][v]
-				if newDist < dist[v] {
-					dist[v] = newDist // 更新最短距离。
-					parent[v] = u     // 更新前驱节点。
-					if !inQueue[v] {  // 如果 v 不在队列中，则将其加入队列。
-						queue = append(queue, v)
-						inQueue[v] = true
+			for i, e := range g.adj[u] {
+				if e.cap > e.flow && dist[e.to] > dist[u]+e.cost {
+					dist[e.to] = dist[u] + e.cost
+					parent[e.to] = u
+					parentEdge[e.to] = i
+					if !inQueue[e.to] {
+						queue = append(queue, e.to)
+						inQueue[e.to] = true
 					}
 				}
 			}
 		}
+
+		if dist[tID] == math.MaxInt64 {
+			break
+		}
+
+		// 寻找瓶颈容量
+		pathFlow := maxFlow - totalFlow
+		curr := tID
+		for curr != sID {
+			p := parent[curr]
+			idx := parentEdge[curr]
+			e := g.adj[p][idx]
+			if e.cap-e.flow < pathFlow {
+				pathFlow = e.cap - e.flow
+			}
+			curr = p
+		}
+
+		// 更新流量
+		curr = tID
+		for curr != sID {
+			p := parent[curr]
+			idx := parentEdge[curr]
+
+			// 正向边
+			g.adj[p][idx].flow += pathFlow
+			totalCost += pathFlow * g.adj[p][idx].cost
+
+			// 反向边
+			revIdx := g.adj[p][idx].rev
+			g.adj[curr][revIdx].flow -= pathFlow
+
+			curr = p
+		}
+
+		totalFlow += pathFlow
 	}
 
-	return dist, parent
+	return totalFlow, totalCost
 }

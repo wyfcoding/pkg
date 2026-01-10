@@ -2,7 +2,8 @@ package algorithm
 
 import (
 	"math"
-	"sort"
+	"runtime"
+	"slices"
 	"sync"
 	"time"
 )
@@ -78,29 +79,68 @@ func (re *RecommendationEngine) UserBasedCF(userID uint64, topN int) []uint64 {
 	re.mu.RLock()         // 加读锁。
 	defer re.mu.RUnlock() // 确保函数退出时解锁。
 
-	// 找出与目标用户相似的用户。
-	similarities := make(map[uint64]float64) // UserID -> SimilarityScore。
-	for otherUserID := range re.userItemMatrix {
-		if otherUserID != userID { // 排除自己。
-			sim := re.cosineSimilarity(userID, otherUserID) // 计算余弦相似度。
-			if sim > 0 {
-				similarities[otherUserID] = sim
-			}
+	userRatings := re.userItemMatrix[userID]
+	if len(userRatings) == 0 {
+		return nil
+	}
+
+	// 1. 收集候选用户 (除自己外)
+	candidateUsers := make([]uint64, 0, len(re.userItemMatrix))
+	for uid := range re.userItemMatrix {
+		if uid != userID {
+			candidateUsers = append(candidateUsers, uid)
 		}
 	}
 
-	// 基于相似用户的评分，计算物品的预测评分。
-	predictions := make(map[uint64]float64) // ItemID -> PredictedRating。
-	userRatings := re.userItemMatrix[userID]
+	// 2. 并发计算相似度并累积预测分
+	numWorkers := runtime.GOMAXPROCS(0)
+	if len(candidateUsers) < 100 {
+		numWorkers = 1
+	}
 
-	for otherUserID, similarity := range similarities {
-		for itemID, rating := range re.userItemMatrix[otherUserID] {
-			// 跳过目标用户已经评分过的物品。
-			if _, exists := userRatings[itemID]; exists {
-				continue
+	type predictionMap map[uint64]float64
+	results := make([]predictionMap, numWorkers)
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+
+	chunkSize := (len(candidateUsers) + numWorkers - 1) / numWorkers
+
+	for w := 0; w < numWorkers; w++ {
+		start := w * chunkSize
+		end := start + chunkSize
+		if end > len(candidateUsers) {
+			end = len(candidateUsers)
+		}
+
+		go func(workerID, s, e int) {
+			defer wg.Done()
+			localPreds := make(predictionMap)
+
+			for i := s; i < e; i++ {
+				otherUserID := candidateUsers[i]
+				// 优化：只有当相似度大于阈值时才计算预测
+				sim := re.cosineSimilarity(userID, otherUserID)
+				if sim <= 0.01 { // 忽略微小相似度
+					continue
+				}
+
+				for itemID, rating := range re.userItemMatrix[otherUserID] {
+					if _, exists := userRatings[itemID]; exists {
+						continue
+					}
+					localPreds[itemID] += sim * rating
+				}
 			}
-			// 累加相似用户对该物品的评分，乘以相似度作为权重。
-			predictions[itemID] += similarity * rating
+			results[workerID] = localPreds
+		}(w, start, end)
+	}
+	wg.Wait()
+
+	// 3. 合并结果
+	predictions := make(map[uint64]float64)
+	for _, res := range results {
+		for itemID, score := range res {
+			predictions[itemID] += score
 		}
 	}
 
@@ -405,7 +445,15 @@ func (re *RecommendationEngine) RecommendWithScores(userID uint64, topN int) map
 	for id, s := range predictions {
 		items = append(items, itemScore{id, s})
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].score > items[j].score })
+	slices.SortFunc(items, func(a, b itemScore) int {
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
+		}
+		return 0
+	})
 
 	result := make(map[uint64]float64)
 	for i := 0; i < len(items) && i < topN; i++ {
@@ -427,8 +475,14 @@ func (re *RecommendationEngine) topNItems(scores map[uint64]float64, topN int) [
 	}
 
 	// 按照得分降序排序。
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].score > items[j].score
+	slices.SortFunc(items, func(a, b itemScore) int {
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
+		}
+		return 0
 	})
 
 	result := make([]uint64, 0, topN)

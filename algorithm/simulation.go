@@ -4,7 +4,9 @@ package algorithm
 import (
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"runtime"
+	"sync"
 
 	"github.com/shopspring/decimal"
 )
@@ -28,10 +30,6 @@ func NewGeometricBrownianMotion(initialPrice, drift, volatility, timeStep decima
 }
 
 // Simulate 模拟价格路径
-// 参数：
-//   - steps: 模拟步数
-//
-// 返回：价格路径
 func (gbm *GeometricBrownianMotion) Simulate(steps int) []decimal.Decimal {
 	prices := make([]decimal.Decimal, steps+1)
 	prices[0] = gbm.initialPrice
@@ -40,15 +38,15 @@ func (gbm *GeometricBrownianMotion) Simulate(steps int) []decimal.Decimal {
 	volatilityFloat := gbm.volatility.InexactFloat64()
 	timeStepFloat := gbm.timeStep.InexactFloat64()
 
+	// 预计算常数
+	driftTerm := (driftFloat - 0.5*volatilityFloat*volatilityFloat) * timeStepFloat
+	volTerm := volatilityFloat * math.Sqrt(timeStepFloat)
+
 	for i := 1; i <= steps; i++ {
-		// 生成标准正态随机数
-		z := rand.NormFloat64()
-
-		// GBM 公式：dS = μ*S*dt + σ*S*dW
+		z := rand.NormFloat64() // v2 是并发安全的，且性能更好
 		currentPrice := prices[i-1].InexactFloat64()
-		exponent := (driftFloat-0.5*volatilityFloat*volatilityFloat)*timeStepFloat + volatilityFloat*math.Sqrt(timeStepFloat)*z
+		exponent := driftTerm + volTerm*z
 		newPrice := currentPrice * math.Exp(exponent)
-
 		prices[i] = decimal.NewFromFloat(newPrice)
 	}
 
@@ -56,11 +54,32 @@ func (gbm *GeometricBrownianMotion) Simulate(steps int) []decimal.Decimal {
 }
 
 // SimulateMultiplePaths 模拟多条价格路径
+// 优化：并行模拟，利用多核 CPU。
 func (gbm *GeometricBrownianMotion) SimulateMultiplePaths(steps, paths int) [][]decimal.Decimal {
 	allPaths := make([][]decimal.Decimal, paths)
-	for i := range paths {
-		allPaths[i] = gbm.Simulate(steps)
+
+	numWorkers := runtime.GOMAXPROCS(0)
+	if paths < 100 {
+		numWorkers = 1
 	}
+
+	var wg sync.WaitGroup
+	wg.Add(paths)
+
+	// 使用信号量限制最大并发协程，防止过多协程导致调度压力
+	sem := make(chan struct{}, numWorkers)
+
+	for i := 0; i < paths; i++ {
+		go func(pathIdx int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			allPaths[pathIdx] = gbm.Simulate(steps)
+		}(i)
+	}
+	wg.Wait()
+
 	return allPaths
 }
 

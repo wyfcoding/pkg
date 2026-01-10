@@ -14,9 +14,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// HttpCircuitBreaker 构造一个应用于 Gin 框架的入站请求熔断中间件。
+// HTTPCircuitBreaker 构造一个应用于 Gin 框架的入站请求熔断中间件。
 // 它会自动识别 HTTP 5xx 状态码作为失败采样点，并在达到阈值时开启熔断。
-func HttpCircuitBreaker(cfg config.CircuitBreakerConfig, m *metrics.Metrics) gin.HandlerFunc {
+func HTTPCircuitBreaker(cfg config.CircuitBreakerConfig, m *metrics.Metrics) gin.HandlerFunc {
 	b := breaker.NewBreaker(breaker.Settings{
 		Name:   "HTTP-Inbound",
 		Config: cfg,

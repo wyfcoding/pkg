@@ -2,7 +2,9 @@ package algorithm
 
 import (
 	"math"
-	"sort"
+	"runtime"
+	"slices"
+	"sync"
 )
 
 // Location 代表地理位置。
@@ -94,25 +96,59 @@ func (ro *RouteOptimizer) ClarkeWrightVRP(start Location, destinations []Locatio
 	}
 
 	// 2. 计算 Savings：S(i,j) = d(0,i) + d(0,j) - d(i,j)
-	savings := make([]saving, 0, n*(n-1)/2)
 	distToStart := make([]float64, n)
 	for i := range n {
 		distToStart[i] = HaversineDistance(start.Lat, start.Lon, destinations[i].Lat, destinations[i].Lon)
 	}
 
-	for i := range n {
-		for j := i + 1; j < n; j++ {
-			d_ij := HaversineDistance(destinations[i].Lat, destinations[i].Lon, destinations[j].Lat, destinations[j].Lon)
-			s := distToStart[i] + distToStart[j] - d_ij
-			if s > 0 {
-				savings = append(savings, saving{i, j, s})
-			}
-		}
+	// 并行计算 Savings
+	numWorkers := runtime.GOMAXPROCS(0)
+	if n < 100 {
+		numWorkers = 1
 	}
 
+	type savingChunk []saving
+	chunks := make([]savingChunk, numWorkers)
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			defer wg.Done()
+			var localSavings []saving
+			// 简单的分片策略：workerID, workerID+numWorkers, ...
+			for i := workerID; i < n; i += numWorkers {
+				for j := i + 1; j < n; j++ {
+					dIj := HaversineDistance(destinations[i].Lat, destinations[i].Lon, destinations[j].Lat, destinations[j].Lon)
+					s := distToStart[i] + distToStart[j] - dIj
+					if s > 0 {
+						localSavings = append(localSavings, saving{i, j, s})
+					}
+				}
+			}
+			chunks[workerID] = localSavings
+		}(w)
+	}
+	wg.Wait()
+
+	// 合并结果
+	totalSavingsCount := 0
+	for _, chunk := range chunks {
+		totalSavingsCount += len(chunk)
+	}
+	savings := make([]saving, 0, totalSavingsCount)
+	for _, chunk := range chunks {
+		savings = append(savings, chunk...)
+	}
 	// 按节省值降序排列
-	sort.Slice(savings, func(i, j int) bool {
-		return savings[i].val > savings[j].val
+	slices.SortFunc(savings, func(a, b saving) int {
+		if a.val > b.val {
+			return -1
+		}
+		if a.val < b.val {
+			return 1
+		}
+		return 0
 	})
 
 	// 3. 合并路径逻辑

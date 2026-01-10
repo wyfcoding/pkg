@@ -74,7 +74,6 @@ func (c *Client) Close(ctx context.Context) error {
 // Session 执行一个具备指标监控能力的数据库会话。
 // 参数 work: 包含具体业务逻辑的回调函数。
 func (c *Client) Session(ctx context.Context, accessMode neo4j.AccessMode, work func(neo4j.Session) error) error {
-
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		DatabaseName: c.dbName,
 		AccessMode:   accessMode,

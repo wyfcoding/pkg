@@ -22,8 +22,8 @@ func init() {
 	prometheus.MustRegister(fallbackTotal)
 }
 
-// FallbackFunc 定义了可执行的业务函数原型，支持泛型返回结果。
-type FallbackFunc[T any] func(ctx context.Context) (T, error)
+// Func 定义了可执行的业务函数原型，支持泛型返回结果。
+type Func[T any] func(ctx context.Context) (T, error)
 
 // ExecuteWithFallback 执行带降级保护的业务逻辑。
 // 参数说明：
@@ -36,8 +36,8 @@ type FallbackFunc[T any] func(ctx context.Context) (T, error)
 func ExecuteWithFallback[T any](
 	ctx context.Context,
 	service, operation string,
-	mainFunc FallbackFunc[T],
-	fallbackFunc FallbackFunc[T],
+	mainFunc Func[T],
+	fallbackFunc Func[T],
 ) (T, error) {
 	// 1. 执行主逻辑
 	res, err := mainFunc(ctx)

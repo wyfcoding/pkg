@@ -14,15 +14,15 @@ type NotificationCommand struct {
 	Content string `json:"content"` // 通知正文
 }
 
-// KafkaNotificationSender 封装了通过 Kafka 异步发送通知的逻辑实现。
-type KafkaNotificationSender struct {
+// NotificationSender 封装了通过 Kafka 异步发送通知的逻辑实现。
+type NotificationSender struct {
 	producer *Producer // 底层 Kafka 生产者
 	topic    string    // 目标消息主题
 }
 
-// NewKafkaNotificationSender 创建 Kafka 发送器实例
-func NewKafkaNotificationSender(producer *Producer, topic string) *KafkaNotificationSender {
-	return &KafkaNotificationSender{
+// NewNotificationSender 创建 Kafka 发送器实例
+func NewNotificationSender(producer *Producer, topic string) *NotificationSender {
+	return &NotificationSender{
 		producer: producer,
 		topic:    topic,
 	}
@@ -30,7 +30,7 @@ func NewKafkaNotificationSender(producer *Producer, topic string) *KafkaNotifica
 
 // Send 执行通知消息的异步推送。
 // 架构设计：利用 Target 作为 Kafka 分区 Key，确保针对同一目标的通知消息保持严格时序。
-func (s *KafkaNotificationSender) Send(ctx context.Context, target, subject, content string) error {
+func (s *NotificationSender) Send(ctx context.Context, target, subject, content string) error {
 	cmd := NotificationCommand{
 		Target:  target,
 		Subject: subject,

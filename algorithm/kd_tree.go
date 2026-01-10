@@ -1,8 +1,9 @@
 package algorithm
 
 import (
+	"errors"
 	"math"
-	"sort"
+	"sync"
 )
 
 // KDPoint 多维空间中的一个点
@@ -19,6 +20,21 @@ type KDNode struct {
 	Axis  int
 }
 
+var kdNodePool = sync.Pool{
+	New: func() any {
+		return &KDNode{}
+	},
+}
+
+func newKDNode(p KDPoint, axis int) *KDNode {
+	node := kdNodePool.Get().(*KDNode)
+	node.Point = p
+	node.Axis = axis
+	node.Left = nil
+	node.Right = nil
+	return node
+}
+
 // KDTree K-D 树
 type KDTree struct {
 	Root *KDNode
@@ -26,35 +42,60 @@ type KDTree struct {
 }
 
 // NewKDTree 构建 K-D 树
-func NewKDTree(points []KDPoint) *KDTree {
+func NewKDTree(points []KDPoint) (*KDTree, error) {
 	if len(points) == 0 {
-		return nil
+		return nil, errors.New("points must not be empty")
 	}
 	k := len(points[0].Vector)
 	tree := &KDTree{K: k}
 	tree.Root = tree.build(points, 0)
-	return tree
+	return tree, nil
 }
 
+// build 使用 QuickSelect 思想实现 O(n log n) 构建
 func (t *KDTree) build(points []KDPoint, depth int) *KDNode {
 	if len(points) == 0 {
 		return nil
 	}
 
 	axis := depth % t.K
-
-	// 根据当前维度排序，取中位数
-	sort.Slice(points, func(i, j int) bool {
-		return points[i].Vector[axis] < points[j].Vector[axis]
-	})
-
 	mid := len(points) / 2
-	return &KDNode{
-		Point: points[mid],
-		Axis:  axis,
-		Left:  t.build(points[:mid], depth+1),
-		Right: t.build(points[mid+1:], depth+1),
+
+	// 使用 QuickSelect 找到中位数所在位置的点，并对数组进行分区
+	t.quickSelect(points, mid, axis)
+
+	node := newKDNode(points[mid], axis)
+	node.Left = t.build(points[:mid], depth+1)
+	node.Right = t.build(points[mid+1:], depth+1)
+	return node
+}
+
+// quickSelect 在 O(n) 时间内找到第 k 小的元素并对区间进行分区
+func (t *KDTree) quickSelect(points []KDPoint, k int, axis int) {
+	left, right := 0, len(points)-1
+	for left < right {
+		pivotIdx := t.partition(points, left, right, axis)
+		if pivotIdx == k {
+			return
+		} else if pivotIdx < k {
+			left = pivotIdx + 1
+		} else {
+			right = pivotIdx - 1
+		}
 	}
+}
+
+func (t *KDTree) partition(points []KDPoint, left, right, axis int) int {
+	pivotVal := points[right].Vector[axis]
+	i := left
+	for j := left; j < right; j++ {
+		if points[j].Vector[axis] < pivotVal {
+			points[i], points[j] = points[j], points[i]
+			i++
+		}
+	}
+	points[i], points[right] = points[right], points[i]
+	return i
 }
 
 // Nearest 寻找最近邻

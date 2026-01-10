@@ -1,7 +1,7 @@
 package algorithm
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"time"
 )
 
@@ -18,7 +18,7 @@ func NewReservoirSampler[T any](k int) *ReservoirSampler[T] {
 	return &ReservoirSampler[T]{
 		k:       k,
 		samples: make([]T, 0, k),
-		random:  rand.New(rand.NewSource(time.Now().UnixNano())),
+		random:  rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}
 }
 
@@ -31,7 +31,7 @@ func (s *ReservoirSampler[T]) Observe(item T) {
 		s.samples = append(s.samples, item)
 	} else {
 		// 2. 如果池子满了，以 k/n 的概率替换掉池子里的一个旧元素
-		j := s.random.Intn(s.count)
+		j := s.random.IntN(s.count)
 		if j < s.k {
 			s.samples[j] = item
 		}

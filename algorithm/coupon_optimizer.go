@@ -2,7 +2,7 @@ package algorithm
 
 import (
 	"log/slog"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -64,9 +64,22 @@ func (co *CouponOptimizer) OptimalCombination(
 		return nil, originalPrice, 0
 	}
 
-	// 按照优先级对可用优惠券进行排序（优先级高的在前）。
-	sort.Slice(available, func(i, j int) bool {
-		return available[i].Priority > available[j].Priority
+	// 按照计算价格所需的顺序预排序：先按类型，再按优先级。
+	// 这样在生成子集时，子集自然保持有序，避免在循环中重复排序。
+	slices.SortFunc(available, func(a, b Coupon) int {
+		if a.Type != b.Type {
+			if a.Type < b.Type {
+				return -1
+			}
+			return 1
+		}
+		if a.Priority > b.Priority {
+			return -1
+		}
+		if a.Priority < b.Priority {
+			return 1
+		}
+		return 0
 	})
 
 	// 初始化最优组合、最低价格和最大优惠金额。
@@ -78,7 +91,7 @@ func (co *CouponOptimizer) OptimalCombination(
 	// mask 的每一位代表一个优惠券是否被选中。
 	n := len(available)
 	for mask := 1; mask < (1 << n); mask++ { // 从1开始，排除空组合。
-		combination := make([]Coupon, 0)
+		combination := make([]Coupon, 0, n) // 预分配容量
 
 		// 根据mask的位来构建当前组合。
 		for i := range n {
@@ -92,8 +105,8 @@ func (co *CouponOptimizer) OptimalCombination(
 			continue // 如果不合法，则跳过此组合。
 		}
 
-		// 计算该组合的最终价格。
-		finalPrice := co.calculatePrice(originalPrice, combination)
+		// 计算该组合的最终价格 (使用无需排序的快速计算版本)。
+		finalPrice := co.calculatePriceFast(originalPrice, combination)
 		discount := originalPrice - finalPrice
 
 		// 如果当前组合能得到更低的价格，则更新最优解。
@@ -110,6 +123,36 @@ func (co *CouponOptimizer) OptimalCombination(
 
 	slog.Info("OptimalCombination optimization completed", "original_price", originalPrice, "final_price", bestPrice, "discount", maxDiscount, "duration", time.Since(start))
 	return bestCombination, bestPrice, maxDiscount
+}
+
+// calculatePriceFast 是 calculatePrice 的优化版本，假设输入 coupons 已经按规则排序。
+func (co *CouponOptimizer) calculatePriceFast(originalPrice int64, sortedCoupons []Coupon) int64 {
+	currentPrice := originalPrice
+
+	for _, c := range sortedCoupons {
+		switch c.Type {
+		case CouponTypeDiscount:
+			discount := int64(float64(currentPrice) * (1 - c.DiscountRate))
+			if c.MaxDiscount > 0 && discount > c.MaxDiscount {
+				discount = c.MaxDiscount
+			}
+			currentPrice -= discount
+
+		case CouponTypeReduction:
+			if currentPrice >= c.Threshold {
+				currentPrice -= c.ReductionAmount
+			}
+
+		case CouponTypeCash:
+			currentPrice -= c.ReductionAmount
+		}
+
+		if currentPrice < 0 {
+			currentPrice = 0
+		}
+	}
+
+	return currentPrice
 }
 
 // GreedyOptimization 使用贪心算法计算优惠组合。
@@ -151,8 +194,14 @@ func (co *CouponOptimizer) GreedyOptimization(
 	}
 
 	// 按照单个优惠金额从大到小排序。
-	sort.Slice(discounts, func(i, j int) bool {
-		return discounts[i].discount > discounts[j].discount
+	slices.SortFunc(discounts, func(a, b couponDiscount) int {
+		if a.discount > b.discount {
+			return -1
+		}
+		if a.discount < b.discount {
+			return 1
+		}
+		return 0
 	})
 
 	// 贪心选择过程：
@@ -221,13 +270,22 @@ func (co *CouponOptimizer) calculatePrice(originalPrice int64, coupons []Coupon)
 	sorted := make([]Coupon, len(coupons))
 	copy(sorted, coupons)
 
-	sort.Slice(sorted, func(i, j int) bool {
+	slices.SortFunc(sorted, func(a, b Coupon) int {
 		// 先按优惠券类型排序（折扣券 < 满减券 < 立减券），确保特定类型优先应用。
-		if sorted[i].Type != sorted[j].Type {
-			return sorted[i].Type < sorted[j].Type
+		if a.Type != b.Type {
+			if a.Type < b.Type {
+				return -1
+			}
+			return 1
 		}
 		// 同类型优惠券，按优先级降序排列。
-		return sorted[i].Priority > sorted[j].Priority
+		if a.Priority > b.Priority {
+			return -1
+		}
+		if a.Priority < b.Priority {
+			return 1
+		}
+		return 0
 	})
 
 	currentPrice := originalPrice // 从原始价格开始计算。
@@ -331,11 +389,20 @@ func (co *CouponOptimizer) DynamicProgramming(
 	// 3. 情况 B：使用所有可叠加券的最优组合
 	// 这里使用位运算 DP（如果数量不多）或贪心 + 排序优化
 	// 针对折扣券和满减券的顺序敏感性，先按类型排序
-	sort.Slice(stackable, func(i, j int) bool {
-		if stackable[i].Type != stackable[j].Type {
-			return stackable[i].Type < stackable[j].Type
+	slices.SortFunc(stackable, func(a, b Coupon) int {
+		if a.Type != b.Type {
+			if a.Type < b.Type {
+				return -1
+			}
+			return 1
 		}
-		return stackable[i].Priority > stackable[j].Priority
+		if a.Priority > b.Priority {
+			return -1
+		}
+		if a.Priority < b.Priority {
+			return 1
+		}
+		return 0
 	})
 
 	stackIDs := make([]uint64, 0)

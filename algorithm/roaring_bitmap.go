@@ -4,7 +4,15 @@ package algorithm
 import (
 	"fmt"
 	"math/bits"
+	"sync"
 )
+
+var bitsetPool = sync.Pool{
+	New: func() any {
+		s := make([]uint64, 1024)
+		return &s
+	},
+}
 
 // RoaringBitmap 简化版高性能压缩位图，适用于海量用户标签圈选。
 // 在真实顶级架构中，通常直接引用 `github.com/RoaringBitmap/roaring`。
@@ -20,10 +28,19 @@ type bitmapContainer struct {
 	card int      // 基数，存储的元素个数
 }
 
+// NewRoaringBitmap 创建一个新的 RoaringBitmap
 func NewRoaringBitmap() *RoaringBitmap {
 	return &RoaringBitmap{
 		chunks: make(map[uint16]*bitmapContainer),
 	}
+}
+
+// Release 释放位图资源回对象池
+func (rb *RoaringBitmap) Release() {
+	for _, c := range rb.chunks {
+		bitsetPool.Put(&c.data)
+	}
+	rb.chunks = nil
 }
 
 // Add 将一个 ID (uint32) 加入位图
@@ -33,7 +50,13 @@ func (rb *RoaringBitmap) Add(x uint32) {
 
 	container, ok := rb.chunks[high]
 	if !ok {
-		container = &bitmapContainer{data: make([]uint64, 1024)} // 2^16 位需要 1024 个 uint64
+		dataPtr := bitsetPool.Get().(*[]uint64)
+		data := *dataPtr
+		// 必须清空从池中取出的数据
+		for i := range data {
+			data[i] = 0
+		}
+		container = &bitmapContainer{data: data}
 		rb.chunks[high] = container
 	}
 
@@ -75,13 +98,17 @@ func (rb *RoaringBitmap) And(other *RoaringBitmap) *RoaringBitmap {
 	result := NewRoaringBitmap()
 	for high, c1 := range rb.chunks {
 		if c2, ok := other.chunks[high]; ok {
-			resContainer := &bitmapContainer{data: make([]uint64, 1024)}
+			dataPtr := bitsetPool.Get().(*[]uint64)
+			data := *dataPtr
+			resContainer := &bitmapContainer{data: data}
 			for i := range 1024 {
 				resContainer.data[i] = c1.data[i] & c2.data[i]
 			}
 			resContainer.recalculateCard()
 			if resContainer.card > 0 {
 				result.chunks[high] = resContainer
+			} else {
+				bitsetPool.Put(dataPtr)
 			}
 		}
 	}
@@ -93,9 +120,10 @@ func (rb *RoaringBitmap) Or(other *RoaringBitmap) *RoaringBitmap {
 	result := NewRoaringBitmap()
 	// 复制 rb
 	for h, c := range rb.chunks {
-		nc := &bitmapContainer{data: make([]uint64, 1024)}
-		copy(nc.data, c.data)
-		nc.card = c.card
+		dataPtr := bitsetPool.Get().(*[]uint64)
+		data := *dataPtr
+		copy(data, c.data)
+		nc := &bitmapContainer{data: data, card: c.card}
 		result.chunks[h] = nc
 	}
 	// 合并 other
@@ -106,9 +134,10 @@ func (rb *RoaringBitmap) Or(other *RoaringBitmap) *RoaringBitmap {
 			}
 			c1.recalculateCard()
 		} else {
-			nc := &bitmapContainer{data: make([]uint64, 1024)}
-			copy(nc.data, c2.data)
-			nc.card = c2.card
+			dataPtr := bitsetPool.Get().(*[]uint64)
+			data := *dataPtr
+			copy(data, c2.data)
+			nc := &bitmapContainer{data: data, card: c2.card}
 			result.chunks[h] = nc
 		}
 	}
@@ -116,6 +145,7 @@ func (rb *RoaringBitmap) Or(other *RoaringBitmap) *RoaringBitmap {
 }
 
 // ToList 将位图转换回 ID 列表（用于最终发放优惠券）
+// 优化：使用 bits.TrailingZeros64 快速跳过零位
 func (rb *RoaringBitmap) ToList() []uint32 {
 	res := make([]uint32, 0)
 	for high, container := range rb.chunks {
@@ -124,10 +154,11 @@ func (rb *RoaringBitmap) ToList() []uint32 {
 			if word == 0 {
 				continue
 			}
-			for bit := range 64 {
-				if word&(uint64(1)<<bit) != 0 {
-					res = append(res, hBase|uint32(i<<6)|uint32(bit))
-				}
+			temp := word
+			for temp != 0 {
+				bit := bits.TrailingZeros64(temp)
+				res = append(res, hBase|uint32(i<<6)|uint32(bit))
+				temp &= temp - 1 // 清除最低位的 1
 			}
 		}
 	}

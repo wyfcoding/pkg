@@ -26,7 +26,7 @@ func Success(c *gin.Context, data any) {
 }
 
 // SuccessWithStatus 发送一个带有指定 HTTP 状态码和消息的成功响应。
-func SuccessWithStatus(c *gin.Context, status int, msg string, data any) {
+func SuccessWithStatus(c *gin.Context, status int, _ string, data any) {
 	c.JSON(status, gin.H{
 		"code": 0,
 		"msg":  "success",

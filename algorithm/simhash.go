@@ -1,7 +1,7 @@
 package algorithm
 
 import (
-	"hash/fnv"
+	"math/bits"
 	"regexp"
 	"strings"
 )
@@ -65,13 +65,7 @@ func (s *SimHash) Calculate(text string) uint64 {
 // HammingDistance 计算两个 SimHash 的海明距离
 // 距离越小，文本越相似。通常距离 <= 3 被认为是高度相似。
 func (s *SimHash) HammingDistance(h1, h2 uint64) int {
-	x := h1 ^ h2
-	count := 0
-	for x > 0 {
-		count++
-		x &= x - 1
-	}
-	return count
+	return bits.OnesCount64(h1 ^ h2)
 }
 
 // IsSimilar 判断两个文本是否相似
@@ -82,7 +76,14 @@ func (s *SimHash) IsSimilar(text1, text2 string, threshold int) bool {
 }
 
 func fnvHash(s string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(s))
-	return h.Sum64()
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+	var h uint64 = offset64
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= prime64
+	}
+	return h
 }

@@ -3,6 +3,7 @@ package algorithm
 
 import (
 	"sync"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
@@ -292,33 +293,53 @@ type NotificationMessage struct {
 
 // ConcurrentCache 并发安全的缓存
 type ConcurrentCache struct {
-	mu   sync.RWMutex
-	data map[string]any
-	ttl  map[string]int64
+	mu       sync.RWMutex
+	data     map[string]any
+	expireAt map[string]int64 // 过期时间戳 (Unix Seconds)
 }
 
 // NewConcurrentCache 创建并发缓存
 func NewConcurrentCache() *ConcurrentCache {
 	return &ConcurrentCache{
-		data: make(map[string]any),
-		ttl:  make(map[string]int64),
+		data:     make(map[string]any),
+		expireAt: make(map[string]int64),
 	}
 }
 
 // Set 设置缓存值
-func (cc *ConcurrentCache) Set(key string, value any, ttl int64) {
+// expireAt: 过期时间戳 (Unix Seconds)。如果为 0，表示永不过期。
+func (cc *ConcurrentCache) Set(key string, value any, expireAt int64) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 	cc.data[key] = value
-	cc.ttl[key] = ttl
+	cc.expireAt[key] = expireAt
 }
 
 // Get 获取缓存值
 func (cc *ConcurrentCache) Get(key string) (any, bool) {
 	cc.mu.RLock()
-	defer cc.mu.RUnlock()
+	expiry, hasExpiry := cc.expireAt[key]
 	val, ok := cc.data[key]
-	return val, ok
+	cc.mu.RUnlock()
+
+	if !ok {
+		return nil, false
+	}
+
+	// 检查过期 (Lazy Expiration)
+	if hasExpiry && expiry > 0 && time.Now().Unix() > expiry {
+		// 升级锁进行删除
+		cc.mu.Lock()
+		// 双重检查
+		if exp, exists := cc.expireAt[key]; exists && exp > 0 && time.Now().Unix() > exp {
+			delete(cc.data, key)
+			delete(cc.expireAt, key)
+		}
+		cc.mu.Unlock()
+		return nil, false
+	}
+
+	return val, true
 }
 
 // Delete 删除缓存值
@@ -326,7 +347,7 @@ func (cc *ConcurrentCache) Delete(key string) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 	delete(cc.data, key)
-	delete(cc.ttl, key)
+	delete(cc.expireAt, key)
 }
 
 // Clear 清空缓存
@@ -334,5 +355,5 @@ func (cc *ConcurrentCache) Clear() {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 	cc.data = make(map[string]any)
-	cc.ttl = make(map[string]int64)
+	cc.expireAt = make(map[string]int64)
 }

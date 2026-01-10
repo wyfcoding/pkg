@@ -26,13 +26,13 @@ type DomainEvent interface {
 // BaseEvent 领域事件基础实现
 // 提供通用字段和方法，具体领域事件可嵌入此结构体
 type BaseEvent struct {
-	ID          string    `json:"id"`           // 事件唯一标识
-	Type        string    `json:"type"`         // 事件类型
-	AggregateId string    `json:"aggregate_id"` // 聚合根ID
-	Ver         int64     `json:"version"`      // 事件版本（聚合根版本）
-	Timestamp   time.Time `json:"timestamp"`    // 事件发生时间
-	Metadata    Metadata  `json:"metadata"`     // 事件元数据
-	Data        any       `json:"data"`         // 事件载荷
+	ID        string    `json:"id"`           // 事件唯一标识
+	Type      string    `json:"type"`         // 事件类型
+	AggID     string    `json:"aggregate_id"` // 聚合根ID
+	Ver       int64     `json:"version"`      // 事件版本（聚合根版本）
+	Timestamp time.Time `json:"timestamp"`    // 事件发生时间
+	Metadata  Metadata  `json:"metadata"`     // 事件元数据
+	Data      any       `json:"data"`         // 事件载荷
 }
 
 // Metadata 事件元数据
@@ -56,7 +56,7 @@ func (e *BaseEvent) OccurredAt() time.Time {
 
 // AggregateID 实现 DomainEvent 接口
 func (e *BaseEvent) AggregateID() string {
-	return e.AggregateId
+	return e.AggID
 }
 
 // Version 实现 DomainEvent 接口
@@ -75,11 +75,11 @@ func (e *BaseEvent) SetVersion(version int64) {
 // version: 事件版本号
 func NewBaseEvent(eventType, aggregateID string, version int64) BaseEvent {
 	return BaseEvent{
-		ID:          uuid.New().String(),
-		Type:        eventType,
-		AggregateId: aggregateID,
-		Ver:         version,
-		Timestamp:   time.Now(),
+		ID:        uuid.New().String(),
+		Type:      eventType,
+		AggID:     aggregateID,
+		Ver:       version,
+		Timestamp: time.Now(),
 	}
 }
 

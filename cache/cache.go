@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -143,7 +143,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 
 	// 注入随机扰动防止雪崩
 	if expiration > 0 {
-		jitter := time.Duration(rand.Int63n(int64(expiration / 10)))
+		jitter := time.Duration(rand.Int64N(int64(expiration / 10)))
 		expiration = expiration + jitter
 	}
 

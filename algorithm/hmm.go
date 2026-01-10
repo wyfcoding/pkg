@@ -7,69 +7,81 @@ import (
 )
 
 // HiddenMarkovModel 结构体实现了隐马尔可夫模型 (HMM)。
-// HMM 是一种统计模型，用于描述一个含有隐含未知参数的马尔可夫过程。
-// 它的难点在于这些未知参数的确定，以及如何利用这些参数去解码隐藏的状态。
+// 优化：内部使用数组代替 Map 存储概率，显著提升 Viterbi 算法性能 (避免哈希查找开销)。
 type HiddenMarkovModel struct {
-	states         []string                      // 可能的隐藏状态集合。
-	observations   []string                      // 可能的观测符号集合。
-	transitionProb map[string]map[string]float64 // 状态转移概率：从一个隐藏状态转移到另一个隐藏状态的概率 P(S_t+1 | S_t)。
-	emissionProb   map[string]map[string]float64 // 观测概率（或发射概率）：在给定隐藏状态下观测到某个符号的概率 P(O_t | S_t)。
-	initialProb    map[string]float64            // 初始状态概率：在时间 t=0 时处于某个隐藏状态的概率 P(S_0)。
-	mu             sync.RWMutex                  // 读写锁，用于保护模型参数的并发访问。
+	states         []string // 状态列表
+	observations   []string // 观测符号列表
+	stateIdx       map[string]int
+	obsIdx         map[string]int
+	transitionProb []float64    // M x M 矩阵 (扁平化): trans[i][j] -> [i*M + j]
+	emissionProb   []float64    // M x K 矩阵 (扁平化): emit[i][k] -> [i*K + k]
+	initialProb    []float64    // M 向量
+	mu             sync.RWMutex // 读写锁
 }
 
 // NewHiddenMarkovModel 创建并返回一个新的 HiddenMarkovModel 实例。
-// states: 模型的隐藏状态集合。
-// observations: 模型的观测符号集合。
 func NewHiddenMarkovModel(states, observations []string) *HiddenMarkovModel {
-	return &HiddenMarkovModel{
+	m := len(states)
+	k := len(observations)
+
+	hmm := &HiddenMarkovModel{
 		states:         states,
 		observations:   observations,
-		transitionProb: make(map[string]map[string]float64),
-		emissionProb:   make(map[string]map[string]float64),
-		initialProb:    make(map[string]float64),
+		stateIdx:       make(map[string]int, m),
+		obsIdx:         make(map[string]int, k),
+		transitionProb: make([]float64, m*m),
+		emissionProb:   make([]float64, m*k),
+		initialProb:    make([]float64, m),
 	}
+
+	for i, s := range states {
+		hmm.stateIdx[s] = i
+	}
+	for i, o := range observations {
+		hmm.obsIdx[o] = i
+	}
+
+	return hmm
 }
 
 // SetTransitionProb 设置状态转移概率。
-// from: 起始隐藏状态。
-// to: 目标隐藏状态。
-// prob: 从 from 转移到 to 的概率。
 func (hmm *HiddenMarkovModel) SetTransitionProb(from, to string, prob float64) {
-	hmm.mu.Lock()         // 加写锁以确保线程安全。
-	defer hmm.mu.Unlock() // 确保函数退出时解锁。
+	hmm.mu.Lock()
+	defer hmm.mu.Unlock()
 
-	if hmm.transitionProb[from] == nil {
-		hmm.transitionProb[from] = make(map[string]float64)
+	i, ok1 := hmm.stateIdx[from]
+	j, ok2 := hmm.stateIdx[to]
+	if ok1 && ok2 {
+		m := len(hmm.states)
+		hmm.transitionProb[i*m+j] = prob
 	}
-	hmm.transitionProb[from][to] = prob
 }
 
 // SetEmissionProb 设置观测概率。
-// state: 隐藏状态。
-// obs: 观测符号。
-// prob: 在给定 state 下观测到 obs 的概率。
 func (hmm *HiddenMarkovModel) SetEmissionProb(state, obs string, prob float64) {
 	hmm.mu.Lock()
 	defer hmm.mu.Unlock()
 
-	if hmm.emissionProb[state] == nil {
-		hmm.emissionProb[state] = make(map[string]float64)
+	i, ok1 := hmm.stateIdx[state]
+	k, ok2 := hmm.obsIdx[obs]
+	if ok1 && ok2 {
+		numObs := len(hmm.observations)
+		hmm.emissionProb[i*numObs+k] = prob
 	}
-	hmm.emissionProb[state][obs] = prob
 }
 
 // SetInitialProb 设置初始状态概率。
-// state: 隐藏状态。
-// prob: 在时间 t=0 时处于 state 的概率。
 func (hmm *HiddenMarkovModel) SetInitialProb(state string, prob float64) {
 	hmm.mu.Lock()
 	defer hmm.mu.Unlock()
 
-	hmm.initialProb[state] = prob
+	if i, ok := hmm.stateIdx[state]; ok {
+		hmm.initialProb[i] = prob
+	}
 }
 
 // Viterbi 算法用于寻找给定一个观测序列时，最有可能的隐藏状态序列。
+// 时间复杂度：O(T * M^2)，空间复杂度：O(T * M)
 func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	if len(observations) == 0 {
 		return nil
@@ -80,43 +92,72 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 
 	n := len(observations)
 	m := len(hmm.states)
+	numObs := len(hmm.observations)
 
-	// 辅助函数：安全对数计算，防止 log(0)
+	// 预先将观测序列转换为索引，避免循环中查找 Map
+	obsIndices := make([]int, n)
+	for t, obs := range observations {
+		if idx, ok := hmm.obsIdx[obs]; ok {
+			obsIndices[t] = idx
+		} else {
+			// 未知观测值，通常视其概率为0。使用 -1 标记。
+			obsIndices[t] = -1
+		}
+	}
+
+	// 辅助函数：安全对数计算
+	const minLogProb = -1e10
 	safeLog := func(p float64) float64 {
-		if p <= 0 {
-			return -1e10 // 使用一个极小的负数代替负无穷，保持数值稳定
+		if p <= 1e-300 { // 接近 0
+			return minLogProb
 		}
 		return math.Log(p)
 	}
 
-	dp := make([][]float64, n)
-	path := make([][]int, n)
-	for i := range n {
-		dp[i] = make([]float64, m)
-		path[i] = make([]int, m)
-	}
+	// dp[t][state_idx]
+	dp := make([]float64, n*m)
+	// path[t][state_idx] = prev_state_idx
+	path := make([]int, n*m)
 
 	// 1. 初始化 (t=0)
-	for j, state := range hmm.states {
-		dp[0][j] = safeLog(hmm.initialProb[state]) + safeLog(hmm.emissionProb[state][observations[0]])
+	obs0 := obsIndices[0]
+	for j := 0; j < m; j++ {
+		emitP := 0.0
+		if obs0 != -1 {
+			emitP = hmm.emissionProb[j*numObs+obs0]
+		}
+		dp[j] = safeLog(hmm.initialProb[j]) + safeLog(emitP)
 	}
 
 	// 2. 递推 (t=1..n-1)
-	for i := 1; i < n; i++ {
-		for j, state := range hmm.states {
-			maxProb := -1e20 // 初始极小值
-			maxK := 0
+	for t := 1; t < n; t++ {
+		obsT := obsIndices[t]
+		baseCurr := t * m
+		basePrev := (t - 1) * m
 
-			for k, prevState := range hmm.states {
-				prob := dp[i-1][k] + safeLog(hmm.transitionProb[prevState][state])
+		for j := 0; j < m; j++ { // 当前状态 j
+			maxProb := -1e20
+			maxPrevState := 0
+
+			emitP := 0.0
+			if obsT != -1 {
+				emitP = hmm.emissionProb[j*numObs+obsT]
+			}
+			logEmit := safeLog(emitP)
+
+			for k := 0; k < m; k++ { // 前一状态 k
+				// prob = dp[t-1][k] * trans[k][j] * emit[j][obs]
+				// log_prob = dp[t-1][k] + log(trans[k][j]) + log(emit)
+				transP := hmm.transitionProb[k*m+j]
+				prob := dp[basePrev+k] + safeLog(transP)
 				if prob > maxProb {
 					maxProb = prob
-					maxK = k
+					maxPrevState = k
 				}
 			}
 
-			dp[i][j] = maxProb + safeLog(hmm.emissionProb[state][observations[i]])
-			path[i][j] = maxK
+			dp[baseCurr+j] = maxProb + logEmit
+			path[baseCurr+j] = maxPrevState
 		}
 	}
 
@@ -125,17 +166,18 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	maxProb := -1e20
 	maxIdx := 0
 
-	for j := range m {
-		if dp[n-1][j] > maxProb {
-			maxProb = dp[n-1][j]
+	baseLast := (n - 1) * m
+	for j := 0; j < m; j++ {
+		if dp[baseLast+j] > maxProb {
+			maxProb = dp[baseLast+j]
 			maxIdx = j
 		}
 	}
 
 	result[n-1] = hmm.states[maxIdx]
-	for i := n - 1; i > 0; i-- {
-		maxIdx = path[i][maxIdx]
-		result[i-1] = hmm.states[maxIdx]
+	for t := n - 1; t > 0; t-- {
+		maxIdx = path[t*m+maxIdx]
+		result[t-1] = hmm.states[maxIdx]
 	}
 
 	return result
@@ -147,6 +189,8 @@ func (hmm *HiddenMarkovModel) Validate() error {
 	defer hmm.mu.RUnlock()
 
 	const epsilon = 1e-6
+	m := len(hmm.states)
+	numObs := len(hmm.observations)
 
 	// 1. 校验初始概率
 	sumInit := 0.0
@@ -158,13 +202,24 @@ func (hmm *HiddenMarkovModel) Validate() error {
 	}
 
 	// 2. 校验转移概率
-	for _, state := range hmm.states {
+	for i := 0; i < m; i++ {
 		sumTrans := 0.0
-		for _, nextState := range hmm.states {
-			sumTrans += hmm.transitionProb[state][nextState]
+		for j := 0; j < m; j++ {
+			sumTrans += hmm.transitionProb[i*m+j]
 		}
 		if math.Abs(sumTrans-1.0) > epsilon {
-			return fmt.Errorf("transition probabilities from state %s sum to %f, expected 1.0", state, sumTrans)
+			return fmt.Errorf("transition probabilities from state %s sum to %f, expected 1.0", hmm.states[i], sumTrans)
+		}
+	}
+
+	// 3. 校验发射概率
+	for i := 0; i < m; i++ {
+		sumEmit := 0.0
+		for k := 0; k < numObs; k++ {
+			sumEmit += hmm.emissionProb[i*numObs+k]
+		}
+		if math.Abs(sumEmit-1.0) > epsilon {
+			return fmt.Errorf("emission probabilities from state %s sum to %f, expected 1.0", hmm.states[i], sumEmit)
 		}
 	}
 

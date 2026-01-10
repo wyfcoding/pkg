@@ -167,13 +167,13 @@ func (s *GormEventStore) LoadFromVersion(ctx context.Context, aggregateID string
 		}
 
 		event := eventsourcing.BaseEvent{
-			ID:          fmt.Sprintf("%d", model.ID),
-			Type:        model.Type,
-			AggregateId: model.AggregateID,
-			Ver:         model.Version,
-			Timestamp:   model.OccurredAt,
-			Data:        dataMap,
-			Metadata:    metaMap,
+			ID:        fmt.Sprintf("%d", model.ID),
+			Type:      model.Type,
+			AggID:     model.AggregateID,
+			Ver:       model.Version,
+			Timestamp: model.OccurredAt,
+			Data:      dataMap,
+			Metadata:  metaMap,
 		}
 		events = append(events, &event)
 	}

@@ -19,6 +19,7 @@ type DinicGraph struct {
 	adj   [][]Edge
 	level []int // 节点深度
 	ptr   []int // 当前弧优化：记录 DFS 遍历到哪个边了
+	queue []int // 复用 buffer
 	mu    sync.Mutex
 }
 
@@ -29,17 +30,18 @@ func NewDinicGraph(n int) *DinicGraph {
 		adj:   make([][]Edge, n),
 		level: make([]int, n),
 		ptr:   make([]int, n),
+		queue: make([]int, 0, n),
 	}
 }
 
 // AddEdge 添加有向边和对应的反向边
-func (g *DinicGraph) AddEdge(from, to int, cap int64) {
+func (g *DinicGraph) AddEdge(from, to int, capacity int64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	g.adj[from] = append(g.adj[from], Edge{
 		To:     to,
-		Cap:    cap,
+		Cap:    capacity,
 		RevIdx: len(g.adj[to]),
 	})
 	g.adj[to] = append(g.adj[to], Edge{
@@ -55,15 +57,18 @@ func (g *DinicGraph) bfs(s, t int) bool {
 		g.level[i] = -1
 	}
 	g.level[s] = 0
-	queue := []int{s}
 
-	for len(queue) > 0 {
-		v := queue[0]
-		queue = queue[1:]
+	// 复用 queue
+	g.queue = g.queue[:0]
+	g.queue = append(g.queue, s)
+
+	for len(g.queue) > 0 {
+		v := g.queue[0]
+		g.queue = g.queue[1:]
 		for _, edge := range g.adj[v] {
 			if edge.Cap-edge.Flow > 0 && g.level[edge.To] == -1 {
 				g.level[edge.To] = g.level[v] + 1
-				queue = append(queue, edge.To)
+				g.queue = append(g.queue, edge.To)
 			}
 		}
 	}
