@@ -149,7 +149,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 			mod := int64(uint64(expiration / 10))
 			if mod > 0 {
 				val := binary.LittleEndian.Uint64(b[:]) & 0x7FFFFFFFFFFFFFFF
-				jitter := time.Duration(int64(val) % mod)
+				jitter := time.Duration(uint64(val) % uint64(mod))
 				expiration += jitter
 			}
 		}

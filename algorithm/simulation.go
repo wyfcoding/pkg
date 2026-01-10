@@ -34,8 +34,12 @@ func NewGeometricBrownianMotion(initialPrice, drift, volatility, timeStep decima
 func cryptoNormFloat64() float64 {
 	var b [16]byte
 	if _, err := crypto_rand.Read(b[:]); err != nil {
-		binary.LittleEndian.PutUint64(b[:8], uint64(time.Now().UnixNano()))
-		binary.LittleEndian.PutUint64(b[8:], uint64(time.Now().UnixNano()))
+		ts := time.Now().UnixNano()
+		if ts < 0 {
+			ts = -ts
+		}
+		binary.LittleEndian.PutUint64(b[:8], uint64(ts))
+		binary.LittleEndian.PutUint64(b[8:], uint64(ts))
 	}
 	u1 := float64(binary.LittleEndian.Uint64(b[:8]))/float64(math.MaxUint64) + 1e-10
 	u2 := float64(binary.LittleEndian.Uint64(b[8:])) / float64(math.MaxUint64)

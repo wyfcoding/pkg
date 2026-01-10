@@ -46,7 +46,7 @@ func NewCouponOptimizer() *CouponOptimizer {
 func (co *CouponOptimizer) OptimalCombination(
 	originalPrice int64,
 	coupons []Coupon,
-) (bestCoupons []uint64, finalPrice int64, totalDiscount int64) {
+) (bestCombinations []uint64, finalPrice, totalDiscount int64) {
 	start := time.Now()
 	if len(coupons) == 0 {
 		return nil, originalPrice, 0
@@ -167,7 +167,7 @@ func (co *CouponOptimizer) calculatePriceFast(originalPrice int64, sortedCoupons
 func (co *CouponOptimizer) GreedyOptimization(
 	originalPrice int64,
 	coupons []Coupon,
-) ([]uint64, int64, int64) {
+) (ids []uint64, finalPrice, totalDiscount int64) {
 	start := time.Now()
 	// 过滤掉不满足门槛条件的优惠券。
 	available := make([]Coupon, 0)
@@ -358,7 +358,7 @@ func (co *CouponOptimizer) calculateSingleDiscount(originalPrice int64, coupon C
 func (co *CouponOptimizer) DynamicProgramming(
 	originalPrice int64,
 	coupons []Coupon,
-) ([]uint64, int64, int64) {
+) (ids []uint64, finalPrice, totalDiscount int64) {
 	if len(coupons) == 0 {
 		return nil, originalPrice, 0
 	}

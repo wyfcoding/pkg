@@ -1,4 +1,4 @@
-// Package config 提供了统一的配置加载与管理能力.
+// Package config 提供了统一 the 配置加载与管理能力.
 package config
 
 import (
@@ -15,6 +15,7 @@ import (
 )
 
 // Config 全局顶级配置结构.
+// 优化：严格按大小排序以最小化对齐空间.
 type Config struct {
 	Services       ServicesConfig       `mapstructure:"services"       toml:"services"`
 	Data           DataConfig           `mapstructure:"data"           toml:"data"`
@@ -58,7 +59,6 @@ type ServerConfig struct {
 
 // DataConfig 汇集了所有持久化存储与中间件的数据源配置.
 type DataConfig struct {
-	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 	Database      DatabaseConfig      `mapstructure:"database"      toml:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"         toml:"redis"`
 	BigCache      BigCacheConfig      `mapstructure:"bigcache"      toml:"bigcache"`
@@ -66,11 +66,12 @@ type DataConfig struct {
 	ClickHouse    ClickHouseConfig    `mapstructure:"clickhouse"    toml:"clickhouse"`
 	Neo4j         Neo4jConfig         `mapstructure:"neo4j"         toml:"neo4j"`
 	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch" toml:"elasticsearch"`
+	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 }
 
 // DatabaseConfig 定义单数据库实例连接与连接池参数.
 type DatabaseConfig struct {
-	Driver          string          `mapstructure:"driver"            toml:"driver"            validate:"required"`
+	Driver          string          `mapstructure:"driver"                 toml:"driver"            validate:"required"`
 	DSN             string          `mapstructure:"dsn"               toml:"dsn"               validate:"required"`
 	ConnMaxLifetime time.Duration   `mapstructure:"conn_max_lifetime"  toml:"conn_max_lifetime"`
 	SlowThreshold   time.Duration   `mapstructure:"slow_threshold"     toml:"slow_threshold"`
@@ -123,9 +124,9 @@ type MessageQueueConfig struct {
 
 // KafkaConfig 定义 Kafka 生产者与消费者参数.
 type KafkaConfig struct {
-	Brokers        []string      `mapstructure:"brokers"         toml:"brokers"`
 	Topic          string        `mapstructure:"topic"           toml:"topic"`
 	GroupID        string        `mapstructure:"group_id"        toml:"group_id"`
+	Brokers        []string      `mapstructure:"brokers"         toml:"brokers"`
 	DialTimeout    time.Duration `mapstructure:"dial_timeout"    toml:"dial_timeout"`
 	ReadTimeout    time.Duration `mapstructure:"read_timeout"    toml:"read_timeout"`
 	WriteTimeout   time.Duration `mapstructure:"write_timeout"   toml:"write_timeout"`
@@ -171,7 +172,7 @@ type RateLimitConfig struct {
 // CircuitBreakerConfig 定义熔断器（如 Gobreaker）的保护策略.
 type CircuitBreakerConfig struct {
 	Interval    time.Duration `mapstructure:"interval"     toml:"interval"`
-	Timeout     time.Duration `mapstructure:"timeout"      timeout"`
+	Timeout     time.Duration `mapstructure:"timeout"      toml:"timeout"`
 	MaxRequests uint32        `mapstructure:"max_requests" toml:"max_requests"`
 	Enabled     bool          `mapstructure:"enabled"      toml:"enabled"`
 }
@@ -239,9 +240,9 @@ type Neo4jConfig struct {
 
 // ElasticsearchConfig 定义搜索引擎集群连接参数.
 type ElasticsearchConfig struct {
-	Addresses []string `mapstructure:"addresses" toml:"addresses"`
 	Username  string   `mapstructure:"username"  toml:"username"`
 	Password  string   `mapstructure:"password"  toml:"password"`
+	Addresses []string `mapstructure:"addresses" toml:"addresses"`
 }
 
 var vInstance = viper.New()

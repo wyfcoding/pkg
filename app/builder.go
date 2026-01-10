@@ -251,7 +251,7 @@ func (b *Builder) setupMiddleware(cfg *config.Config, m *metrics.Metrics, logger
 	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptor(m))
 }
 
-func (b *Builder) assembleService(m *metrics.Metrics, logger *logging.Logger) (any, func()) {
+func (b *Builder) assembleService(m *metrics.Metrics, logger *logging.Logger) (instance any, cleanup func()) {
 	initFn, ok := b.initService.(func(any, *metrics.Metrics) (any, func(), error))
 	if !ok {
 		panic("invalid initService format")

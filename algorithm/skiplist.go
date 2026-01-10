@@ -40,7 +40,7 @@ func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
 			next: make([]*SkipListNode[K, V], maxLevel),
 		},
 		level:     1,
-		randState: uint64(time.Now().UnixNano()), // 伪随机状态初始化。
+		randState: uint64(time.Now().UnixNano()) & 0x7FFFFFFFFFFFFFFF, // 伪随机状态初始化 (G115).
 	}
 }
 

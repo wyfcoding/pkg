@@ -17,9 +17,9 @@ type Hook struct {
 
 // Lifecycle 管理应用程序中多个组件的生命周期。
 type Lifecycle struct {
+	logger *slog.Logger
 	hooks  []Hook
 	mu     sync.Mutex
-	logger *slog.Logger
 }
 
 // NewLifecycle 创建一个新的生命周期管理器实例。

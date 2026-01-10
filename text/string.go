@@ -15,7 +15,11 @@ func RandomString(length int) string {
 		// 极端情况下的低熵降级，仅为满足健壮性.
 		for i := range result {
 			ts := time.Now().UnixNano()
-			result[i] = charset[uint64(ts)%uint64(len(charset))]
+			if ts < 0 {
+				ts = -ts
+			}
+			idx := uint64(ts) % uint64(len(charset))
+			result[i] = charset[idx]
 		}
 		return string(result)
 	}
@@ -35,7 +39,7 @@ func MaskString(s string, prefixLen, suffixLen int) string {
 
 	maskLen := len(s) - prefixLen - suffixLen
 	mask := ""
-	for i := 0; i < maskLen; i++ {
+	for range maskLen {
 		mask += "*"
 	}
 
@@ -44,7 +48,7 @@ func MaskString(s string, prefixLen, suffixLen int) string {
 
 // IsBlank 检查字符串是否为空或仅包含空白字符.
 func IsBlank(s string) bool {
-	if len(s) == 0 {
+	if s == "" {
 		return true
 	}
 

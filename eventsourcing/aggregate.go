@@ -21,17 +21,6 @@ type DomainEvent interface {
 	SetVersion(version int64)
 }
 
-// BaseEvent 领域事件基础实现。
-type BaseEvent struct {
-	Timestamp time.Time `json:"timestamp"`    // 事件发生时间。
-	Metadata  Metadata  `json:"metadata"`     // 事件元数据。
-	Data      any       `json:"data"`         // 事件载荷。
-	ID        string    `json:"id"`           // 事件唯一标识。
-	Type      string    `json:"type"`         // 事件类型。
-	AggID     string    `json:"aggregate_id"` // 聚合根 ID。
-	Ver       int64     `json:"version"`      // 事件版本（聚合根版本）。
-}
-
 // Metadata 事件元数据。
 type Metadata struct {
 	Extra         map[string]string `json:"extra,omitempty"`          // 扩展元数据。
@@ -39,6 +28,17 @@ type Metadata struct {
 	CausationID   string            `json:"causation_id,omitempty"`   // 因果 ID。
 	UserID        string            `json:"user_id,omitempty"`        // 操作用户 ID。
 	TraceID       string            `json:"trace_id,omitempty"`       // 链路追踪 ID。
+}
+
+// BaseEvent 领域事件基础实现。
+type BaseEvent struct {
+	Data      any       `json:"data"`         // 事件载荷。
+	Timestamp time.Time `json:"timestamp"`    // 事件发生时间。
+	Metadata  Metadata  `json:"metadata"`     // 事件元数据。
+	ID        string    `json:"id"`           // 事件唯一标识。
+	Type      string    `json:"type"`         // 事件类型。
+	AggID     string    `json:"aggregate_id"` // 聚合根 ID。
+	Ver       int64     `json:"version"`      // 事件版本（聚合根版本）。
 }
 
 // EventType 实现 DomainEvent 接口。
@@ -94,10 +94,11 @@ func NewBaseEventWithMetadata(eventType, aggregateID string, version int64, meta
 }
 
 // AggregateRoot 事件溯源聚合根基类。
+// 优化：重新排序字段以优化内存对齐 (fieldalignment)。
 type AggregateRoot struct {
+	id          string
 	uncommitted []DomainEvent
 	version     int64
-	id          string
 }
 
 // ID 返回聚合根 unique identifier。

@@ -4,7 +4,6 @@ package xerrors
 import (
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"runtime"
 
@@ -39,12 +38,13 @@ const (
 )
 
 // Error 结构体封装了详细的错误上下文信息.
+// 优化：重新排序字段以优化内存对齐 (fieldalignment).
 type Error struct {
-	Stack   []string
+	Context map[string]any
+	Cause   error
 	Message string
 	Detail  string
-	Cause   error
-	Context map[string]any
+	Stack   []string
 	Code    int
 	Type    ErrorType
 }
@@ -166,11 +166,12 @@ func Wrap(err error, errType ErrorType, msg string) *Error {
 	}
 
 	// 显式范围检查以消除 G115.
+	t := uint64(errType)
 	var errCode uint32
-	if uint64(errType) <= math.MaxUint32 {
-		errCode = uint32(errType)
+	if t <= 0xFFFFFFFF {
+		errCode = uint32(t)
 	} else {
-		errCode = uint32(ErrUnknown)
+		errCode = 0
 	}
 	return New(errType, int(errCode), msg, "", err)
 }

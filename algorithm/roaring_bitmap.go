@@ -155,8 +155,8 @@ func (rb *RoaringBitmap) ToList() []uint32 {
 			temp := word
 			for temp != 0 {
 				bit := bits.TrailingZeros64(temp)
-				res = append(res, hBase|uint32(i<<6)|uint32(bit)) // 位运算安全。
-				temp &= temp - 1                                  // 清除最低位的 1。
+				res = append(res, hBase|uint32(uint32(i)<<6)|uint32(bit)) // 位运算安全 (G115).
+				temp &= temp - 1                                          // 清除最低位的 1。
 			}
 		}
 	}

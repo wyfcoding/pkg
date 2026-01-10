@@ -65,7 +65,11 @@ func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) error {
 		for j := range cols {
 			var b [8]byte
 			if _, err := rand.Read(b[:]); err != nil {
-				binary.LittleEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+				ts := time.Now().UnixNano()
+				if ts < 0 {
+					ts = -ts
+				}
+				binary.LittleEndian.PutUint64(b[:], uint64(ts))
 			}
 			rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)
 			nn.layers[layerIdx].weights[i][j] = (rv*2 - 1) * stdDev
@@ -124,9 +128,8 @@ func (nn *NeuralNetwork) Train(points []*DTPoint, labels []int, learningRate flo
 
 		for i, p := range points {
 			out := nn.internalForward(p.Data)
-			target := float64(labels[i])
 
-			deltas := nn.computeDeltas(out, target, &totalLoss)
+			deltas := nn.computeDeltas(out, float64(labels[i]), &totalLoss)
 			nn.updateParameters(deltas, learningRate)
 		}
 

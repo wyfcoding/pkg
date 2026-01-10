@@ -23,9 +23,9 @@ type timerEntry struct {
 // 1. 移除 container/list，使用内嵌链表节点，减少指针跳转和内存占用。
 // 2. 使用 sync.Pool 复用 timerEntry，实现零分配 (Zero Allocation) 添加任务。
 type TimingWheel struct {
-	slots     []*timerEntry
 	exitC     chan struct{}
 	pool      sync.Pool
+	slots     []*timerEntry
 	wg        conc.WaitGroup
 	mu        sync.Mutex
 	tick      time.Duration

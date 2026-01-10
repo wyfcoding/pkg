@@ -10,24 +10,30 @@ import (
 )
 
 var (
+	// ErrUnexpectedSigningMethod 签名算法不匹配错误.
+	ErrUnexpectedSigningMethod = errors.New("unexpected signing method")
 	// ErrInvalidToken 令牌无效或签名不匹配。
 	ErrInvalidToken = errors.New("invalid token")
+	// ErrTokenInvalid 令牌无效（别名，保持兼容性）。
+	ErrTokenInvalid = ErrInvalidToken
 	// ErrExpiredToken 令牌已过期。
 	ErrExpiredToken = errors.New("token expired")
+	// ErrTokenExpired 令牌已过期（别名，保持兼容性）。
+	ErrTokenExpired = ErrExpiredToken
 	// ErrTokenMalformed 令牌格式错误。
-	ErrTokenMalformed = errors.New("token is malformed")
+	ErrTokenMalformed = errors.New("token malformed")
 )
 
 // MyCustomClaims 定义了 JWT 的 Payload 部分，包含用户信息与权限角色。
 type MyCustomClaims struct {
 	jwt.RegisteredClaims
-	Roles    []string `json:"roles"`
-	Username string   `json:"username"`
 	UserID   uint64   `json:"user_id"`
+	Username string   `json:"username"`
+	Roles    []string `json:"roles"`
 }
 
 // GenerateToken 是系统中标准且唯一的 JWT 生成入口。
-func GenerateToken(userID uint64, username string, roles []string, secret string, issuer string, expireDuration time.Duration) (string, error) {
+func GenerateToken(userID uint64, username string, roles []string, secret, issuer string, expireDuration time.Duration) (string, error) {
 	claims := MyCustomClaims{
 		UserID:   userID,
 		Username: username,
@@ -46,25 +52,28 @@ func GenerateToken(userID uint64, username string, roles []string, secret string
 }
 
 // ParseToken 解析并验证 JWT 字符串，返回自定义 Claims。
-func ParseToken(tokenString string, secret string) (*MyCustomClaims, error) {
+func ParseToken(tokenString, secret string) (*MyCustomClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &MyCustomClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, fmt.Errorf("%w: %v", ErrUnexpectedSigningMethod, token.Header["alg"])
 		}
 
 		return []byte(secret), nil
 	})
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, ErrExpiredToken
+			return nil, ErrTokenExpired
+		}
+		if errors.Is(err, jwt.ErrTokenMalformed) {
+			return nil, ErrTokenMalformed
 		}
 
-		return nil, ErrInvalidToken
+		return nil, ErrTokenInvalid
 	}
 
 	if claims, ok := token.Claims.(*MyCustomClaims); ok && token.Valid {
 		return claims, nil
 	}
 
-	return nil, ErrInvalidToken
+	return nil, ErrTokenInvalid
 }

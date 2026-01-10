@@ -61,7 +61,7 @@ func (q *LockFreeQueue) Push(item any) bool {
 		seq := atomic.LoadUint32(&s.sequence)
 		// 显式检查防止回绕导致的溢出误判，虽然对于环开索引 diff 计算是安全的，
 		// 但为了满足 G115 且保持逻辑严密，我们确保只在合理范围内比较。
-		diff := int32(int64(seq) - int64(pos))
+		diff := int32(uint32(seq) - uint32(pos))
 		switch {
 		case diff == 0:
 			if atomic.CompareAndSwapUint32(&q.tail, pos, pos+1) {
@@ -89,7 +89,7 @@ func (q *LockFreeQueue) Pop() (any, bool) {
 	for {
 		s = &q.slots[pos&q.mask]
 		seq := atomic.LoadUint32(&s.sequence)
-		diff := int32(seq) - int32(pos+1) // 环形索引差值安全。
+		diff := int32(uint32(seq) - uint32(pos+1)) // 环形索引差值安全 (G115).
 		switch {
 		case diff == 0:
 			if atomic.CompareAndSwapUint32(&q.head, pos, pos+1) {

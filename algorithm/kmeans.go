@@ -1,273 +1,178 @@
+// Package algorithm 提供了 K-Means 聚类核算法。
 package algorithm
 
 import (
-	"crypto/rand"
+	crypto_rand "crypto/rand"
 	"encoding/binary"
 	"math"
-	"runtime"
-	"sync"
 	"time"
 )
 
-// KMeansPoint 结构体代表数据集中的一个数据点.
-type KMeansPoint struct {
-	Data  []float64
-	ID    uint64
-	Label int
-}
-
-// KMeans 结构体实现了K均值聚类算法.
+// KMeans K-Means 聚类结构体。
 type KMeans struct {
+	data      [][]float64
 	centroids [][]float64
-	points    []*KMeansPoint
-	mu        sync.RWMutex
-	tolerance float64
+	clusters  []int
 	k         int
-	maxIter   int
 }
 
-// NewKMeans 创建并返回一个新的 KMeans 聚类器实例.
-func NewKMeans(k, maxIter int, tolerance float64) *KMeans {
+// NewKMeans 创建 K-Means 实例。
+func NewKMeans(k int, data [][]float64) *KMeans {
 	return &KMeans{
-		k:         k,
-		maxIter:   maxIter,
-		tolerance: tolerance,
-		mu:        sync.RWMutex{},
-		points:    nil,
-		centroids: nil,
+		k:    k,
+		data: data,
 	}
 }
 
-// Fit 训练KMeans模型.
-func (km *KMeans) Fit(points []*KMeansPoint) {
-	km.mu.Lock()
-	defer km.mu.Unlock()
+// Fit 执行聚类训练。
+func (km *KMeans) Fit(maxIter int) {
+	km.initializeCentroidsPlusPlus()
 
-	km.points = points
-	n := len(points)
+	for range maxIter {
+		if !km.updateClusters() {
+			break
+		}
+		km.updateCentroids()
+	}
+}
+
+// initializeCentroidsPlusPlus 使用 K-Means++ 算法初始化质心。
+// 优化：使用 crypto/rand 确保初始化质量与安全性。
+func (km *KMeans) initializeCentroidsPlusPlus() {
+	n := len(km.data)
 	if n == 0 {
 		return
 	}
 
-	dim := len(points[0].Data)
-	km.ensureCentroids(dim)
-	km.initializeCentroidsPlusPlus(points)
+	km.centroids = make([][]float64, 0, km.k)
 
-	numWorkers := runtime.GOMAXPROCS(0)
-	const minNForParallel = 1000
-	if n < minNForParallel {
-		numWorkers = 1
-	}
-
-	km.runIterations(points, numWorkers)
-}
-
-func (km *KMeans) ensureCentroids(dim int) {
-	if len(km.centroids) != km.k {
-		km.centroids = make([][]float64, km.k)
-		for i := range km.k {
-			km.centroids[i] = make([]float64, dim)
-		}
-	}
-}
-
-func (km *KMeans) initializeCentroidsPlusPlus(points []*KMeansPoint) {
-	n := len(points)
+	// 随机选择第一个质心.
 	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		binary.LittleEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+	if _, err := crypto_rand.Read(b[:]); err != nil {
+		ts := time.Now().UnixNano()
+		if ts < 0 {
+			ts = -ts
+		}
+		binary.LittleEndian.PutUint64(b[:], uint64(ts))
 	}
-	firstIdx := int(binary.LittleEndian.Uint64(b[:]) % uint64(n))
-	copy(km.centroids[0], points[firstIdx].Data)
+	val := binary.LittleEndian.Uint64(b[:]) % uint64(n)
+	var firstIdx int
+	if val <= uint64(math.MaxInt) {
+		firstIdx = int(val)
+	} else {
+		firstIdx = 0
+	}
+	km.centroids = append(km.centroids, km.data[firstIdx])
 
-	distances := make([]float64, n)
-	for i := 1; i < km.k; i++ {
-		var totalDistSq float64
-		for idx, p := range points {
-			minDistSq := math.MaxFloat64
-			for j := range i {
-				d := km.euclideanDistanceSquared(p.Data, km.centroids[j])
-				if d < minDistSq {
-					minDistSq = d
+	for len(km.centroids) < km.k {
+		distances := make([]float64, n)
+		totalDist := 0.0
+
+		for i, point := range km.data {
+			minDist := math.MaxFloat64
+			for _, centroid := range km.centroids {
+				dist := km.euclideanDistance(point, centroid)
+				if dist < minDist {
+					minDist = dist
 				}
 			}
-			distances[idx] = minDistSq
-			totalDistSq += distances[idx]
+			distances[i] = minDist * minDist
+			totalDist += distances[i]
 		}
 
-		var b [8]byte
-		if _, err := rand.Read(b[:]); err != nil {
-			binary.LittleEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+		// 轮盘赌选择下一个质心.
+		if _, err := crypto_rand.Read(b[:]); err != nil {
+			ts := time.Now().UnixNano()
+			if ts < 0 {
+				ts = -ts
+			}
+			binary.LittleEndian.PutUint64(b[:], uint64(ts))
 		}
-		rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)
-		target := rv * totalDistSq
-		km.selectNextCentroid(points, distances, target, i)
+		r := (float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)) * totalDist
+		sum := 0.0
+		for i, d := range distances {
+			sum += d
+			if sum >= r {
+				km.centroids = append(km.centroids, km.data[i])
+				break
+			}
+		}
 	}
 }
 
-func (km *KMeans) selectNextCentroid(points []*KMeansPoint, distances []float64, target float64, centroidIdx int) {
-	var currentSum float64
-	chosen := false
-	for idx, dSq := range distances {
-		currentSum += dSq
-		if currentSum >= target {
-			copy(km.centroids[centroidIdx], points[idx].Data)
-			chosen = true
-			break
+func (km *KMeans) updateClusters() bool {
+	changed := false
+	km.clusters = make([]int, len(km.data))
+
+	for i, point := range km.data {
+		minDist := math.MaxFloat64
+		bestCluster := 0
+
+		for j, centroid := range km.centroids {
+			dist := km.euclideanDistance(point, centroid)
+			if dist < minDist {
+				minDist = dist
+				bestCluster = j
+			}
+		}
+
+		if km.clusters[i] != bestCluster {
+			km.clusters[i] = bestCluster
+			changed = true
 		}
 	}
-	if !chosen {
-		copy(km.centroids[centroidIdx], points[len(points)-1].Data)
-	}
+
+	return changed
 }
 
-func (km *KMeans) runIterations(points []*KMeansPoint, numWorkers int) {
-	n := len(points)
-	dim := len(points[0].Data)
-	chunkSize := (n + numWorkers - 1) / numWorkers
-
+func (km *KMeans) updateCentroids() {
 	newCentroids := make([][]float64, km.k)
-	for i := range km.k {
-		newCentroids[i] = make([]float64, dim)
-	}
 	counts := make([]int, km.k)
 
-	localCentroids := make([][][]float64, numWorkers)
-	localCounts := make([][]int, numWorkers)
-	for w := range numWorkers {
-		localCentroids[w] = make([][]float64, km.k)
-		for k := range km.k {
-			localCentroids[w][k] = make([]float64, dim)
-		}
-		localCounts[w] = make([]int, km.k)
-	}
-
-	toleranceSq := km.tolerance * km.tolerance
-	for range km.maxIter {
-		km.resetAggregators(newCentroids, counts, localCentroids, localCounts)
-		km.performAssignment(points, numWorkers, chunkSize, localCentroids, localCounts)
-		km.aggregateResults(newCentroids, counts, localCentroids, localCounts)
-
-		if km.updateAndCheckConvergence(newCentroids, counts, toleranceSq) {
-			break
-		}
-	}
-}
-
-func (km *KMeans) resetAggregators(newCentroids [][]float64, counts []int, localCentroids [][][]float64, localCounts [][]int) {
-	dim := len(newCentroids[0])
+	dims := len(km.data[0])
 	for i := range km.k {
-		counts[i] = 0
-		for d := range dim {
-			newCentroids[i][d] = 0
-		}
+		newCentroids[i] = make([]float64, dims)
 	}
-	for w := range localCounts {
-		for i := range km.k {
-			localCounts[w][i] = 0
-			for d := range dim {
-				localCentroids[w][i][d] = 0
+
+	for i, clusterID := range km.clusters {
+		for j, val := range km.data[i] {
+			newCentroids[clusterID][j] += val
+		}
+		counts[clusterID]++
+	}
+
+	for i := range km.k {
+		if counts[i] > 0 {
+			for j := range dims {
+				newCentroids[i][j] /= float64(counts[i])
 			}
 		}
 	}
+
+	km.centroids = newCentroids
 }
 
-func (km *KMeans) performAssignment(points []*KMeansPoint, numWorkers, chunkSize int, localCentroids [][][]float64, localCounts [][]int) {
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
-	n := len(points)
-	dim := len(points[0].Data)
-
-	for w := range numWorkers {
-		start := w * chunkSize
-		end := min(start+chunkSize, n)
-
-		go func(workerID, startIdx, endIdx int) {
-			defer wg.Done()
-			myCounts := localCounts[workerID]
-			myCentroids := localCentroids[workerID]
-
-			for i := startIdx; i < endIdx; i++ {
-				p := points[i]
-				minDistSq := math.MaxFloat64
-				minLabel := 0
-
-				for j, centroid := range km.centroids {
-					distSq := km.euclideanDistanceSquared(p.Data, centroid)
-					if distSq < minDistSq {
-						minDistSq = distSq
-						minLabel = j
-					}
-				}
-				p.Label = minLabel
-				myCounts[minLabel]++
-				for d := range dim {
-					myCentroids[minLabel][d] += p.Data[d]
-				}
-			}
-		}(w, start, end)
-	}
-	wg.Wait()
-}
-
-func (km *KMeans) aggregateResults(newCentroids [][]float64, counts []int, localCentroids [][][]float64, localCounts [][]int) {
-	for w := range localCounts {
-		for i := range km.k {
-			counts[i] += localCounts[w][i]
-			for d := range len(newCentroids[0]) {
-				newCentroids[i][d] += localCentroids[w][i][d]
-			}
-		}
-	}
-}
-
-func (km *KMeans) updateAndCheckConvergence(newCentroids [][]float64, counts []int, toleranceSq float64) bool {
-	dim := len(newCentroids[0])
-	for j := range km.k {
-		if counts[j] > 0 {
-			invCount := 1.0 / float64(counts[j])
-			for d := range dim {
-				newCentroids[j][d] *= invCount
-			}
-		} else {
-			copy(newCentroids[j], km.centroids[j])
-		}
-	}
-
-	converged := true
-	for j := range km.k {
-		if km.euclideanDistanceSquared(newCentroids[j], km.centroids[j]) > toleranceSq {
-			converged = false
-		}
-		km.centroids[j], newCentroids[j] = newCentroids[j], km.centroids[j]
-	}
-	return converged
-}
-
-// Predict 预测新数据点所属的簇标签.
-func (km *KMeans) Predict(data []float64) int {
-	km.mu.RLock()
-	defer km.mu.RUnlock()
-
-	minDistSq := math.MaxFloat64
-	minLabel := 0
-
-	for j, centroid := range km.centroids {
-		distSq := km.euclideanDistanceSquared(data, centroid)
-		if distSq < minDistSq {
-			minDistSq = distSq
-			minLabel = j
-		}
-	}
-
-	return minLabel
-}
-
-func (km *KMeans) euclideanDistanceSquared(a, b []float64) float64 {
-	var sum float64
-	for i := range a {
-		diff := a[i] - b[i]
+func (km *KMeans) euclideanDistance(p1, p2 []float64) float64 {
+	sum := 0.0
+	for i := range p1 {
+		diff := p1[i] - p2[i]
 		sum += diff * diff
 	}
-	return sum
+	return math.Sqrt(sum)
+}
+
+// Predict 预测数据点的聚类 ID。
+func (km *KMeans) Predict(point []float64) int {
+	minDist := math.MaxFloat64
+	bestCluster := 0
+
+	for i, centroid := range km.centroids {
+		dist := km.euclideanDistance(point, centroid)
+		if dist < minDist {
+			minDist = dist
+			bestCluster = i
+		}
+	}
+
+	return bestCluster
 }

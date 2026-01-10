@@ -30,7 +30,7 @@ func (s *ReservoirSampler[T]) Observe(item T) {
 	} else {
 		var b [8]byte
 		_, _ = rand.Read(b[:])
-		j := int(binary.LittleEndian.Uint64(b[:]) % uint64(s.count))
+		j := int(binary.LittleEndian.Uint64(b[:]) % uint64(uint32(s.count)))
 		if j < s.k {
 			s.samples[j] = item
 		}

@@ -22,6 +22,7 @@ const (
 
 // Order 订单结构，表示一个限价单或高级策略单。
 type Order struct {
+	ResultChan chan any
 	Price      decimal.Decimal
 	Quantity   decimal.Decimal
 	DisplayQty decimal.Decimal
@@ -30,7 +31,6 @@ type Order struct {
 	Symbol     string
 	UserID     string
 	Side       Side
-	ResultChan chan any
 	Timestamp  int64
 	IsIceberg  bool
 	PostOnly   bool
