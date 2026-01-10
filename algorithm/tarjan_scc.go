@@ -11,8 +11,8 @@ package algorithm
 
 // Graph 定义了一个基于邻接表的有向.
 type Graph struct {
-	nodes int     // 顶点总.
-	adj   [][]int // 邻接.
+	adj   [][]int // 邻接表
+	nodes int     // 顶点总数
 }
 
 // NewGraph 创建一个新的有向图实.
@@ -31,12 +31,12 @@ func (g *Graph) AddEdge(u, v int) {
 // TarjanSCC 封装了计算强连通分量的状态。
 type TarjanSCC struct {
 	graph   *Graph
-	index   int     // 当前 DFS 遍历的次序计数。
 	stack   []int   // 用于存储当前遍历路径的栈。
-	onStack []bool  // 快速判断节点是否在栈中。
 	indices []int   // 节点的发现次序。
 	lowlink []int   // 节点通过回边能到达的最小次序。
 	sccs    [][]int // 最终识别出的强连通分量列表。
+	onStack []bool  // 快速判断节点是否在栈中。
+	index   int     // 当前 DFS 遍历的次序计数。
 }
 
 // NewTarjanSCC 初始化 Tarjan 算法执行器。
@@ -56,7 +56,7 @@ func (t *TarjanSCC) Run() [][]int {
 		t.indices[i] = -1
 	}
 
-	for i := 0; i < t.graph.nodes; i++ {
+	for i := range t.graph.nodes {
 		if t.indices[i] == -1 {
 			t.strongConnect(i)
 		}

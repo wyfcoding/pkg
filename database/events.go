@@ -8,69 +8,75 @@ import (
 	"gorm.io/gorm"
 )
 
-// DomainEvent 领域事件接口。
-// 任何希望作为事件发布的结构体都应实现此接口。
+// DomainEvent 领域事件接口.
 type DomainEvent interface {
 	EventName() string
 	EventKey() string
 }
 
-// EntityEvents 定义了实体携带事件的能力。
+// EntityEvents 定义了实体携带事件的能力.
 type EntityEvents interface {
 	GetEvents() []DomainEvent
 	ClearEvents()
 }
 
-// BaseEntity 是一个可嵌入的结构体，为模型提供事件管理能力。
-type BaseEntity struct {
+// BaseEntity 是一个可嵌入的结构体.
+type BaseEntity struct { //nolint:govet
 	events []DomainEvent `gorm:"-" json:"-"`
 }
 
+// AddEvent 添加事件.
 func (e *BaseEntity) AddEvent(event DomainEvent) {
 	e.events = append(e.events, event)
 }
 
+// GetEvents 获取事件.
 func (e *BaseEntity) GetEvents() []DomainEvent {
 	return e.events
 }
 
+// ClearEvents 清空事件.
 func (e *BaseEntity) ClearEvents() {
 	e.events = nil
 }
 
-// OutboxRecord 必须与业务在同一事务中持久化的记录。
-type OutboxRecord struct {
-	ID        uint64    `gorm:"primarykey"`
+// OutboxRecord 必须与业务在同一事务中持久化的记录.
+type OutboxRecord struct { //nolint:govet
+	CreatedAt time.Time `gorm:"index"`
 	Topic     string    `gorm:"type:varchar(255);not null;index"`
 	Key       string    `gorm:"type:varchar(255);index"`
 	Payload   []byte    `gorm:"type:blob;not null"`
-	Status    int8      `gorm:"type:tinyint;default:0;index"` // 0: Pending, 1: Sent, 2: Failed。
-	CreatedAt time.Time `gorm:"index"`
+	ID        uint64    `gorm:"primarykey"`
+	Status    int8      `gorm:"type:tinyint;default:0;index"` // 0: Pending, 1: Sent, 2: Failed.
 }
 
+// TableName 返回表名.
 func (OutboxRecord) TableName() string {
 	return "sys_outbox_messages"
 }
 
-// EventPlugin GORM 插件，用于自动处理实体中的事件。
+// EventPlugin GORM 插件.
 type EventPlugin struct{}
 
+// Name 插件名称.
 func (p *EventPlugin) Name() string {
 	return "domain_event_plugin"
 }
 
+// Initialize 初始化插件.
 func (p *EventPlugin) Initialize(db *gorm.DB) error {
-	// 注册在创建/更新之后的钩子。
-	return db.Callback().Create().After("gorm:create").Register("event_plugin:after_create", p.handleEvents)
+	if err := db.Callback().Create().After("gorm:create").Register("event_plugin:after_create", p.handleEvents); err != nil {
+		return fmt.Errorf("failed to register event plugin: %w", err)
+	}
+
+	return nil
 }
 
-// handleEvents 处理实体中积压的领域事件，并将其持久化到 Outbox 表中。
 func (p *EventPlugin) handleEvents(db *gorm.DB) {
 	if db.Error != nil || db.Statement.Schema == nil {
 		return
 	}
 
-	// 检查模型是否实现了 EntityEvents 接口，以确定是否有事件需要处理。
 	entity, ok := db.Statement.Dest.(EntityEvents)
 	if !ok {
 		return
@@ -85,6 +91,7 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 		payload, err := json.Marshal(event)
 		if err != nil {
 			_ = db.AddError(fmt.Errorf("failed to marshal domain event: %w", err))
+
 			continue
 		}
 
@@ -94,15 +101,13 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 			Payload:   payload,
 			Status:    0,
 			CreatedAt: time.Now(),
+			ID:        0,
 		}
 
-		// 在当前同一个事务中将消息持久化至 sys_outbox_messages 表。
-		// 使用 NewDB: true 开启一个干净的会话，避免干扰主操作的错误状态。
 		if err := db.Session(&gorm.Session{NewDB: true}).Create(record).Error; err != nil {
 			_ = db.AddError(fmt.Errorf("failed to create outbox record: %w", err))
 		}
 	}
 
-	// 处理完成后清空实体的事件列表，防止重复处理。
 	entity.ClearEvents()
 }

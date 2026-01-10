@@ -2,6 +2,7 @@ package cqrs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -9,22 +10,28 @@ import (
 	"time"
 )
 
-// InMemCommandBus 高性能内存命令总线实现。
-// 优化策略：在注册阶段利用反射生成高效包装闭包，分发阶段实现 O(1) 直接调用，避免运行时反复反射损耗。
-type InMemCommandBus struct {
+var (
+	// ErrNoCommandHandler 未注册命令处理器.
+	ErrNoCommandHandler = errors.New("no handler registered for command")
+	// ErrNoQueryHandler 未注册查询处理器.
+	ErrNoQueryHandler = errors.New("no handler registered for query")
+)
+
+// InMemCommandBus 高性能内存命令总线实现.
+type InMemCommandBus struct { //nolint:govet
 	handlers map[string]func(context.Context, Command) error
 	mu       sync.RWMutex
 }
 
-// NewInMemCommandBus 创建一个新的 InMemCommandBus 实例。
+// NewInMemCommandBus 创建一个新的 InMemCommandBus 实例.
 func NewInMemCommandBus() *InMemCommandBus {
 	return &InMemCommandBus{
 		handlers: make(map[string]func(context.Context, Command) error),
+		mu:       sync.RWMutex{},
 	}
 }
 
-// Register 注册命令处理器。
-// handler 必须实现 CommandHandler[C] 接口。
+// Register 注册命令处理器.
 func (b *InMemCommandBus) Register(cmdName string, handler any) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -36,13 +43,11 @@ func (b *InMemCommandBus) Register(cmdName string, handler any) {
 		panic(fmt.Sprintf("handler for command %s does not have a Handle method", cmdName))
 	}
 
-	// 检查 Handle 方法签名: func(ctx context.Context, cmd C) error。
 	methodType := method.Type()
 	if methodType.NumIn() != 2 || methodType.NumOut() != 1 {
-		panic(fmt.Sprintf("handler for command %s has invalid signature, expected 2 args and 1 return", cmdName))
+		panic(fmt.Sprintf("handler for command %s has invalid signature", cmdName))
 	}
 
-	// 生成包装函数闭包。
 	wrapper := func(ctx context.Context, cmd Command) error {
 		args := []reflect.Value{
 			reflect.ValueOf(ctx),
@@ -52,7 +57,9 @@ func (b *InMemCommandBus) Register(cmdName string, handler any) {
 		results := method.Call(args)
 
 		if !results[0].IsNil() {
-			return results[0].Interface().(error)
+			if err, ok := results[0].Interface().(error); ok {
+				return err
+			}
 		}
 
 		return nil
@@ -61,8 +68,7 @@ func (b *InMemCommandBus) Register(cmdName string, handler any) {
 	b.handlers[cmdName] = wrapper
 }
 
-// Dispatch 将命令分发至已注册的处理器。
-// 关键业务逻辑：输出分发耗时与状态日志。
+// Dispatch 将命令分发至已注册的处理器.
 func (b *InMemCommandBus) Dispatch(ctx context.Context, cmd Command) error {
 	cmdName := cmd.CommandName()
 	start := time.Now()
@@ -74,7 +80,7 @@ func (b *InMemCommandBus) Dispatch(ctx context.Context, cmd Command) error {
 	if !ok {
 		slog.ErrorContext(ctx, "no command handler registered", "command", cmdName)
 
-		return fmt.Errorf("no handler registered for command: %s", cmdName)
+		return fmt.Errorf("%w: %s", ErrNoCommandHandler, cmdName)
 	}
 
 	err := handler(ctx, cmd)
@@ -89,21 +95,21 @@ func (b *InMemCommandBus) Dispatch(ctx context.Context, cmd Command) error {
 	return err
 }
 
-// InMemQueryBus 高性能内存查询总线实现。
-type InMemQueryBus struct {
+// InMemQueryBus 高性能内存查询总线实现.
+type InMemQueryBus struct { //nolint:govet
 	handlers map[string]func(context.Context, Query) (any, error)
 	mu       sync.RWMutex
 }
 
-// NewInMemQueryBus 创建一个新的 InMemQueryBus 实例。
+// NewInMemQueryBus 创建一个新的 InMemQueryBus 实例.
 func NewInMemQueryBus() *InMemQueryBus {
 	return &InMemQueryBus{
 		handlers: make(map[string]func(context.Context, Query) (any, error)),
+		mu:       sync.RWMutex{},
 	}
 }
 
-// Register 注册查询处理器。
-// handler 必须实现 QueryHandler[Q, R] 接口。
+// Register 注册查询处理器.
 func (b *InMemQueryBus) Register(queryName string, handler any) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -115,10 +121,9 @@ func (b *InMemQueryBus) Register(queryName string, handler any) {
 		panic(fmt.Sprintf("handler for query %s does not have a Handle method", queryName))
 	}
 
-	// 检查 Handle 方法签名: func(ctx context.Context, query Q) (R, error)。
 	methodType := method.Type()
 	if methodType.NumIn() != 2 || methodType.NumOut() != 2 {
-		panic(fmt.Sprintf("handler for query %s has invalid signature, expected 2 args and 2 returns", queryName))
+		panic(fmt.Sprintf("handler for query %s has invalid signature", queryName))
 	}
 
 	wrapper := func(ctx context.Context, query Query) (any, error) {
@@ -137,7 +142,9 @@ func (b *InMemQueryBus) Register(queryName string, handler any) {
 		}
 
 		if len(results) > 1 && !results[1].IsNil() {
-			err = results[1].Interface().(error)
+			if e, ok := results[1].Interface().(error); ok {
+				err = e
+			}
 		}
 
 		return res, err
@@ -146,8 +153,7 @@ func (b *InMemQueryBus) Register(queryName string, handler any) {
 	b.handlers[queryName] = wrapper
 }
 
-// Execute 执行查询并返回结果。
-// 关键业务逻辑：记录查询执行情况。
+// Execute 执行查询并返回结果.
 func (b *InMemQueryBus) Execute(ctx context.Context, query Query) (any, error) {
 	queryName := query.QueryName()
 	start := time.Now()
@@ -158,7 +164,8 @@ func (b *InMemQueryBus) Execute(ctx context.Context, query Query) (any, error) {
 
 	if !ok {
 		slog.ErrorContext(ctx, "no query handler registered", "query", queryName)
-		return nil, fmt.Errorf("no handler registered for query: %s", queryName)
+
+		return nil, fmt.Errorf("%w: %s", ErrNoQueryHandler, queryName)
 	}
 
 	res, err := handler(ctx, query)

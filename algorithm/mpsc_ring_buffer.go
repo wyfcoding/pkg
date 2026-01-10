@@ -12,18 +12,13 @@ import (
 // 适用于：撮合引擎定序、日志收集、Actor 模型消息邮箱。
 // 性能：在高并发写入下远超标准 Channel。
 type MpscRingBuffer[T any] struct {
-	_ [56]byte // 缓存行填充，防止伪共享 (Cache Line Padding)。
-
-	head uint64 // 消费者读取位置 (仅由消费者修改)。
-
-	_ [56]byte
-
-	tail uint64 // 生产者写入位置 (由多个生产者通过 CAS 修改)。
-
-	_ [56]byte
-
-	mask   uint64
 	buffer []unsafe.Pointer // 存储 *T，为了支持原子操作，必须存储指针。
+	_      [40]byte         // Padding to isolate head.
+	head   uint64           // 消费者读取位置 (仅由消费者修改)。
+	_      [56]byte         // Padding to isolate tail.
+	tail   uint64           // 生产者写入位置 (由多个生产者通过 CAS 修改)。
+	_      [56]byte         // Padding to isolate mask.
+	mask   uint64
 }
 
 // NewMpscRingBuffer 创建一个新的 MPSC RingBuffer。

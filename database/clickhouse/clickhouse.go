@@ -70,7 +70,7 @@ func NewClient(cfg config.ClickHouseConfig) (driver.Conn, error) {
 }
 
 // MeasuredConn 通过装饰器模式扩展原生驱动，自动采集 Prometheus 指标。
-type MeasuredConn struct {
+type MeasuredConn struct { //nolint:govet
 	driver.Conn
 	db string
 }
@@ -102,7 +102,7 @@ func (c *MeasuredConn) recordMetrics(start time.Time, err error) {
 }
 
 // BatchWriter 封装了 ClickHouse 官方的高性能 Batch 接口，提供更易用的批量写入能力。
-type BatchWriter struct {
+type BatchWriter struct { //nolint:govet
 	conn      driver.Conn
 	query     string
 	batchSize int
@@ -131,8 +131,8 @@ func (w *BatchWriter) Write(ctx context.Context, data [][]any) error {
 	}
 
 	for _, row := range data {
-		if err := batch.Append(row...); err != nil {
-			return fmt.Errorf("failed to append row: %w", err)
+		if errAppend := batch.Append(row...); errAppend != nil {
+			return fmt.Errorf("failed to append row: %w", errAppend)
 		}
 	}
 

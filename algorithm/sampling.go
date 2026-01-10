@@ -6,31 +6,33 @@ import (
 )
 
 // ReservoirSampler 蓄水池采样.
-// 用于从海量流数据中进行公平抽.
 type ReservoirSampler[T any] struct {
-	k       int // 期望采样的样本数.
-	count   int // 已经流过的元素总.
-	samples []T // 存储当前的样.
 	random  *rand.Rand
+	samples []T
+	count   int
+	k       int
 }
 
+// NewReservoirSampler 创建一个新的 ReservoirSampler 实例.
 func NewReservoirSampler[T any](k int) *ReservoirSampler[T] {
+	//nolint:gosec // 采样算法使用非加密安全随机数以保证性能.
+	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
+
 	return &ReservoirSampler[T]{
 		k:       k,
 		samples: make([]T, 0, k),
-		random:  rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
+		random:  r,
+		count:   0,
 	}
 }
 
-// Observe 处理一个新到达的元.
+// Observe 处理一个新到达的元素.
 func (s *ReservoirSampler[T]) Observe(item T) {
 	s.count++
 
 	if len(s.samples) < s.k {
-		// 1. 如果池子还没满，直接放.
 		s.samples = append(s.samples, item)
 	} else {
-		// 2. 如果池子满了，以 k/n 的概率替换掉池子里的一个旧元.
 		j := s.random.IntN(s.count)
 		if j < s.k {
 			s.samples[j] = item
@@ -38,12 +40,12 @@ func (s *ReservoirSampler[T]) Observe(item T) {
 	}
 }
 
-// GetSamples 获取当前池中的所有样.
+// GetSamples 获取当前池中的所有样本.
 func (s *ReservoirSampler[T]) GetSamples() []T {
 	return s.samples
 }
 
-// Reset 重置采样.
+// Reset 重置采样器.
 func (s *ReservoirSampler[T]) Reset() {
 	s.count = 0
 	s.samples = s.samples[:0]

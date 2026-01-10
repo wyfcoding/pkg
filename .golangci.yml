@@ -1,0 +1,53 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable-all: true
+  disable:
+    - tenv # 弃用
+    - godox # 允许 TODO
+    - exhaustivestruct # 弃用
+    - nonamedreturns # 允许命名返回值
+    - nestif # 允许一定的嵌套
+    - wrapcheck # 某些情况下外部错误不需要 wrap
+    - exhaustruct # 强制初始化所有字段太严苛
+    - varnamelen # 允许短变量名
+    - mnd # 允许魔术数字（在算法中很常见）
+    - gocognit # 算法逻辑复杂，难以降低认知复杂度
+    - cyclop # 同上
+    - gci # 格式化冲突
+    - gofmt # 格式化冲突
+    - gofumpt # 格式化冲突
+    - godot # 注释句号太烦
+    - wsl # 空行规则太烦
+    - nlreturn # return 前空行太烦
+    - tagalign # 标签对齐可选
+    - gochecknoglobals # 允许全局变量（如 Default 实例）
+    - gochecknoinits # 允许 init 函数（初始化 metrics 等）
+    - tagliatelle # 允许 snake_case
+    - ireturn # 允许返回接口
+    - errorlint # 某些直接比较是故意的
+    - dupl # 算法中有些重复是必要的
+    - forcetypeassert # Pool Get 等场景不需要
+    - lll # 允许长行
+    - forbidigo # 允许 fmt.Printf
+    - gomnd # 弃用
+    - interfacebloat # 允许较大的接口
+    - gomodguard # 允许依赖
+    - depguard # 允许所有依赖
+
+linters-settings:
+  govet:
+    enable-all: true
+  revive:
+    enable-all: true
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+  funlen:
+    lines: 100
+    statements: 50

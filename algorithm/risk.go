@@ -2,6 +2,7 @@
 package algorithm
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -25,7 +26,7 @@ func NewRiskCalculator() *RiskCalculator {
 // 返回：VaR .
 func (rc *RiskCalculator) CalculateVaR(returns []decimal.Decimal, confidenceLevel float64) (decimal.Decimal, error) {
 	if len(returns) == 0 {
-		return decimal.Zero, fmt.Errorf("empty returns list")
+		return decimal.Zero, errors.New("empty returns list")
 	}
 
 	// 转换为 float6.
@@ -50,7 +51,7 @@ func (rc *RiskCalculator) CalculateVaR(returns []decimal.Decimal, confidenceLeve
 // 也称为 Expected Shortfal.
 func (rc *RiskCalculator) CalculateCVaR(returns []decimal.Decimal, confidenceLevel float64) (decimal.Decimal, error) {
 	if len(returns) == 0 {
-		return decimal.Zero, fmt.Errorf("empty returns list")
+		return decimal.Zero, errors.New("empty returns list")
 	}
 
 	// 转换为 float6.
@@ -108,7 +109,7 @@ func (rc *RiskCalculator) CalculateMaxDrawdown(prices []decimal.Decimal) (decima
 // 返回：夏普比.
 func (rc *RiskCalculator) CalculateSharpeRatio(returns []decimal.Decimal, riskFreeRate decimal.Decimal) (decimal.Decimal, error) {
 	if len(returns) == 0 {
-		return decimal.Zero, fmt.Errorf("empty returns list")
+		return decimal.Zero, errors.New("empty returns list")
 	}
 
 	// 计算平均收.
@@ -208,7 +209,7 @@ func (rc *RiskCalculator) CalculateCorrelation(returns1, returns2 []decimal.Deci
 // CalculateBeta 计算 Beta（相对于市场的系统风险.
 func (rc *RiskCalculator) CalculateBeta(assetReturns, marketReturns []decimal.Decimal) (decimal.Decimal, error) {
 	if len(assetReturns) != len(marketReturns) || len(assetReturns) == 0 {
-		return decimal.Zero, fmt.Errorf("invalid returns lists")
+		return decimal.Zero, errors.New("invalid returns lists")
 	}
 
 	// 计算协方.
@@ -224,7 +225,7 @@ func (rc *RiskCalculator) CalculateBeta(assetReturns, marketReturns []decimal.De
 	}
 
 	if marketVariance.IsZero() {
-		return decimal.Zero, fmt.Errorf("zero market variance")
+		return decimal.Zero, errors.New("zero market variance")
 	}
 
 	beta := covariance.Div(marketVariance)
@@ -234,7 +235,7 @@ func (rc *RiskCalculator) CalculateBeta(assetReturns, marketReturns []decimal.De
 // calculateCovariance 计算协方.
 func (rc *RiskCalculator) calculateCovariance(x, y []decimal.Decimal) (decimal.Decimal, error) {
 	if len(x) != len(y) || len(x) == 0 {
-		return decimal.Zero, fmt.Errorf("invalid input")
+		return decimal.Zero, errors.New("invalid input")
 	}
 
 	// 计算平均.
@@ -259,7 +260,7 @@ func (rc *RiskCalculator) calculateCovariance(x, y []decimal.Decimal) (decimal.D
 // calculateVariance 计算方.
 func (rc *RiskCalculator) calculateVariance(data []decimal.Decimal) (decimal.Decimal, error) {
 	if len(data) == 0 {
-		return decimal.Zero, fmt.Errorf("empty data")
+		return decimal.Zero, errors.New("empty data")
 	}
 
 	// 计算平均.
@@ -283,7 +284,7 @@ func (rc *RiskCalculator) calculateVariance(data []decimal.Decimal) (decimal.Dec
 // factors: 各维度的风险原始分 (0-1)。
 // weights: 各维度的重要性权重 (之和应为 1)。
 // 返回 0-1 之间的最终风险评分。
-func (rc *RiskCalculator) EvaluateFraudScore(factors map[string]float64, weights map[string]float64) float64 {
+func (rc *RiskCalculator) EvaluateFraudScore(factors, weights map[string]float64) float64 {
 	if len(factors) == 0 {
 		return 0.0
 	}

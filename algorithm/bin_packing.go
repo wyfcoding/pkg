@@ -14,10 +14,10 @@ type Item struct {
 
 // Bin 代表一个包装箱。
 type Bin struct {
-	ID        int
+	Items     []Item
 	Capacity  float64
 	Remaining float64
-	Items     []Item
+	ID        int
 }
 
 // BinPackingOptimizer 装箱优化器。

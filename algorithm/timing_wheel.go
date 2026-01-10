@@ -13,10 +13,10 @@ type TimerTask func()
 
 // timerEntry 内部任务包装 (Singly Linked List Node)。
 type timerEntry struct {
-	expiration time.Time   // 绝对过期时间。
-	circle     int         // 剩余圈数。
 	task       TimerTask   // 任务回调。
 	next       *timerEntry // 下一个节点。
+	expiration time.Time   // 绝对过期时间。
+	circle     int         // 剩余圈数。
 }
 
 // TimingWheel 是一个基于“圈数”的单层时间轮实现。
@@ -24,16 +24,16 @@ type timerEntry struct {
 // 1. 移除 container/list，使用内嵌链表节点，减少指针跳转和内存占用。
 // 2. 使用 sync.Pool 复用 timerEntry，实现零分配 (Zero Allocation) 添加任务。
 type TimingWheel struct {
-	tick      time.Duration // 每一格的时间跨度。
-	wheelSize int           // 槽位数量。
-	interval  time.Duration // 一圈的总时间。
-	current   int           // 当前指针位置。
 	slots     []*timerEntry // 槽位链表头数组。
 	exitC     chan struct{}
+	tick      time.Duration // 每一格的时间跨度。
+	interval  time.Duration // 一圈的总时间。
 	wg        conc.WaitGroup
 	mu        sync.Mutex
-	running   bool
 	pool      sync.Pool // 对象池。
+	wheelSize int       // 槽位数量。
+	current   int       // 当前指针位置。
+	running   bool
 }
 
 // NewTimingWheel 创建一个新的时间.

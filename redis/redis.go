@@ -2,43 +2,51 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
 
-	"github.com/wyfcoding/pkg/config"
-	"github.com/wyfcoding/pkg/logging"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"github.com/wyfcoding/pkg/config"
+	"github.com/wyfcoding/pkg/logging"
 )
 
-// Client 是 redis.Client 的别名，方便业务层直接使用而无需导入原生.
+// Client 是 redis.Client 的别名.
 type Client = redis.Client
 
 var (
 	redisOps = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "redis_ops_total",
-			Help: "The total number of redis operations",
+			Namespace: "pkg",
+			Subsystem: "redis",
+			Name:      "ops_total",
+			Help:      "The total number of redis operations",
 		},
 		[]string{"addr", "command", "status"},
 	)
 	redisDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "redis_duration_seconds",
-			Help:    "The duration of redis operations",
-			Buckets: prometheus.DefBuckets,
+			Namespace: "pkg",
+			Subsystem: "redis",
+			Name:      "duration_seconds",
+			Help:      "The duration of redis operations",
+			Buckets:   prometheus.DefBuckets,
 		},
 		[]string{"addr", "command"},
 	)
+)
+
+const (
+	pingTimeout = 5 * time.Second
 )
 
 func init() {
 	prometheus.MustRegister(redisOps, redisDuration)
 }
 
-type metricsHook struct {
+type metricsHook struct { //nolint:govet
 	addr string
 }
 
@@ -55,7 +63,7 @@ func (h *metricsHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 		duration := time.Since(start).Seconds()
 
 		status := "success"
-		if err != nil && err != redis.Nil {
+		if err != nil && !errors.Is(err, redis.Nil) {
 			status = "error"
 		}
 
@@ -73,7 +81,7 @@ func (h *metricsHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.
 		duration := time.Since(start).Seconds()
 
 		status := "success"
-		if err != nil && err != redis.Nil {
+		if err != nil && !errors.Is(err, redis.Nil) {
 			status = "error"
 		}
 
@@ -84,8 +92,7 @@ func (h *metricsHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.
 	}
 }
 
-// NewClient 使用提供的配置创建一个新的 Redis 客户端。
-// 返回一个 *redis.Client 实例、清理函数和连接失败时的错误。
+// NewClient 使用提供的配置创建一个新的 Redis 客户端.
 func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (*redis.Client, func(), error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:         cfg.Addr,
@@ -97,22 +104,17 @@ func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (*redis.Client, 
 		WriteTimeout: cfg.WriteTimeout,
 	})
 
-	// Add metrics hoo.
 	client.AddHook(&metricsHook{addr: cfg.Addr})
 
-	// 创建一个带超时机制的上下文，用于Ping操作。
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel() // 确保上下文在函数退出时被取消。
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	defer cancel()
 
-	// 尝试Ping Redis服务器以验证连接的可用性。
-	_, err := client.Ping(ctx).Result()
-	if err != nil {
+	if _, err := client.Ping(ctx).Result(); err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	logger.Info("Successfully connected to Redis", "addr", client.Options().Addr)
+	logger.Info("Successfully connected to Redis", "addr", cfg.Addr)
 
-	// 定义一个清理函数，用于在应用程序关闭时优雅地关闭Redis客户端。
 	cleanup := func() {
 		if err := client.Close(); err != nil {
 			logger.Error("failed to close Redis client", "error", err)

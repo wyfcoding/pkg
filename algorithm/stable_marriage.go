@@ -70,16 +70,14 @@ func (sm *StableMarriage) Match() map[int]int {
 			// b 是单身，暂时在一起。
 			aMatch[freeA.ID] = bID
 			bMatch[bID] = freeA.ID
-		} else {
+		} else if bPrefRank[bID][freeA.ID] < bPrefRank[bID][currentOwnerOfB] {
 			// b 已有匹配，看 b 更喜欢谁。
-			if bPrefRank[bID][freeA.ID] < bPrefRank[bID][currentOwnerOfB] {
-				// b 更喜欢 freeA，抛弃旧爱。
-				aMatch[currentOwnerOfB] = -1
-				aMatch[freeA.ID] = bID
-				bMatch[bID] = freeA.ID
-			}
-			// 否则 freeA 继续寻找。
+			// b 更喜欢 freeA，抛弃旧爱。
+			aMatch[currentOwnerOfB] = -1
+			aMatch[freeA.ID] = bID
+			bMatch[bID] = freeA.ID
 		}
+		// 否则 freeA 继续寻找。
 	}
 
 	return aMatch

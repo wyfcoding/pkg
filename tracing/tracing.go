@@ -1,4 +1,4 @@
-// Package tracing 提供基于 OpenTelemetry 的分布式追踪基础设施，支持 OTLP 协议上报。
+// Package tracing 提供基于 OpenTelemetry 的分布式追踪基础设施.
 package tracing
 
 import (
@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"github.com/wyfcoding/pkg/config"
-
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -19,8 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// InitTracer 执行追踪系统的初始化配置。
-// 流程：配置 OTLP 导出器 -> 描述资源元数据 -> 设置采样率 -> 注册全局传播器。
+// InitTracer 执行追踪系统的初始化配置.
 func InitTracer(cfg config.TracingConfig) (func(context.Context) error, error) {
 	ctx := context.Background()
 
@@ -61,13 +59,16 @@ func InitTracer(cfg config.TracingConfig) (func(context.Context) error, error) {
 	return tp.Shutdown, nil
 }
 
-// StartSpan 在当前上下文开启一个新的子 Span。
+// StartSpan 在当前上下文开启一个新的子 Span.
 func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	tracer := otel.Tracer("github.com/wyfcoding/pkg/tracing")
-	return tracer.Start(ctx, name, opts...)
+	//nolint:spancheck // Span 由调用方负责关闭.
+	newCtx, span := tracer.Start(ctx, name, opts...)
+
+	return newCtx, span
 }
 
-// AddTag 为当前活动的 Span 注入自定义业务属性标签。
+// AddTag 为当前活动的 Span 注入自定义业务属性标签.
 func AddTag(ctx context.Context, key string, value any) {
 	span := trace.SpanFromContext(ctx)
 	if !span.IsRecording() {
@@ -90,33 +91,36 @@ func AddTag(ctx context.Context, key string, value any) {
 	}
 }
 
-// SetError 将错误详情记录到当前 Span 并将其状态标记为 codes.Error。
+// SetError 将错误详情记录到当前 Span 并将其状态标记为 codes.Error.
 func SetError(ctx context.Context, err error) {
 	if err == nil {
 		return
 	}
+
 	span := trace.SpanFromContext(ctx)
 	span.RecordError(err)
 	span.SetStatus(codes.Error, err.Error())
 }
 
-// GetTraceID 获取并返回当前链路的唯一追踪 ID。
+// GetTraceID 获取并返回当前链路的唯一追踪 ID.
 func GetTraceID(ctx context.Context) string {
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.HasTraceID() {
 		return spanCtx.TraceID().String()
 	}
+
 	return ""
 }
 
-// InjectContext 将追踪上下文序列化为简单的键值对 Map，常用于跨进程消息透传。
+// InjectContext 将追踪上下文序列化为简单的键值对 Map.
 func InjectContext(ctx context.Context) map[string]string {
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
+
 	return carrier
 }
 
-// ExtractContext 从键值对 Map 中还原追踪上下文。
+// ExtractContext 从键值对 Map 中还原追踪上下文.
 func ExtractContext(ctx context.Context, carrier map[string]string) context.Context {
 	return otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(carrier))
 }

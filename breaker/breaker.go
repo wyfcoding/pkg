@@ -16,13 +16,13 @@ var (
 )
 
 // Breaker 封装了 gobreaker 实例，集成了 Prometheus 指标监控。
-type Breaker struct {
+type Breaker struct { //nolint:govet
 	circuitBreaker *gobreaker.CircuitBreaker
 	metrics        *prometheus.GaugeVec
 }
 
 // Settings 定义了熔断器的初始化参数。
-type Settings struct {
+type Settings struct { //nolint:govet
 	Name         string
 	Config       config.CircuitBreakerConfig
 	FailureRatio float64

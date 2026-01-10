@@ -12,6 +12,7 @@ import (
 // - 出队 (Pop): 平均 O(1)，最坏情况取决于 CPU 竞争。
 // - 空间复杂度: O(N)，其中 N 是队列的容量。
 type LockFreeQueue struct {
+	slots    []slot
 	capacity uint32
 	mask     uint32
 	_        [56]byte // Padding: 4+4+56 = 64 bytes. Start of next line.
@@ -19,16 +20,14 @@ type LockFreeQueue struct {
 	_        [60]byte // Padding: 4+60 = 64 bytes. Ensures tail starts at 128.
 	tail     uint32
 	_        [60]byte // Padding: 4+60 = 64 bytes. Ensures slots start at 192 (aligned).
-	slots    []slot
 }
 
 // slot 代表队列中的一个槽位。
 // 优化：调整结构体大小为 64 字节，以匹配常见的 CPU 缓存行大小，防止伪共享。
 type slot struct {
+	item     any      // 16 byte.
+	_        [40]byte // Padding: 4 (seq) + 4 (implicit) + 16 (item) + 40 (explicit) = 64 bytes.
 	sequence uint32
-	// Go 编译器会自动在此处插入 4 字节的 padding 以满足 any 的 8 字节对齐要.
-	item any      // 16 byte.
-	_    [40]byte // Padding: 4 (seq) + 4 (implicit) + 16 (item) + 40 (explicit) = 64 bytes.
 }
 
 // NewLockFreeQueue 创建一个指定容量的无锁队列。
@@ -45,7 +44,7 @@ func NewLockFreeQueue(capacity uint32) *LockFreeQueue {
 		slots:    make([]slot, capacity),
 	}
 
-	for i := uint32(0); i < capacity; i++ {
+	for i := range capacity {
 		q.slots[i].sequence = i
 	}
 
@@ -132,6 +131,7 @@ func countLeadingZeros(x uint32) int {
 		x <<= 2
 	}
 	if x <= 0x7FFFFFFF {
-		        n++	}
+		n++
+	}
 	return n
 }

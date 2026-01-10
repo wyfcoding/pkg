@@ -12,10 +12,10 @@ type LCANode struct {
 
 // TreeLCA 实现了倍增法求最近公共祖先。
 type TreeLCA struct {
-	maxNodes int
-	logN     int
 	up       []int // 扁平化数组: up[i * logN + j] 表示节点 i 的第 2^j 个祖先。
 	depth    []int
+	maxNodes int
+	logN     int
 }
 
 func NewTreeLCA(n int, nodes []LCANode) *TreeLCA {
@@ -82,7 +82,7 @@ func (lca *TreeLCA) GetLCA(u, v int) int {
 
 	// 1. 将 u 提升到与 v 同一深度。
 	diff := lca.depth[u] - lca.depth[v]
-	for i := 0; i < lca.logN; i++ {
+	for i := range lca.logN {
 		if (diff >> uint(i) & 1) == 1 {
 			u = lca.up[u*lca.logN+i]
 		}

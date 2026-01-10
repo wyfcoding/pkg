@@ -1,19 +1,19 @@
-// Package algorithm 提供红黑树数据结构和订单簿实现。
+// Package algorithm 提供红黑树数据结构和订单簿实现.
 package algorithm
 
 import "sync"
 
-// Color 红黑树节点颜色。
+// Color 红黑树节点颜色.
 type Color bool
 
 const (
-	// ColorRed 红色节点。
+	// ColorRed 红色节点.
 	ColorRed Color = true
-	// ColorBlack 黑色节点。
+	// ColorBlack 黑色节点.
 	ColorBlack Color = false
 )
 
-// RBNode 红黑树节点。
+// RBNode 红黑树节点.
 type RBNode struct {
 	Order  *Order
 	Left   *RBNode
@@ -22,20 +22,22 @@ type RBNode struct {
 	Color  Color
 }
 
-// RBTree 红黑树数据结构实现。
-// 在撮合引擎中，红黑树用于维护有序订单簿（OrderBook）。
-// 红黑树能够保证插入、删除和查找的时间复杂度均为 O(log N)，满足高频交易的需求。
+// RBTree 红黑树数据结构实现.
 type RBTree struct {
-	Root *RBNode
-	// IsMaxTree true 表示按价格降序排列（买单树，高价优先）。
-	// false 表示按价格升序排列（卖单树，低价优先）。
+	Root      *RBNode
+	Size      int
 	IsMaxTree bool
-	Size      int // 树中节点的总数。
 }
 
 var rbNodePool = sync.Pool{
 	New: func() any {
-		return &RBNode{}
+		return &RBNode{
+			Order:  nil,
+			Left:   nil,
+			Right:  nil,
+			Parent: nil,
+			Color:  ColorBlack,
+		}
 	},
 }
 
@@ -43,8 +45,11 @@ func newRBNode(order *Order, color Color) *RBNode {
 	node, ok := rbNodePool.Get().(*RBNode)
 	if !ok {
 		return &RBNode{
-			Order: order,
-			Color: color,
+			Order:  order,
+			Color:  color,
+			Left:   nil,
+			Right:  nil,
+			Parent: nil,
 		}
 	}
 
@@ -65,7 +70,7 @@ func releaseRBNode(node *RBNode) {
 	rbNodePool.Put(node)
 }
 
-// NewRBTree 创建并返回一个指定排序方向的红黑树。
+// NewRBTree 创建并返回一个指定排序方向的红黑树.
 func NewRBTree(isMaxTree bool) *RBTree {
 	return &RBTree{
 		IsMaxTree: isMaxTree,
@@ -74,30 +79,26 @@ func NewRBTree(isMaxTree bool) *RBTree {
 	}
 }
 
-// Less 决定节点 a 是否应该排在节点 b 的左侧。
+// Less 决定节点 a 是否应该排在节点 b 的左侧.
 func (t *RBTree) Less(nodeA, nodeB *Order) bool {
 	priceCmp := nodeA.Price.Cmp(nodeB.Price)
 	if priceCmp == 0 {
-		// 价格相同，早到的订单排在左边（中序遍历先访问）。
 		return nodeA.Timestamp < nodeB.Timestamp
 	}
 
 	if t.IsMaxTree {
-		// 买单树：价格高的订单优先级更高，排在左边。
 		return priceCmp > 0
 	}
 
-	// 卖单树：价格低的订单优先级更高，排在左边。
 	return priceCmp < 0
 }
 
-// Insert 向红黑树中插入一个新的订单。
+// Insert 向红黑树中插入一个新的订单.
 func (t *RBTree) Insert(order *Order) *RBNode {
 	newNode := newRBNode(order, ColorRed)
 	var parentNode *RBNode
 
 	currNode := t.Root
-
 	for currNode != nil {
 		parentNode = currNode
 		if t.Less(newNode.Order, currNode.Order) {
@@ -108,17 +109,16 @@ func (t *RBTree) Insert(order *Order) *RBNode {
 	}
 
 	newNode.Parent = parentNode
-
-	if parentNode == nil {
+	switch {
+	case parentNode == nil:
 		t.Root = newNode
-	} else if t.Less(newNode.Order, parentNode.Order) {
+	case t.Less(newNode.Order, parentNode.Order):
 		parentNode.Left = newNode
-	} else {
+	default:
 		parentNode.Right = newNode
 	}
 
 	t.insertFixup(newNode)
-
 	t.Size++
 
 	return newNode
@@ -129,45 +129,51 @@ func (t *RBTree) insertFixup(targetNode *RBNode) {
 
 	for node.Parent != nil && node.Parent.Color == ColorRed {
 		if node.Parent == node.Parent.Parent.Left {
-			uncle := node.Parent.Parent.Right
-			if uncle != nil && uncle.Color == ColorRed {
-				node.Parent.Color = ColorBlack
-				uncle.Color = ColorBlack
-				node.Parent.Parent.Color = ColorRed
-				node = node.Parent.Parent
-			} else {
-				if node == node.Parent.Right {
-					node = node.Parent
-					t.leftRotate(node)
-				}
-
-				node.Parent.Color = ColorBlack
-				node.Parent.Parent.Color = ColorRed
-
-				t.rightRotate(node.Parent.Parent)
-			}
+			node = t.fixInsertSide(node, true)
 		} else {
-			uncle := node.Parent.Parent.Left
-			if uncle != nil && uncle.Color == ColorRed {
-				node.Parent.Color = ColorBlack
-				uncle.Color = ColorBlack
-				node.Parent.Parent.Color = ColorRed
-				node = node.Parent.Parent
-			} else {
-				if node == node.Parent.Left {
-					node = node.Parent
-					t.rightRotate(node)
-				}
-
-				node.Parent.Color = ColorBlack
-				node.Parent.Parent.Color = ColorRed
-
-				t.leftRotate(node.Parent.Parent)
-			}
+			node = t.fixInsertSide(node, false)
 		}
 	}
 
 	t.Root.Color = ColorBlack
+}
+
+func (t *RBTree) fixInsertSide(node *RBNode, isLeft bool) *RBNode {
+	var uncle *RBNode
+	if isLeft {
+		uncle = node.Parent.Parent.Right
+	} else {
+		uncle = node.Parent.Parent.Left
+	}
+
+	if uncle != nil && uncle.Color == ColorRed {
+		node.Parent.Color = ColorBlack
+		uncle.Color = ColorBlack
+		node.Parent.Parent.Color = ColorRed
+
+		return node.Parent.Parent
+	}
+
+	curr := node
+	if isLeft {
+		if curr == node.Parent.Right {
+			curr = node.Parent
+			t.leftRotate(curr)
+		}
+		curr.Parent.Color = ColorBlack
+		curr.Parent.Parent.Color = ColorRed
+		t.rightRotate(curr.Parent.Parent)
+	} else {
+		if curr == node.Parent.Left {
+			curr = node.Parent
+			t.rightRotate(curr)
+		}
+		curr.Parent.Color = ColorBlack
+		curr.Parent.Parent.Color = ColorRed
+		t.leftRotate(curr.Parent.Parent)
+	}
+
+	return curr
 }
 
 func (t *RBTree) leftRotate(nodeX *RBNode) {
@@ -179,12 +185,12 @@ func (t *RBTree) leftRotate(nodeX *RBNode) {
 	}
 
 	nodeY.Parent = nodeX.Parent
-
-	if nodeX.Parent == nil {
+	switch {
+	case nodeX.Parent == nil:
 		t.Root = nodeY
-	} else if nodeX == nodeX.Parent.Left {
+	case nodeX == nodeX.Parent.Left:
 		nodeX.Parent.Left = nodeY
-	} else {
+	default:
 		nodeX.Parent.Right = nodeY
 	}
 
@@ -201,12 +207,12 @@ func (t *RBTree) rightRotate(nodeY *RBNode) {
 	}
 
 	nodeX.Parent = nodeY.Parent
-
-	if nodeY.Parent == nil {
+	switch {
+	case nodeY.Parent == nil:
 		t.Root = nodeX
-	} else if nodeY == nodeY.Parent.Right {
+	case nodeY == nodeY.Parent.Right:
 		nodeY.Parent.Right = nodeX
-	} else {
+	default:
 		nodeY.Parent.Left = nodeX
 	}
 
@@ -214,7 +220,7 @@ func (t *RBTree) rightRotate(nodeY *RBNode) {
 	nodeY.Parent = nodeX
 }
 
-// Delete 根据 Order 寻找并删除节点。
+// Delete 根据 Order 寻找并删除节点.
 func (t *RBTree) Delete(order *Order) {
 	target := t.find(order)
 	if target == nil {
@@ -241,7 +247,7 @@ func (t *RBTree) find(order *Order) *RBNode {
 	return nil
 }
 
-// DeleteNode 删除指定节点。
+// DeleteNode 删除指定节点.
 func (t *RBTree) DeleteNode(target *RBNode) {
 	var replaceNode, childNode *RBNode
 
@@ -278,7 +284,6 @@ func (t *RBTree) DeleteNode(target *RBNode) {
 	}
 
 	releaseRBNode(replaceNode)
-
 	t.Size--
 }
 
@@ -289,7 +294,6 @@ func (t *RBTree) successor(node *RBNode) *RBNode {
 
 	curr := node
 	parent := node.Parent
-
 	for parent != nil && curr == parent.Right {
 		curr = parent
 		parent = parent.Parent
@@ -309,27 +313,35 @@ func (t *RBTree) minimum(node *RBNode) *RBNode {
 
 func (t *RBTree) deleteFixup(targetNode *RBNode) {
 	node := targetNode
-
 	for node != t.Root && node.Color == ColorBlack {
 		if node == node.Parent.Left {
-			node = t.fixDeleteLeft(node)
+			node = t.fixDeleteSide(node, true)
 		} else {
-			node = t.fixDeleteRight(node)
+			node = t.fixDeleteSide(node, false)
 		}
 	}
 
 	node.Color = ColorBlack
 }
 
-func (t *RBTree) fixDeleteLeft(node *RBNode) *RBNode {
-	sibling := node.Parent.Right
+func (t *RBTree) fixDeleteSide(node *RBNode, isLeft bool) *RBNode {
+	var sibling *RBNode
+	if isLeft {
+		sibling = node.Parent.Right
+	} else {
+		sibling = node.Parent.Left
+	}
+
 	if sibling.Color == ColorRed {
 		sibling.Color = ColorBlack
 		node.Parent.Color = ColorRed
-
-		t.leftRotate(node.Parent)
-
-		sibling = node.Parent.Right
+		if isLeft {
+			t.leftRotate(node.Parent)
+			sibling = node.Parent.Right
+		} else {
+			t.rightRotate(node.Parent)
+			sibling = node.Parent.Left
+		}
 	}
 
 	if (sibling.Left == nil || sibling.Left.Color == ColorBlack) &&
@@ -339,73 +351,47 @@ func (t *RBTree) fixDeleteLeft(node *RBNode) *RBNode {
 		return node.Parent
 	}
 
-	if sibling.Right == nil || sibling.Right.Color == ColorBlack {
-		if sibling.Left != nil {
-			sibling.Left.Color = ColorBlack
-		}
-
-		sibling.Color = ColorRed
-
-		t.rightRotate(sibling)
-
-		sibling = node.Parent.Right
-	}
-
-	sibling.Color = node.Parent.Color
-	node.Parent.Color = ColorBlack
-
-	if sibling.Right != nil {
-		sibling.Right.Color = ColorBlack
-	}
-
-	t.leftRotate(node.Parent)
-
-	return t.Root
+	return t.fixDeleteSideAdvanced(node, sibling, isLeft)
 }
 
-func (t *RBTree) fixDeleteRight(node *RBNode) *RBNode {
-	sibling := node.Parent.Left
-	if sibling.Color == ColorRed {
-		sibling.Color = ColorBlack
-		node.Parent.Color = ColorRed
-
+func (t *RBTree) fixDeleteSideAdvanced(node, sibling *RBNode, isLeft bool) *RBNode {
+	sib := sibling
+	if isLeft {
+		if sib.Right == nil || sib.Right.Color == ColorBlack {
+			if sib.Left != nil {
+				sib.Left.Color = ColorBlack
+			}
+			sib.Color = ColorRed
+			t.rightRotate(sib)
+			sib = node.Parent.Right
+		}
+		sib.Color = node.Parent.Color
+		node.Parent.Color = ColorBlack
+		if sib.Right != nil {
+			sib.Right.Color = ColorBlack
+		}
+		t.leftRotate(node.Parent)
+	} else {
+		if sib.Left == nil || sib.Left.Color == ColorBlack {
+			if sib.Right != nil {
+				sib.Right.Color = ColorBlack
+			}
+			sib.Color = ColorRed
+			t.leftRotate(sib)
+			sib = node.Parent.Left
+		}
+		sib.Color = node.Parent.Color
+		node.Parent.Color = ColorBlack
+		if sib.Left != nil {
+			sib.Left.Color = ColorBlack
+		}
 		t.rightRotate(node.Parent)
-
-		sibling = node.Parent.Left
 	}
-
-	if (sibling.Right == nil || sibling.Right.Color == ColorBlack) &&
-		(sibling.Left == nil || sibling.Left.Color == ColorBlack) {
-		sibling.Color = ColorRed
-
-		return node.Parent
-	}
-
-	if sibling.Left == nil || sibling.Left.Color == ColorBlack {
-		if sibling.Right != nil {
-			sibling.Right.Color = ColorBlack
-		}
-
-		sibling.Color = ColorRed
-
-		t.leftRotate(sibling)
-
-		sibling = node.Parent.Left
-	}
-
-	sibling.Color = node.Parent.Color
-	node.Parent.Color = ColorBlack
-
-	if sibling.Left != nil {
-		sibling.Left.Color = ColorBlack
-	}
-
-	t.rightRotate(node.Parent)
 
 	return t.Root
 }
 
-// GetBest 获取最优订单。
+// GetBest 获取最优订单.
 func (t *RBTree) GetBest() *Order {
 	if t.Root == nil {
 		return nil
@@ -414,12 +400,12 @@ func (t *RBTree) GetBest() *Order {
 	return t.minimum(t.Root).Order
 }
 
-// Iterator 迭代器。
+// Iterator 迭代器.
 type Iterator struct {
 	stack []*RBNode
 }
 
-// NewIterator 创建迭代器。
+// NewIterator 创建迭代器.
 func (t *RBTree) NewIterator() *Iterator {
 	iterator := &Iterator{stack: make([]*RBNode, 0)}
 	iterator.pushLeft(t.Root)
@@ -435,7 +421,7 @@ func (it *Iterator) pushLeft(node *RBNode) {
 	}
 }
 
-// Next 返回下一个订单。
+// Next 返回下一个订单.
 func (it *Iterator) Next() *Order {
 	if len(it.stack) == 0 {
 		return nil
@@ -449,7 +435,7 @@ func (it *Iterator) Next() *Order {
 	return node.Order
 }
 
-// LevelOrderTraversal 执行层序遍历。
+// LevelOrderTraversal 执行层序遍历.
 func (t *RBTree) LevelOrderTraversal() []*Order {
 	if t.Root == nil {
 		return nil
@@ -463,11 +449,9 @@ func (t *RBTree) LevelOrderTraversal() []*Order {
 		queue = queue[1:]
 
 		result = append(result, node.Order)
-
 		if node.Left != nil {
 			queue = append(queue, node.Left)
 		}
-
 		if node.Right != nil {
 			queue = append(queue, node.Right)
 		}

@@ -1,6 +1,7 @@
 package grpcclient
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -12,12 +13,18 @@ import (
 	"google.golang.org/grpc"
 )
 
-// InitClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端。
-// 它返回一个清理函数，用于关闭所有建立的连接。
-func InitClients(services map[string]config.ServiceAddr, m *metrics.Metrics, cbCfg config.CircuitBreakerConfig, targetClients any) (func(), error) {
+var (
+	// ErrInvalidTarget 目标客户端必须是结构体指针.
+	ErrInvalidTarget = errors.New("targetClients must be a pointer to a struct")
+	// ErrConnectService 连接服务失败.
+	ErrConnectService = errors.New("failed to connect to service")
+)
+
+// InitClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端.
+func InitClients(services map[string]config.ServiceAddr, metricsInstance *metrics.Metrics, cbCfg config.CircuitBreakerConfig, targetClients any) (func(), error) {
 	val := reflect.ValueOf(targetClients)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-		return nil, fmt.Errorf("targetClients must be a pointer to a struct")
+		return nil, ErrInvalidTarget
 	}
 
 	elem := val.Elem()
@@ -25,51 +32,45 @@ func InitClients(services map[string]config.ServiceAddr, m *metrics.Metrics, cbC
 
 	var conns []*grpc.ClientConn
 
-	// 创建 ClientFactory 实例。
-	factory := NewClientFactory(logging.Default(), m, cbCfg)
+	factory := NewClientFactory(logging.Default(), metricsInstance, cbCfg)
 
-	for i := 0; i < elem.NumField(); i++ {
+	for i := range elem.NumField() {
 		field := elem.Field(i)
 		fieldType := typ.Field(i)
 
-		// 跳过未导出的字段。
 		if !field.CanSet() {
 			continue
 		}
 
-		// 仅处理 *grpc.ClientConn 类型的字段。
 		if field.Type() != reflect.TypeFor[*grpc.ClientConn]() {
 			continue
 		}
 
-		// 从 tag 或字段名确定服务名称。
 		serviceName := fieldType.Tag.Get("service")
 		if serviceName == "" {
 			serviceName = strings.ToLower(fieldType.Name)
 		}
 
-		// 在配置中查找服务地址。
 		addrConfig, ok := services[serviceName]
 		if !ok {
-			// 警告但不失败，也许它是可选的或在其他地方配置了。
-			// 目前我们只记录信息并跳过。
 			slog.Info("service config not found for field, skipping auto-wiring", "field", fieldType.Name, "service", serviceName)
+
 			continue
 		}
 
 		if addrConfig.GRPCAddr == "" {
 			slog.Warn("service gRPC address is empty", "service", serviceName)
+
 			continue
 		}
 
-		// 拨号连接 (使用 ClientFactory)。
 		conn, err := factory.NewClient(addrConfig.GRPCAddr)
 		if err != nil {
-			// 关闭已打开的连接。
 			for _, connItem := range conns {
 				connItem.Close()
 			}
-			return nil, fmt.Errorf("failed to connect to service %s at %s: %w", serviceName, addrConfig.GRPCAddr, err)
+
+			return nil, fmt.Errorf("%w %s at %s: %w", ErrConnectService, serviceName, addrConfig.GRPCAddr, err)
 		}
 
 		conns = append(conns, conn)

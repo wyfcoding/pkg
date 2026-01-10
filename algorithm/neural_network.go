@@ -1,28 +1,23 @@
-// Package algorithm 提供了高性能算法实现。
+// Package algorithm 提供了高性能算法实现.
 package algorithm
 
 import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	randv2 "math/rand/v2"
 	"sync"
 )
 
-// NNPoint 结构体代表数据集中的一个数据点。
-type NNPoint struct {
-	Data []float64
-}
+var (
+	// ErrInsufficientLayers 神经网络至少需要 2 层.
+	ErrInsufficientLayers = errors.New("layerSizes must have at least 2 layers")
+)
 
-// NeuralNetwork 结构体实现了简单的全连接前馈神经网络。
-type NeuralNetwork struct {
-	layers []*Layer
-	mu     sync.RWMutex
-}
-
-// Layer 结构体代表神经网络中的一个层。
+// Layer 结构体代表神经网络中的一个层.
 type Layer struct {
 	weights [][]float64
 	bias    []float64
@@ -30,10 +25,16 @@ type Layer struct {
 	output  []float64
 }
 
-// NewNeuralNetwork 创建并返回一个新的 NeuralNetwork 实例。
+// NeuralNetwork 结构体实现了简单的全连接前馈神经网络.
+type NeuralNetwork struct {
+	layers []*Layer
+	mu     sync.RWMutex
+}
+
+// NewNeuralNetwork 创建并返回一个新的 NeuralNetwork 实例.
 func NewNeuralNetwork(layerSizes []int) (*NeuralNetwork, error) {
 	if len(layerSizes) < 2 {
-		return nil, errors.New("layerSizes must have at least 2 layers")
+		return nil, ErrInsufficientLayers
 	}
 
 	net := &NeuralNetwork{
@@ -41,7 +42,7 @@ func NewNeuralNetwork(layerSizes []int) (*NeuralNetwork, error) {
 		mu:     sync.RWMutex{},
 	}
 
-	for i := 0; i < len(layerSizes)-1; i++ {
+	for i := range layerSizes[:len(layerSizes)-1] {
 		net.layers[i] = &Layer{
 			weights: make([][]float64, layerSizes[i]),
 			bias:    make([]float64, layerSizes[i+1]),
@@ -60,15 +61,16 @@ func NewNeuralNetwork(layerSizes []int) (*NeuralNetwork, error) {
 func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) error {
 	var seed [8]byte
 	if _, err := rand.Read(seed[:]); err != nil {
-		return err
+		return fmt.Errorf("failed to read seed: %w", err)
 	}
 
+	//nolint:gosec // 神经网络权重初始化不需要加密安全随机数.
 	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
 	stdDev := math.Sqrt(2.0 / float64(rows+cols))
 
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		nn.layers[layerIdx].weights[i] = make([]float64, cols)
-		for j := 0; j < cols; j++ {
+		for j := range cols {
 			nn.layers[layerIdx].weights[i][j] = (randomSrc.Float64()*2 - 1) * stdDev
 		}
 	}
@@ -76,7 +78,7 @@ func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) error {
 	return nil
 }
 
-// Forward 执行前向传播。
+// Forward 执行前向传播.
 func (nn *NeuralNetwork) Forward(input []float64) []float64 {
 	nn.mu.RLock()
 	defer nn.mu.RUnlock()
@@ -85,26 +87,26 @@ func (nn *NeuralNetwork) Forward(input []float64) []float64 {
 }
 
 func (nn *NeuralNetwork) internalForward(input []float64) []float64 {
-	currentInput := input
+	curr := input
 
 	for _, layer := range nn.layers {
-		layer.input = currentInput
-		nextOutput := make([]float64, len(layer.bias))
+		layer.input = curr
+		next := make([]float64, len(layer.bias))
 
-		for j := 0; j < len(layer.bias); j++ {
+		for j := range layer.bias {
 			sum := layer.bias[j]
-			for i := 0; i < len(currentInput); i++ {
-				sum += currentInput[i] * layer.weights[i][j]
+			for i := range curr {
+				sum += curr[i] * layer.weights[i][j]
 			}
 
-			nextOutput[j] = nn.sigmoid(sum)
+			next[j] = nn.sigmoid(sum)
 		}
 
-		layer.output = nextOutput
-		currentInput = nextOutput
+		layer.output = next
+		curr = next
 	}
 
-	return currentInput
+	return curr
 }
 
 func (nn *NeuralNetwork) sigmoid(val float64) float64 {
@@ -115,19 +117,19 @@ func (nn *NeuralNetwork) sigmoidDerivative(output float64) float64 {
 	return output * (1.0 - output)
 }
 
-// Train 训练神经网络模型。
-func (nn *NeuralNetwork) Train(points []*NNPoint, labels []int, learningRate float64, iterations int) {
+// Train 训练神经网络模型.
+func (nn *NeuralNetwork) Train(points []*DTPoint, labels []int, learningRate float64, iterations int) {
 	nn.mu.Lock()
 	defer nn.mu.Unlock()
 
-	for iter := 0; iter < iterations; iter++ {
-		totalLoss := 0.0
+	for iter := range iterations {
+		var totalLoss float64
 
-		for i, point := range points {
-			output := nn.internalForward(point.Data)
+		for i, p := range points {
+			out := nn.internalForward(p.Data)
 			target := float64(labels[i])
 
-			deltas := nn.computeDeltas(output, target, &totalLoss)
+			deltas := nn.computeDeltas(out, target, &totalLoss)
 			nn.updateParameters(deltas, learningRate)
 		}
 
@@ -141,30 +143,28 @@ func (nn *NeuralNetwork) computeDeltas(output []float64, target float64, totalLo
 	numLayers := len(nn.layers)
 	deltas := make([][]float64, numLayers)
 
-	// 计算输出层 Delta。
 	lastIdx := numLayers - 1
 	outLayer := nn.layers[lastIdx]
 	deltas[lastIdx] = make([]float64, len(outLayer.output))
 
-	for j := 0; j < len(outLayer.output); j++ {
+	for j := range outLayer.output {
 		errVal := output[j] - target
 		*totalLoss += 0.5 * errVal * errVal
 		deltas[lastIdx][j] = errVal * nn.sigmoidDerivative(outLayer.output[j])
 	}
 
-	// 隐藏层反向传播。
 	for l := lastIdx - 1; l >= 0; l-- {
-		currLayer := nn.layers[l]
-		nextLayer := nn.layers[l+1]
-		deltas[l] = make([]float64, len(currLayer.output))
+		curr := nn.layers[l]
+		next := nn.layers[l+1]
+		deltas[l] = make([]float64, len(curr.output))
 
-		for j := 0; j < len(currLayer.output); j++ {
+		for j := range curr.output {
 			var errAccum float64
-			for k := 0; k < len(nextLayer.bias); k++ {
-				errAccum += deltas[l+1][k] * nextLayer.weights[j][k]
+			for k := range next.bias {
+				errAccum += deltas[l+1][k] * next.weights[j][k]
 			}
 
-			deltas[l][j] = errAccum * nn.sigmoidDerivative(currLayer.output[j])
+			deltas[l][j] = errAccum * nn.sigmoidDerivative(curr.output[j])
 		}
 	}
 
@@ -173,8 +173,8 @@ func (nn *NeuralNetwork) computeDeltas(output []float64, target float64, totalLo
 
 func (nn *NeuralNetwork) updateParameters(deltas [][]float64, learningRate float64) {
 	for l, layer := range nn.layers {
-		for j := 0; j < len(layer.bias); j++ {
-			for k := 0; k < len(layer.input); k++ {
+		for j := range layer.bias {
+			for k := range layer.input {
 				layer.weights[k][j] -= learningRate * deltas[l][j] * layer.input[k]
 			}
 

@@ -23,13 +23,13 @@ type DomainEvent interface {
 
 // BaseEvent 领域事件基础实现。
 type BaseEvent struct {
-	Timestamp   time.Time `json:"timestamp"`    // 事件发生时间。
-	Metadata    Metadata  `json:"metadata"`     // 事件元数据。
-	Data        any       `json:"data"`         // 事件载荷。
-	ID          string    `json:"id"`           // 事件唯一标识。
-	Type        string    `json:"type"`         // 事件类型。
-	AggID       string    `json:"aggregate_id"` // 聚合根 ID。
-	Ver         int64     `json:"version"`      // 事件版本（聚合根版本）。
+	Timestamp time.Time `json:"timestamp"`    // 事件发生时间。
+	Metadata  Metadata  `json:"metadata"`     // 事件元数据。
+	Data      any       `json:"data"`         // 事件载荷。
+	ID        string    `json:"id"`           // 事件唯一标识。
+	Type      string    `json:"type"`         // 事件类型。
+	AggID     string    `json:"aggregate_id"` // 聚合根 ID。
+	Ver       int64     `json:"version"`      // 事件版本（聚合根版本）。
 }
 
 // Metadata 事件元数据。

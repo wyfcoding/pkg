@@ -13,7 +13,7 @@ func fnv32(key string) uint32 {
 		prime32  = 16777619
 	)
 	hash := uint32(offset32)
-	for i := 0; i < len(key); i++ {
+	for i := range key {
 		hash *= prime32
 		hash ^= uint32(key[i])
 	}
@@ -22,9 +22,9 @@ func fnv32(key string) uint32 {
 
 // shard 是ConcurrentMap的一个分片。
 type shard[K comparable, V any] struct {
-	sync.RWMutex
 	items map[K]V
-	_     [32]byte // 填充至 approx 64 byte.
+	sync.RWMutex
+	_ [32]byte // 填充至 approx 64 byte.
 }
 
 // HashFunc 定义了将键 K 映射为 uint32 的函数。
@@ -33,8 +33,8 @@ type HashFunc[K comparable] func(key K) uint32
 // ConcurrentMap 是一个分片式的并发map。
 type ConcurrentMap[K comparable, V any] struct {
 	shards []shard[K, V] // 优化：使用 slice of structs 减少指针跳.
-	mask   uint64        // 掩码，用于快速计算索引 (shardCount - 1.
 	hash   HashFunc[K]
+	mask   uint64 // 掩码，用于快速计算索引 (shardCount - 1.
 }
 
 // NewConcurrentMap 创建一个通用的并发map。
@@ -58,7 +58,7 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 		mask:   uint64(shardCount - 1),
 		hash:   hashFunc,
 	}
-	for i := 0; i < shardCount; i++ {
+	for i := range shardCount {
 		m.shards[i].items = make(map[K]V)
 	}
 	return m

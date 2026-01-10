@@ -1,4 +1,4 @@
-// Package middleware 提供了 Gin 与 gRPC 的通用中间件实现。
+// Package middleware 提供了 Gin 与 gRPC 的通用中间件实现.
 package middleware
 
 import (
@@ -13,7 +13,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// RateLimitWithLimiter 返回一个使用指定限流器的 Gin 中间件。
+// RateLimitWithLimiter 返回一个使用指定限流器的 Gin 中间件.
 func RateLimitWithLimiter(l limiter.Limiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.ClientIP() + ":" + c.Request.URL.Path
@@ -38,16 +38,16 @@ func RateLimitWithLimiter(l limiter.Limiter) gin.HandlerFunc {
 	}
 }
 
-// NewDistributedRateLimitMiddleware 创建 Redis 分布式限流中间件。
-func NewDistributedRateLimitMiddleware(client *redis.Client, r, burst int) gin.HandlerFunc {
-	l := limiter.NewRedisLimiter(client, r, time.Second)
+// NewDistributedRateLimitMiddleware 创建 Redis 分布式限流中间件.
+func NewDistributedRateLimitMiddleware(client *redis.Client, rateLimit int, _ int) gin.HandlerFunc {
+	l := limiter.NewRedisLimiter(client, rateLimit, time.Second)
 
 	return RateLimitWithLimiter(l)
 }
 
-// NewLocalRateLimitMiddleware 创建本地令牌桶限流中间件。
-func NewLocalRateLimitMiddleware(r, burst int) gin.HandlerFunc {
-	l := limiter.NewLocalLimiter(rate.Limit(r), burst)
+// NewLocalRateLimitMiddleware 创建本地令牌桶限流中间件.
+func NewLocalRateLimitMiddleware(rateLimit, burst int) gin.HandlerFunc {
+	l := limiter.NewLocalLimiter(rate.Limit(rateLimit), burst)
 
 	return RateLimitWithLimiter(l)
 }

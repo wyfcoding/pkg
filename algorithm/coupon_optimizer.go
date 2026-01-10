@@ -18,13 +18,13 @@ const (
 // Coupon 结构体定义了优惠券的基本属性。
 type Coupon struct {
 	ID              uint64     // 优惠券的唯一标识符。
-	Type            CouponType // 优惠券类型。
-	Threshold       int64      // 门槛金额（单位：分），只有订单价格达到此金额才可使用。
 	DiscountRate    float64    // 折扣率（0.0-1.0，例如0.8表示8折），仅适用于折扣券。
+	Threshold       int64      // 门槛金额（单位：分），只有订单价格达到此金额才可使用。
 	ReductionAmount int64      // 减免金额（单位：分），适用于满减券和立减券。
 	MaxDiscount     int64      // 最大优惠金额（单位：分），用于限制折扣券的最大优惠。
-	CanStack        bool       // 是否可以与其他优惠券叠加使用。
+	Type            CouponType // 优惠券类型。
 	Priority        int        // 优惠券的优先级，数字越大优先级越高，用于排序和决策。
+	CanStack        bool       // 是否可以与其他优惠券叠加使用。
 }
 
 // CouponOptimizer 优惠券优化器，提供了计算最优优惠组合的算法。

@@ -12,13 +12,13 @@ type MCMFEdge struct {
 // MCMF 最小费用最大流算法。
 // 优化：复用内存 buffer，减少 GC 压力。
 type MCMF struct {
-	nodes   int
 	adj     [][]MCMFEdge
 	dist    []int
 	pNode   []int
 	pEdge   []int
 	inQueue []bool // 复用 buffer。
 	queue   []int  // 复用 buffer。
+	nodes   int
 }
 
 func NewMCMF(n int) *MCMF {
@@ -77,8 +77,8 @@ func (m *MCMF) spfa(s, t int) bool {
 
 // Solve 计算最小费用最大流。
 // 返回: (最大流, 最小费用)。
-func (m *MCMF) Solve(s, t int) (int, int) {
-	maxFlow, minCost := 0, 0
+func (m *MCMF) Solve(s, t int) (maxFlow, minCost int) {
+	maxFlow, minCost = 0, 0
 	for m.spfa(s, t) {
 		flow := math.MaxInt32
 		for v := t; v != s; v = m.pNode[v] {

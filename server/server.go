@@ -10,10 +10,10 @@ type Server interface {
 	// 它应该是一个阻塞调用，直到服务器准备好接收请求或上下文被取消。
 	// ctx: 上下文，用于控制服务器的启动过程或传递取消信号。
 	// 返回一个错误，表示服务器启动是否成功。
-	Start(context.Context) error
+	Start(ctx context.Context) error
 	// Stop 方法用于优雅地停止服务器。
 	// 它应该等待正在处理的请求完成，并释放所有资源。
 	// ctx: 上下文，用于控制服务器关闭过程的超时或传递取消信号。
 	// 返回一个错误，表示服务器停止是否成功。
-	Stop(context.Context) error
+	Stop(ctx context.Context) error
 }

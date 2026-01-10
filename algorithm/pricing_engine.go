@@ -35,27 +35,27 @@ func NewPricingEngine(basePrice, minPrice, maxPrice int64, elasticity float64) *
 // PricingFactors 结构体包含了影响商品价格的各种实时因素。
 // 这些因素通常由外部系统（如库存系统、用户行为分析系统）提供。
 type PricingFactors struct {
+	DemandLevel     float64 // 当前需求水平（通常在0到1之间，0.5表示平均需求）。
+	SeasonFactor    float64 // 季节性因素（通常在0到1之间，0.5表示平均季节影响）。
+	CompetitorPrice int64   // 竞争对手的同类商品价格（单位：分）。
 	Stock           int32   // 当前可用库存量。
 	TotalStock      int32   // 总库存量。
-	DemandLevel     float64 // 当前需求水平（通常在0到1之间，0.5表示平均需求）。
-	CompetitorPrice int64   // 竞争对手的同类商品价格（单位：分）。
 	TimeOfDay       int     // 当前时间的小时数（0-23）。
 	DayOfWeek       int     // 当前星期的天数（0-6，例如0代表星期日）。
-	IsHoliday       bool    // 是否是节假日。
 	UserLevel       int     // 当前用户的等级（例如，1-10，VIP用户等级更高）。
-	SeasonFactor    float64 // 季节性因素（通常在0到1之间，0.5表示平均季节影响）。
+	IsHoliday       bool    // 是否是节假日。
 }
 
 // PricingResult 结构体包含价格计算结果及各因素的影响详情。
 type PricingResult struct {
-	FinalPrice       int64   // 最终价.
-	BasePrice        int64   // 基础价.
 	InventoryFactor  float64 // 库存因素调整系.
 	DemandFactor     float64 // 需求因素调整系.
 	CompetitorFactor float64 // 竞品因素调整系.
 	TimeFactor       float64 // 时间因素调整系.
 	SeasonFactor     float64 // 季节因素调整系.
 	UserFactor       float64 // 用户因素调整系.
+	FinalPrice       int64   // 最终价.
+	BasePrice        int64   // 基础价.
 }
 
 // CalculatePrice 根据一系列动态定价因素计算商品的调整后价格。
@@ -80,11 +80,12 @@ func (pe *PricingEngine) CalculatePrice(factors PricingFactors) PricingResult {
 		stockRatio = float64(factors.Stock) / float64(factors.TotalStock)
 	}
 
-	if stockRatio < 0.1 { // 库存不足10%，价格上涨20%。
+	switch {
+	case stockRatio < 0.1: // 库存不足10%，价格上涨20%。
 		result.InventoryFactor = 1.2
-	} else if stockRatio < 0.3 { // 库存不足30%，价格上涨10%。
+	case stockRatio < 0.3: // 库存不足30%，价格上涨10%。
 		result.InventoryFactor = 1.1
-	} else if stockRatio > 0.8 { // 库存超过80%，价格下降10%。
+	case stockRatio > 0.8: // 库存超过80%，价格下降10%。
 		result.InventoryFactor = 0.9
 	}
 	price *= result.InventoryFactor
@@ -141,7 +142,7 @@ func (pe *PricingEngine) CalculatePrice(factors PricingFactors) PricingResult {
 }
 
 // CalculateDemandElasticity 基于两点计算简单的需求价格弹性。
-func (pe *PricingEngine) CalculateDemandElasticity(currentPrice, currentDemand int64, newPrice, newDemand int64) float64 {
+func (pe *PricingEngine) CalculateDemandElasticity(currentPrice, currentDemand, newPrice, newDemand int64) float64 {
 	// 计算价格变化率。
 	priceChange := (float64(newPrice) - float64(currentPrice)) / float64(currentPrice)
 	// 计算需求量变化率。
@@ -214,15 +215,16 @@ func (pe *PricingEngine) OptimalPrice(cost int64, historicalData []DemandData) i
 func (pe *PricingEngine) SurgePrice(demandSupplyRatio float64) int64 {
 	var multiplier float64 // 价格乘数。
 
-	if demandSupplyRatio < 0.5 { // 供大于求，降价。
+	switch {
+	case demandSupplyRatio < 0.5: // 供大于求，降价。
 		multiplier = 0.8
-	} else if demandSupplyRatio < 1.0 { // 供需平衡。
+	case demandSupplyRatio < 1.0: // 供需平衡。
 		multiplier = 1.0
-	} else if demandSupplyRatio < 2.0 { // 需求略高。
+	case demandSupplyRatio < 2.0: // 需求略高。
 		multiplier = 1.0 + (demandSupplyRatio-1.0)*0.5
-	} else if demandSupplyRatio < 5.0 { // 需求较高。
+	case demandSupplyRatio < 5.0: // 需求较高。
 		multiplier = 1.5 + (demandSupplyRatio-2.0)*0.3
-	} else { // 需求极高。
+	default: // 需求极高。
 		multiplier = 2.4 // 最大涨价140%。
 	}
 
@@ -253,13 +255,14 @@ func (pe *PricingEngine) TimeBasedPrice(startTime, endTime, currentTime time.Tim
 	progress := elapsed / totalDuration // 销售进度（0-1）。
 
 	var multiplier float64
-	if progress < 0.2 { // 销售周期前20%，早鸟价，8折。
+	switch {
+	case progress < 0.2: // 销售周期前20%，早鸟价，8折。
 		multiplier = 0.8
-	} else if progress < 0.5 { // 销售周期20%-50%，正常价。
+	case progress < 0.5: // 销售周期20%-50%，正常价。
 		multiplier = 1.0
-	} else if progress < 0.8 { // 销售周期50%-80%，略微涨价。
+	case progress < 0.8: // 销售周期50%-80%，略微涨价。
 		multiplier = 1.1
-	} else { // 销售周期最后20%，尾货价，7折清仓。
+	default: // 销售周期最后20%，尾货价，7折清仓。
 		multiplier = 0.7
 	}
 
@@ -314,11 +317,11 @@ func (pe *PricingEngine) PersonalizedPrice(userProfile UserProfile) int64 {
 // UserProfile 结构体定义了用于个性化定价的用户画像信息。
 // 注意：此结构体通常在外部定义，此处为占位。
 type UserProfile struct {
+	AvgOrderValue     int64 // 平均客单价（单位：分）。
 	PurchasePower     int   // 购买力（例如，1-10分，分数越高购买力越强）。
 	PriceSensitivity  int   // 价格敏感度（例如，1-10分，分数越高越敏感）。
 	Loyalty           int   // 忠诚度（例如，1-10分，分数越高越忠诚）。
 	PurchaseFrequency int   // 购买频率（例如，每月购买次数）。
-	AvgOrderValue     int64 // 平均客单价（单位：分）。
 }
 
 // BundlePrice 实现捆绑定价策略。

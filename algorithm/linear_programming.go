@@ -1,4 +1,4 @@
-// Package algorithm 提供了高性能算法实现。
+// Package algorithm 提供了高性能算法实现.
 package algorithm
 
 import (
@@ -6,51 +6,58 @@ import (
 	"math"
 )
 
-// LinearProgramming 结构体实现了标准的单纯形法 (Simplex Method)。
-type LinearProgramming struct {
-	constraintsCount int         // 约束个数。
-	variablesCount   int         // 变量个数。
-	tableau          [][]float64 // 单纯形表。
-}
+var (
+	// ErrDimMismatchBounds 维度不匹配.
+	ErrDimMismatchBounds = errors.New("constraints and bounds dimensions mismatch")
+	// ErrUnboundedProblem 问题无界.
+	ErrUnboundedProblem = errors.New("unbounded problem")
+)
 
 const lpEpsilon = 1e-9
 
-// NewLinearProgramming 初始化一个单纯形求解器。
+// LinearProgramming 结构体实现了标准的单纯形法 (Simplex Method).
+type LinearProgramming struct {
+	tableau          [][]float64
+	constraintsCount int
+	variablesCount   int
+}
+
+// NewLinearProgramming 初始化一个单纯形求解器.
 func NewLinearProgramming(objective []float64, constraints [][]float64, bounds []float64) (*LinearProgramming, error) {
-	m := len(constraints)
-	n := len(objective)
+	numConstraints := len(constraints)
+	numVariables := len(objective)
 
-	if m != len(bounds) {
-		return nil, errors.New("constraints and bounds dimensions mismatch")
+	if numConstraints != len(bounds) {
+		return nil, ErrDimMismatchBounds
 	}
 
-	tableau := make([][]float64, m+1)
+	tableau := make([][]float64, numConstraints+1)
 	for i := range tableau {
-		tableau[i] = make([]float64, n+m+1)
+		tableau[i] = make([]float64, numVariables+numConstraints+1)
 	}
 
-	for i := 0; i < m; i++ {
-		for j := 0; j < n; j++ {
+	for i := range numConstraints {
+		for j := range numVariables {
 			tableau[i][j] = constraints[i][j]
 		}
 
-		tableau[i][n+i] = 1.0
-		tableau[i][n+m] = bounds[i]
+		tableau[i][numVariables+i] = 1.0
+		tableau[i][numVariables+numConstraints] = bounds[i]
 	}
 
-	for j := 0; j < n; j++ {
-		tableau[m][j] = -objective[j]
+	for j := range numVariables {
+		tableau[numConstraints][j] = -objective[j]
 	}
 
 	return &LinearProgramming{
-		constraintsCount: m,
-		variablesCount:   n,
+		constraintsCount: numConstraints,
+		variablesCount:   numVariables,
 		tableau:          tableau,
 	}, nil
 }
 
-// Solve 执行单纯形迭代求解。
-func (lp *LinearProgramming) Solve() ([]float64, float64, error) {
+// Solve 执行单纯形迭代求解.
+func (lp *LinearProgramming) Solve() (solution []float64, value float64, err error) {
 	for {
 		pivotCol := lp.findPivotColumn()
 		if pivotCol == -1 {
@@ -59,13 +66,16 @@ func (lp *LinearProgramming) Solve() ([]float64, float64, error) {
 
 		pivotRow := lp.findPivotRow(pivotCol)
 		if pivotRow == -1 {
-			return nil, 0, errors.New("unbounded problem")
+			return nil, 0, ErrUnboundedProblem
 		}
 
 		lp.pivot(pivotRow, pivotCol)
 	}
 
-	return lp.extractSolution(), lp.tableau[lp.constraintsCount][lp.variablesCount+lp.constraintsCount], nil
+	resSol := lp.extractSolution()
+	resVal := lp.tableau[lp.constraintsCount][lp.variablesCount+lp.constraintsCount]
+
+	return resSol, resVal, nil
 }
 
 func (lp *LinearProgramming) findPivotColumn() int {
@@ -75,7 +85,7 @@ func (lp *LinearProgramming) findPivotColumn() int {
 	targetRowIdx := lp.constraintsCount
 	limit := lp.variablesCount + lp.constraintsCount
 
-	for j := 0; j < limit; j++ {
+	for j := range limit {
 		if lp.tableau[targetRowIdx][j] < minVal {
 			minVal = lp.tableau[targetRowIdx][j]
 			pivotCol = j
@@ -91,7 +101,7 @@ func (lp *LinearProgramming) findPivotRow(pivotCol int) int {
 
 	constColIdx := lp.variablesCount + lp.constraintsCount
 
-	for i := 0; i < lp.constraintsCount; i++ {
+	for i := range lp.constraintsCount {
 		if lp.tableau[i][pivotCol] > lpEpsilon {
 			ratio := lp.tableau[i][constColIdx] / lp.tableau[i][pivotCol]
 			if ratio < minRatio {
@@ -108,14 +118,14 @@ func (lp *LinearProgramming) pivot(row, col int) {
 	pivotVal := lp.tableau[row][col]
 	limit := lp.variablesCount + lp.constraintsCount
 
-	for j := 0; j <= limit; j++ {
+	for j := range limit + 1 {
 		lp.tableau[row][j] /= pivotVal
 	}
 
-	for i := 0; i <= lp.constraintsCount; i++ {
+	for i := range lp.constraintsCount + 1 {
 		if i != row {
 			multiplier := lp.tableau[i][col]
-			for j := 0; j <= limit; j++ {
+			for j := range limit + 1 {
 				lp.tableau[i][j] -= multiplier * lp.tableau[row][j]
 			}
 		}
@@ -126,7 +136,7 @@ func (lp *LinearProgramming) extractSolution() []float64 {
 	solution := make([]float64, lp.variablesCount)
 	constColIdx := lp.variablesCount + lp.constraintsCount
 
-	for j := 0; j < lp.variablesCount; j++ {
+	for j := range lp.variablesCount {
 		row := lp.findBasicVariableRow(j)
 		if row >= 0 {
 			solution[j] = lp.tableau[row][constColIdx]
@@ -139,7 +149,7 @@ func (lp *LinearProgramming) extractSolution() []float64 {
 func (lp *LinearProgramming) findBasicVariableRow(col int) int {
 	targetRow := -1
 
-	for i := 0; i < lp.constraintsCount; i++ {
+	for i := range lp.constraintsCount {
 		val := lp.tableau[i][col]
 		if math.Abs(val-1.0) < lpEpsilon {
 			if targetRow != -1 {

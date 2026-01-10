@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -13,33 +14,41 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 	"gorm.io/plugin/opentelemetry/tracing"
 )
 
-var defaultDB *DB
+var (
+	defaultDB *DB
+	// ErrTransactionFailed 事务执行失败.
+	ErrTransactionFailed = errors.New("transaction failed")
+)
 
-// DB 封装了 GORM 实例，集成了单例管理、熔断保护、指标监控以及分布式链路追踪。
-type DB struct {
-	*gorm.DB                        // 嵌入原生 GORM 数据库实例
-	cfg      *config.DatabaseConfig // 数据库配置信息
-	breaker  *breaker.Breaker       // 熔断器，保护数据库免受过载
-	logger   *logging.Logger        // 日志记录器
+const (
+	defaultSlowThreshold = 200 * time.Millisecond
+	errBadRequest        = 400
+)
+
+// DB 封装了 GORM 实例.
+type DB struct { //nolint:govet
+	*gorm.DB
+	cfg     *config.DatabaseConfig
+	breaker *breaker.Breaker
+	logger  *logging.Logger
 }
 
-// Default 返回全局默认的数据库连接实例。
+// Default 返回全局默认的数据库连接实例.
 func Default() *DB {
 	return defaultDB
 }
 
-// SetDefault 设置全局默认数据库连接，通常在应用启动引导时调用。
+// SetDefault 设置全局默认数据库连接.
 func SetDefault(db *DB) {
 	defaultDB = db
 }
 
-// NewDB 初始化并返回一个功能增强的数据库连接封装。
-// 流程：选择驱动 -> 开启 GORM -> 注入 OTEL 插件 -> 配置连接池 -> 初始化熔断器。
+// NewDB 初始化并返回一个功能增强的数据库连接封装.
 func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*DB, error) {
-	// ... (驱动选择与初始化逻辑) ...
 	var dialer gorm.Dialector
 
 	dsn := cfg.DSN
@@ -51,37 +60,56 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 	case "clickhouse":
 		dialer = clickhouse.Open(dsn)
 	default:
-		return nil, xerrors.New(xerrors.ErrInvalidArg, 400, "unsupported database driver", cfg.Driver, nil)
+		return nil, xerrors.New(xerrors.ErrInvalidArg, errBadRequest, "unsupported database driver", cfg.Driver, nil)
 	}
 
-	// 初始化 GORM，使用统一的日志封装
 	gormDB, err := gorm.Open(dialer, &gorm.Config{
-		Logger:      logging.NewGormLogger(logger, 200*time.Millisecond),
-		PrepareStmt: true,
+		Logger:                                   logging.NewGormLogger(logger, defaultSlowThreshold),
+		NowFunc:                                  nil,
+		DryRun:                                   false,
+		PrepareStmt:                              true,
+		CreateBatchSize:                          0,
+		SkipDefaultTransaction:                   false,
+		NamingStrategy:                           schema.NamingStrategy{}, //nolint:exhaustruct // 经过审计，此处忽略是安全的。
+		FullSaveAssociations:                     false,
+		QueryFields:                              false,
+		TranslateError:                           false,
+		PropagateUnscoped:                        false,
+		ConnPool:                                 nil,
+		Dialector:                                nil,
+		Plugins:                                  map[string]gorm.Plugin{},
+		DisableAutomaticPing:                     false,
+		DisableForeignKeyConstraintWhenMigrating: false,
+		IgnoreRelationshipsWhenMigrating:         false,
+		DisableNestedTransaction:                 false,
+		AllowGlobalUpdate:                        false,
+		PrepareStmtMaxSize:                       0,
+		PrepareStmtTTL:                           0,
+		DefaultTransactionTimeout:                0,
+		DefaultContextTimeout:                    0,
 	})
 	if err != nil {
 		return nil, xerrors.WrapInternal(err, "failed to open database connection")
 	}
 
-	// 注入 OpenTelemetry 插件实现自动链路追踪
-	if err := gormDB.Use(tracing.NewPlugin()); err != nil {
-		return nil, xerrors.WrapInternal(err, "failed to register gorm otel plugin")
+	if errTracing := gormDB.Use(tracing.NewPlugin()); errTracing != nil {
+		return nil, xerrors.WrapInternal(errTracing, "failed to register gorm otel plugin")
 	}
 
-	// 获取底层 SQL DB 以配置连接池
-	sqlDB, err := gormDB.DB()
-	if err != nil {
-		return nil, xerrors.WrapInternal(err, "failed to get underlying sql.DB")
+	sqlDB, errDB := gormDB.DB()
+	if errDB != nil {
+		return nil, xerrors.WrapInternal(errDB, "failed to get underlying sql.DB")
 	}
 
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
-	// 初始化熔断器
 	cb := breaker.NewBreaker(breaker.Settings{
-		Name:   "database-" + cfg.Driver,
-		Config: cbCfg,
+		Name:         "database-" + cfg.Driver,
+		Config:       cbCfg,
+		FailureRatio: 0,
+		MinRequests:  0,
 	}, m)
 
 	db := &DB{
@@ -94,19 +122,21 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 	return db, nil
 }
 
-// Transaction 封装了带熔断保护的事务逻辑
+// Transaction 封装了带熔断保护的事务逻辑.
 func (db *DB) Transaction(fc func(tx *gorm.DB) error) error {
 	_, err := db.breaker.Execute(func() (any, error) {
-		err := db.DB.Transaction(fc)
-		if err != nil {
-			return nil, xerrors.Wrap(err, xerrors.ErrInternal, "transaction failed")
+		errTx := db.DB.Transaction(fc)
+		if errTx != nil {
+			return nil, xerrors.Wrap(errTx, xerrors.ErrInternal, ErrTransactionFailed.Error())
 		}
-		return nil, nil
+
+		return struct{}{}, nil
 	})
+
 	return err
 }
 
-// RawDB 暴露原始 GORM 实例
+// RawDB 暴露原始 GORM 实例.
 func (db *DB) RawDB() *gorm.DB {
 	return db.DB
 }

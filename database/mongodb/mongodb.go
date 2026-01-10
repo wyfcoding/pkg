@@ -36,7 +36,7 @@ func init() {
 }
 
 // Config 封装了 MongoDB 驱动初始化所需的各类参数。
-type Config struct {
+type Config struct { //nolint:govet
 	URI            string        `toml:"uri"`             // 连接字符串 (例如: mongodb://user:pass@host:27017)。
 	Database       string        `toml:"database"`        // 默认操作的数据库名称。
 	ConnectTimeout time.Duration `toml:"connect_timeout"` // 连接建立超时阈值。

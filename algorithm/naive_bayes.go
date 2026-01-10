@@ -8,10 +8,10 @@ import (
 // NaiveBayes 结构体实现了朴素贝叶斯分类器。
 // 优化：使用倒排索引结构（Word -> []Prob）加速预测，减少 Map 查找次数。
 type NaiveBayes struct {
-	classNames     []string             // 类别名称列表 (Index -> Name)。
-	classLogPriors []float64            // 类别先验对数概率 (Index -> LogProb)。
 	vocab          map[string][]float64 // 词汇表：单词 -> [类别1条件对数概率, 类别2条件对数概率...]。
 	mu             sync.RWMutex
+	classNames     []string  // 类别名称列表 (Index -> Name)。
+	classLogPriors []float64 // 类别先验对数概率 (Index -> LogProb)。
 }
 
 // NewNaiveBayes 创建并返回一个新的 NaiveBayes 分类器实例。
@@ -98,7 +98,7 @@ func (nb *NaiveBayes) Predict(document []string) string {
 
 // PredictWithConfidence 预测给定文档的类别标签并返回置信度。
 // 优化后复杂度：O(Words + Classes) 而非 O(Words * Classes)。
-func (nb *NaiveBayes) PredictWithConfidence(document []string) (string, float64) {
+func (nb *NaiveBayes) PredictWithConfidence(document []string) (label string, confidence float64) {
 	nb.mu.RLock()
 	defer nb.mu.RUnlock()
 
@@ -140,7 +140,7 @@ func (nb *NaiveBayes) PredictWithConfidence(document []string) (string, float64)
 	for _, s := range scores {
 		sumExp += math.Exp(s - maxScore)
 	}
-	confidence := 1.0 / sumExp
+	confidence = 1.0 / sumExp
 
 	return nb.classNames[maxIdx], confidence
 }

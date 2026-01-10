@@ -5,136 +5,151 @@ import (
 	"math"
 )
 
-// Matrix 定义基础矩阵结构。
+var (
+	// ErrEmptyData 矩阵数据不能为空.
+	ErrEmptyData = errors.New("empty data")
+	// ErrDimMismatch 维度不匹配.
+	ErrDimMismatch = errors.New("dimension mismatch")
+	// ErrNotSquare 不是方阵.
+	ErrNotSquare = errors.New("matrix must be square")
+	// ErrNotPositiveDefinite 不是正定矩阵.
+	ErrNotPositiveDefinite = errors.New("matrix is not positive definite")
+)
+
+// Matrix 定义基础矩阵结构.
 type Matrix struct {
+	Data []float64
 	Rows int
 	Cols int
-	Data []float64 // 行优先存储。
 }
 
-// NewMatrix 创建一个 r x c 的零矩阵。
-func NewMatrix(r, c int) *Matrix {
+// NewMatrix 创建一个 r x c 的零矩阵.
+func NewMatrix(rows, cols int) *Matrix {
 	return &Matrix{
-		Rows: r,
-		Cols: c,
-		Data: make([]float64, r*c),
+		Rows: rows,
+		Cols: cols,
+		Data: make([]float64, rows*cols),
 	}
 }
 
-// NewMatrixFromData 从二维切片创建矩阵。
+// NewMatrixFromData 从二维切片创建矩阵.
 func NewMatrixFromData(data [][]float64) (*Matrix, error) {
-	r := len(data)
-	if r == 0 {
-		return nil, errors.New("empty data")
+	rows := len(data)
+	if rows == 0 {
+		return nil, ErrEmptyData
 	}
-	c := len(data[0])
-	m := NewMatrix(r, c)
-	for i := range r {
-		if len(data[i]) != c {
-			return nil, errors.New("columns dimension mismatch")
+
+	cols := len(data[0])
+	mat := NewMatrix(rows, cols)
+
+	for i := range rows {
+		if len(data[i]) != cols {
+			return nil, ErrDimMismatch
 		}
-		for j := range c {
-			m.Set(i, j, data[i][j])
+
+		for j := range cols {
+			mat.Set(i, j, data[i][j])
 		}
 	}
-	return m, nil
+
+	return mat, nil
 }
 
-// Get 获取元素 (i, j)。
-func (m *Matrix) Get(i, j int) float64 {
-	return m.Data[i*m.Cols+j]
+// Get 获取元素 (i, j).
+func (m *Matrix) Get(row, col int) float64 {
+	return m.Data[row*m.Cols+col]
 }
 
-// Set 设置元素 (i, j)。
-func (m *Matrix) Set(i, j int, v float64) {
-	m.Data[i*m.Cols+j] = v
+// Set 设置元素 (i, j).
+func (m *Matrix) Set(row, col int, val float64) {
+	m.Data[row*m.Cols+col] = val
 }
 
-// Transpose 矩阵转置。
+// Transpose 矩阵转置.
 func (m *Matrix) Transpose() *Matrix {
 	res := NewMatrix(m.Cols, m.Rows)
-	for i := 0; i < m.Rows; i++ {
-		for j := 0; j < m.Cols; j++ {
+	for i := range m.Rows {
+		for j := range m.Cols {
 			res.Set(j, i, m.Get(i, j))
 		}
 	}
+
 	return res
 }
 
-// MultiplyVector 矩阵向量乘法: y = A * x。
-func (m *Matrix) MultiplyVector(x []float64) ([]float64, error) {
-	if len(x) != m.Cols {
-		return nil, errors.New("dimension mismatch")
+// MultiplyVector 矩阵向量乘法: y = A * x.
+func (m *Matrix) MultiplyVector(vec []float64) ([]float64, error) {
+	if len(vec) != m.Cols {
+		return nil, ErrDimMismatch
 	}
-	y := make([]float64, m.Rows)
-	for i := 0; i < m.Rows; i++ {
-		sum := 0.0
+
+	res := make([]float64, m.Rows)
+	for i := range m.Rows {
+		var sum float64
 		rowOffset := i * m.Cols
-		for j := 0; j < m.Cols; j++ {
-			sum += m.Data[rowOffset+j] * x[j]
+		for j := range m.Cols {
+			sum += m.Data[rowOffset+j] * vec[j]
 		}
-		y[i] = sum
+
+		res[i] = sum
 	}
-	return y, nil
-}
 
-// Multiply 矩阵乘法: C = A * B。
-func (m *Matrix) Multiply(b *Matrix) (*Matrix, error) {
-	if m.Cols != b.Rows {
-		return nil, errors.New("matrix dimension mismatch for multiplication")
-	}
-	res := NewMatrix(m.Rows, b.Cols)
-
-	// Cache-friendly optimization (ikj loop order)。
-	// i: row of A。
-	// k: col of A / row of B。
-	// j: col of B。
-	for i := 0; i < m.Rows; i++ {
-		rowOffsetA := i * m.Cols
-		rowOffsetC := i * res.Cols
-
-		for k := 0; k < m.Cols; k++ {
-			valA := m.Data[rowOffsetA+k]
-			rowOffsetB := k * b.Cols
-
-			for j := 0; j < b.Cols; j++ {
-				// C[i][j] += A[i][k] * B[k][j]。
-				res.Data[rowOffsetC+j] += valA * b.Data[rowOffsetB+j]
-			}
-		}
-	}
 	return res, nil
 }
 
-// Cholesky 分解: A = L * L^T。
-// 返回下三角矩阵 L。A 必须是对称正定矩阵。
-// 使用 Cholesky–Banachiewicz 算法。
-func (m *Matrix) Cholesky() (*Matrix, error) {
-	if m.Rows != m.Cols {
-		return nil, errors.New("matrix must be square")
+// Multiply 矩阵乘法: C = A * B.
+func (m *Matrix) Multiply(other *Matrix) (*Matrix, error) {
+	if m.Cols != other.Rows {
+		return nil, ErrDimMismatch
 	}
-	n := m.Rows
-	l := NewMatrix(n, n)
 
-	for i := range n {
-		for j := 0; j <= i; j++ {
-			sum := 0.0
-			for k := 0; k < j; k++ {
-				sum += l.Get(i, k) * l.Get(j, k)
-			}
+	res := NewMatrix(m.Rows, other.Cols)
 
-			if i == j {
-				// 对角线元素。
-				val := m.Get(i, i) - sum
-				if val <= 0 {
-					return nil, errors.New("matrix is not positive definite")
-				}
-				l.Set(i, j, math.Sqrt(val))
-			} else {
-				// 非对角线元素。
-				l.Set(i, j, (m.Get(i, j)-sum)/l.Get(j, j))
+	for i := range m.Rows {
+		rowOffsetA := i * m.Cols
+		rowOffsetC := i * res.Cols
+
+		for k := range m.Cols {
+			valA := m.Data[rowOffsetA+k]
+			rowOffsetB := k * other.Cols
+
+			for j := range other.Cols {
+				res.Data[rowOffsetC+j] += valA * other.Data[rowOffsetB+j]
 			}
 		}
 	}
-	return l, nil
+
+	return res, nil
+}
+
+// Cholesky 分解: A = L * L^T.
+func (m *Matrix) Cholesky() (*Matrix, error) {
+	if m.Rows != m.Cols {
+		return nil, ErrNotSquare
+	}
+
+	n := m.Rows
+	res := NewMatrix(n, n)
+
+	for i := range n {
+		for j := range i + 1 {
+			var sum float64
+			for k := range j {
+				sum += res.Get(i, k) * res.Get(j, k)
+			}
+
+			if i == j {
+				val := m.Get(i, i) - sum
+				if val <= 0 {
+					return nil, ErrNotPositiveDefinite
+				}
+
+				res.Set(i, j, math.Sqrt(val))
+			} else {
+				res.Set(i, j, (m.Get(i, j)-sum)/res.Get(j, j))
+			}
+		}
+	}
+
+	return res, nil
 }

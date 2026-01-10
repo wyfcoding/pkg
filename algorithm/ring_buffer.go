@@ -10,22 +10,19 @@ import (
 // RingBuffer 是一个高性能、并发安全的 MPMC (Multi-Producer Multi-Consumer) 无锁队列。
 // 它通过序列号 (Sequence) 解决槽位竞争与数据可见性问题，并采用缓存行填充防止伪共享。
 type RingBuffer[T any] struct {
-	_     [64]byte // 缓存行填.
-	head  uint64   // 消费者索.
-	_     [64]byte // 缓存行填.
-	tail  uint64   // 生产者索.
-	_     [64]byte // 缓存行填.
-	mask  uint64
 	slots []rbSlot[T]
+	_     [40]byte // Padding to isolate head from other fields.
+	head  uint64   // 消费者索引.
+	_     [56]byte // Padding to isolate tail.
+	tail  uint64   // 生产者索引.
+	_     [56]byte // Padding to isolate mask.
+	mask  uint64
 }
 
 // rbSlot 包装了队列中的元素和序列.
 type rbSlot[T any] struct {
-	sequence uint64
 	data     T
-	// 还可以添加 padding，但 sequence(8) + any(16) = 24，加 padding 到 64 可能会浪费空间。
-	// 在极高并发下，每个 slot 独占缓存行最佳，但会增加 2-3 倍内存开销。
-	// 考虑到通用性，这里暂不强制 slot 级 padding，但在 slot 数组分配时要注意对齐。
+	sequence uint64
 }
 
 var (
@@ -54,7 +51,7 @@ func NewRingBuffer[T any](capacity uint64) (*RingBuffer[T], error) {
 
 	// 初始化序列号，sequence 初始值必须等于索引.
 	// 这样第一次 Offer 时，sequence == tail (0) 检查才会通.
-	for i := uint64(0); i < capacity; i++ {
+	for i := range capacity {
 		rb.slots[i].sequence = i
 	}
 

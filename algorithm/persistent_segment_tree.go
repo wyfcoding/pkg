@@ -16,7 +16,7 @@ type PersistentSegmentTree struct {
 
 // NewPersistentSegmentTree 创建一个新的主席树。
 // maxOp: 预估的操作次数，用于分配初始内存。
-func NewPersistentSegmentTree(n int, maxOp int) *PersistentSegmentTree {
+func NewPersistentSegmentTree(n, maxOp int) *PersistentSegmentTree {
 	// 空间复杂度 O(M log N)。
 	expectedNodes := maxOp * 40
 	return &PersistentSegmentTree{
@@ -39,7 +39,7 @@ func (t *PersistentSegmentTree) build(l, r int) int {
 }
 
 // Update 在旧版本 root 基础上，将 pos 位置的值 +1，产生新版本并返回新根。
-func (t *PersistentSegmentTree) update(prevRoot int, l, r int, pos int) int {
+func (t *PersistentSegmentTree) update(prevRoot, l, r, pos int) int {
 	idx := len(t.nodes)
 	t.nodes = append(t.nodes, t.nodes[prevRoot]) // 复制旧节点。
 	t.nodes[idx].Count++
@@ -68,14 +68,14 @@ func (t *PersistentSegmentTree) PushVersion(pos int) {
 }
 
 // QueryRange 查询版本 v 中 [ql, qr] 区间的总和。
-func (t *PersistentSegmentTree) QueryRange(vIdx int, ql, qr int) int {
+func (t *PersistentSegmentTree) QueryRange(vIdx, ql, qr int) int {
 	if vIdx < 0 || vIdx >= len(t.roots) {
 		return 0
 	}
 	return t.query(t.roots[vIdx], 1, t.n, ql, qr)
 }
 
-func (t *PersistentSegmentTree) query(nodeIdx, l, r int, ql, qr int) int {
+func (t *PersistentSegmentTree) query(nodeIdx, l, r, ql, qr int) int {
 	if nodeIdx == 0 || ql > r || qr < l {
 		return 0
 	}

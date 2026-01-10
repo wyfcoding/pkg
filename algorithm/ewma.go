@@ -14,10 +14,10 @@ var (
 // 它能平滑时间序列数据，并对近期的数据点给予更高的权重。
 // 适用场景：负载均衡（Latency 敏感）、动态定价（价格平滑）、监控指标告警。
 type EWMA struct {
+	mu    sync.RWMutex
 	alpha float64 // 平滑系数 (0 < alpha < 1)，值越大对新数据越灵敏。
 	value float64 // 当前的平均值。
 	init  bool    // 是否已初始化。
-	mu    sync.RWMutex
 }
 
 // NewEWMA 创建一个新的 EWMA 实例。

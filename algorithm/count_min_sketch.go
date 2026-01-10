@@ -9,19 +9,26 @@ import (
 	"time"
 )
 
-// CountMinSketch 高性能概率数据结构。
+var (
+	// ErrInvalidEpsilonDelta 无效的 epsilon 或 delta 参数.
+	ErrInvalidEpsilonDelta = errors.New("invalid epsilon or delta")
+	// ErrDimensionMismatch 维度不匹配，无法合并.
+	ErrDimensionMismatch = errors.New("cannot merge CountMinSketch with different dimensions")
+)
+
+// CountMinSketch 高性能概率数据结构.
 type CountMinSketch struct {
+	matrix []uint64
+	seeds  []uint32
 	width  uint
 	depth  uint
-	count  uint64   // 总计数，使用 atomic。
-	matrix []uint64 // 扁平化矩阵，便于原子操作 (index = depth_idx * width + width_idx)。
-	seeds  []uint32
+	count  uint64
 }
 
-// NewCountMinSketch 创建 CMS。
+// NewCountMinSketch 创建 CMS.
 func NewCountMinSketch(epsilon, delta float64) (*CountMinSketch, error) {
 	if epsilon <= 0 || epsilon >= 1 || delta <= 0 || delta >= 1 {
-		return nil, errors.New("invalid epsilon or delta")
+		return nil, ErrInvalidEpsilonDelta
 	}
 
 	width := uint(math.Ceil(math.E / epsilon))
@@ -34,6 +41,7 @@ func NewCountMinSketch(epsilon, delta float64) (*CountMinSketch, error) {
 		depth:  depth,
 		matrix: make([]uint64, depth*width),
 		seeds:  generateSeeds(depth),
+		count:  0,
 	}, nil
 }
 
@@ -42,46 +50,48 @@ func generateSeeds(depth uint) []uint32 {
 	for i := range seeds {
 		seeds[i] = rand.Uint32()
 	}
+
 	return seeds
 }
 
-// Add 原子增加元素的计数。
+// Add 原子增加元素的计数.
 func (cms *CountMinSketch) Add(data []byte, count uint64) {
 	atomic.AddUint64(&cms.count, count)
-	h1, h2 := hash(data)
+	h1, h2 := getCMSHashes(data)
 
-	for i := uint(0); i < cms.depth; i++ {
+	for i := range cms.depth {
 		index := (uint(h1) + uint(h2)*i + uint(cms.seeds[i])) % cms.width
 		atomic.AddUint64(&cms.matrix[i*cms.width+index], count)
 	}
 }
 
-// AddString 增加字符串元素的计数。
+// AddString 增加字符串元素的计数.
 func (cms *CountMinSketch) AddString(key string, count uint64) {
 	cms.Add([]byte(key), count)
 }
 
-// Estimate 估算频率。
+// Estimate 估算频率.
 func (cms *CountMinSketch) Estimate(data []byte) uint64 {
 	minCount := uint64(math.MaxUint64)
-	h1, h2 := hash(data)
+	h1, h2 := getCMSHashes(data)
 
-	for i := uint(0); i < cms.depth; i++ {
+	for i := range cms.depth {
 		index := (uint(h1) + uint(h2)*i + uint(cms.seeds[i])) % cms.width
 		count := atomic.LoadUint64(&cms.matrix[i*cms.width+index])
 		if count < minCount {
 			minCount = count
 		}
 	}
+
 	return minCount
 }
 
-// EstimateString 估算字符串频率。
+// EstimateString 估算字符串频率.
 func (cms *CountMinSketch) EstimateString(key string) uint64 {
 	return cms.Estimate([]byte(key))
 }
 
-// Decay 衰减机制：将所有计数值减半。
+// Decay 衰减机制：将所有计数值减半.
 func (cms *CountMinSketch) Decay() {
 	start := time.Now()
 	for i := range cms.matrix {
@@ -90,47 +100,47 @@ func (cms *CountMinSketch) Decay() {
 			atomic.StoreUint64(&cms.matrix[i], val/2)
 		}
 	}
+
 	atomic.StoreUint64(&cms.count, atomic.LoadUint64(&cms.count)/2)
 	slog.Info("CountMinSketch decay completed", "duration", time.Since(start))
 }
 
-// Reset 重置所有计数。
+// Reset 重置所有计数.
 func (cms *CountMinSketch) Reset() {
 	for i := range cms.matrix {
 		atomic.StoreUint64(&cms.matrix[i], 0)
 	}
+
 	atomic.StoreUint64(&cms.count, 0)
 }
 
-// TotalCount 返回总的添加次数。
+// TotalCount 返回总的添加次数.
 func (cms *CountMinSketch) TotalCount() uint64 {
 	return atomic.LoadUint64(&cms.count)
 }
 
-// Merge 合并另一个 CMS。
+// Merge 合并另一个 CMS.
 func (cms *CountMinSketch) Merge(other *CountMinSketch) error {
 	if cms.width != other.width || cms.depth != other.depth {
-		return errors.New("cannot merge CountMinSketch with different dimensions")
+		return ErrDimensionMismatch
 	}
 
 	for i := range cms.matrix {
 		otherVal := atomic.LoadUint64(&other.matrix[i])
 		atomic.AddUint64(&cms.matrix[i], otherVal)
 	}
+
 	atomic.AddUint64(&cms.count, atomic.LoadUint64(&other.count))
+
 	return nil
 }
 
-// hash 使用 FNV-1a 算法生成两个基础哈希值 (Zero Allocation)。
-func hash(data []byte) (uint32, uint32) {
-	const (
-		offset64 = 14695981039346656037
-		prime64  = 1099511628211
-	)
-	var h uint64 = offset64
+func getCMSHashes(data []byte) (uint32, uint32) {
+	var h uint64 = fnvOffset64
 	for _, b := range data {
 		h ^= uint64(b)
-		h *= prime64
+		h *= fnvPrime64
 	}
+
 	return uint32(h), uint32(h >> 32)
 }

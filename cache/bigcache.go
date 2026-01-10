@@ -4,6 +4,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 )
 
 // BigCache 是基于本地内存实现的高性能非阻塞缓存。
-type BigCache struct {
+type BigCache struct { //nolint:govet
 	cache  *bigcache.BigCache
 	sfg    singleflight.Group
 	logger *logging.Logger
@@ -51,7 +52,7 @@ func NewBigCache(ttl time.Duration, maxMB int, logger *logging.Logger) (*BigCach
 func (c *BigCache) Get(_ context.Context, key string, value any) error {
 	data, err := c.cache.Get(key)
 	if err != nil {
-		if err == bigcache.ErrEntryNotFound {
+		if errors.Is(err, bigcache.ErrEntryNotFound) {
 			return ErrCacheMiss
 		}
 
@@ -74,7 +75,7 @@ func (c *BigCache) Set(_ context.Context, key string, value any, _ time.Duration
 // Delete 删除指定的缓存条目。
 func (c *BigCache) Delete(_ context.Context, keys ...string) error {
 	for _, key := range keys {
-		if err := c.cache.Delete(key); err != nil && err != bigcache.ErrEntryNotFound {
+		if err := c.cache.Delete(key); err != nil && !errors.Is(err, bigcache.ErrEntryNotFound) {
 			return err
 		}
 	}
@@ -122,7 +123,10 @@ func (c *BigCache) GetOrSet(ctx context.Context, key string, value any, expirati
 		return err
 	}
 
-	raw, _ := json.Marshal(val)
+	raw, err := json.Marshal(val)
+	if err != nil {
+		return err
+	}
 
 	return json.Unmarshal(raw, value)
 }

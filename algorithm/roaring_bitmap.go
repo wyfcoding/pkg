@@ -15,11 +15,7 @@ var bitsetPool = sync.Pool{
 }
 
 // RoaringBitmap 简化版高性能压缩位图，适用于海量用户标签圈选。
-// 在真实顶级架构中，通常直接引用 `github.com/RoaringBitmap/roaring`。
-// 此处展示其核心设计思想：分块存储 + 位运算优化。
 type RoaringBitmap struct {
-	// chunks 将 32 位 uint32 划分为高 16 位和低 16 位。
-	// Key 为高 16 位，Value 为低 16 位的存储容器。
 	chunks map[uint16]*bitmapContainer
 }
 
@@ -97,19 +93,21 @@ func (c *bitmapContainer) recalculateCard() {
 func (rb *RoaringBitmap) And(other *RoaringBitmap) *RoaringBitmap {
 	result := NewRoaringBitmap()
 	for high, c1 := range rb.chunks {
-		if c2, ok := other.chunks[high]; ok {
-			dataPtr := bitsetPool.Get().(*[]uint64)
-			data := *dataPtr
-			resContainer := &bitmapContainer{data: data}
-			for i := range 1024 {
-				resContainer.data[i] = c1.data[i] & c2.data[i]
-			}
-			resContainer.recalculateCard()
-			if resContainer.card > 0 {
-				result.chunks[high] = resContainer
-			} else {
-				bitsetPool.Put(dataPtr)
-			}
+		c2, ok := other.chunks[high]
+		if !ok {
+			continue
+		}
+		dataPtr := bitsetPool.Get().(*[]uint64)
+		data := *dataPtr
+		resContainer := &bitmapContainer{data: data}
+		for i := range 1024 {
+			resContainer.data[i] = c1.data[i] & c2.data[i]
+		}
+		resContainer.recalculateCard()
+		if resContainer.card > 0 {
+			result.chunks[high] = resContainer
+		} else {
+			bitsetPool.Put(dataPtr)
 		}
 	}
 	return result

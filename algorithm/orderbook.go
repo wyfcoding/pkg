@@ -38,16 +38,16 @@ type Order struct {
 
 // OrderBookLevel 订单簿档位，聚合了同一价格下的委托总量。
 type OrderBookLevel struct {
-	Orders []*Order        `json:"orders"` // 该档位包含的具体订单列表。
-	Price  decimal.Decimal `json:"price"`  // 档位价格。
+	Price  decimal.Decimal `json:"price"` // 档位价格。
 	Qty    decimal.Decimal `json:"quantity"`
+	Orders []*Order        `json:"orders"` // 该档位包含的具体订单列表。
 }
 
 // OrderBook 订单簿核心结构，管理买卖双边挂单。
 type OrderBook struct {
+	orders map[string]*RBNode // 订单索引映射。
 	bids   *RBTree            // 买单红黑树（价格从高到低）。
 	asks   *RBTree            // 卖单红黑树（价格从低到高）。
-	orders map[string]*RBNode // 订单索引映射。
 	mu     sync.RWMutex
 }
 
@@ -164,14 +164,14 @@ func (ob *OrderBook) getLevels(tree *RBTree, depth int) []*OrderBookLevel {
 
 // Trade 交易记录。
 type Trade struct {
+	Price       decimal.Decimal
+	Quantity    decimal.Decimal
 	TradeID     string
 	Symbol      string
 	BuyOrderID  string
 	SellOrderID string
 	BuyUserID   string
 	SellUserID  string
-	Price       decimal.Decimal
-	Quantity    decimal.Decimal
 	Timestamp   int64
 }
 

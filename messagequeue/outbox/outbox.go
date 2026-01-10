@@ -39,16 +39,16 @@ const (
 
 // Message 离群消息实体模型。
 type Message struct {
+	NextRetry time.Time `gorm:"column:next_retry;type:datetime;index" json:"next_retry"` // 下次重试时间。
 	gorm.Model
 	Topic      string        `gorm:"column:topic;type:varchar(255);not null;index" json:"topic"` // 消息主题。
 	Key        string        `gorm:"column:key;type:varchar(255);index" json:"key"`              // 消息键。
-	Payload    []byte        `gorm:"column:payload;type:blob;not null" json:"payload"`           // 消息体。
 	Metadata   string        `gorm:"column:metadata;type:text" json:"metadata"`                  // 存储 Trace 上下文 (JSON)。
-	Status     MessageStatus `gorm:"column:status;type:tinyint;default:0;index" json:"status"`   // 状态。
+	LastError  string        `gorm:"column:last_error;type:text" json:"last_error"`              // 最后一次错误信息。
+	Payload    []byte        `gorm:"column:payload;type:blob;not null" json:"payload"`           // 消息体。
 	RetryCount int           `gorm:"column:retry_count;type:int;default:0" json:"retry_count"`   // 已重试次数。
 	MaxRetries int           `gorm:"column:max_retries;type:int;default:5" json:"max_retries"`   // 最大重试次数。
-	NextRetry  time.Time     `gorm:"column:next_retry;type:datetime;index" json:"next_retry"`    // 下次重试时间。
-	LastError  string        `gorm:"column:last_error;type:text" json:"last_error"`              // 最后一次错误信息。
+	Status     MessageStatus `gorm:"column:status;type:tinyint;default:0;index" json:"status"`   // 状态。
 }
 
 // TableName 指定表名。
@@ -113,10 +113,10 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 type Processor struct {
 	mgr           *Manager
 	pusher        func(ctx context.Context, topic string, key string, payload []byte) error
-	batchSize     int
 	interval      time.Duration
-	retentionDays int
 	stopChan      chan struct{}
+	batchSize     int
+	retentionDays int
 }
 
 // NewProcessor 创建处理器。

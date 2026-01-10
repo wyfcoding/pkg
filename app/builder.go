@@ -1,4 +1,4 @@
-// Package app 提供了应用程序生命周期管理的基础设施。
+// Package app 提供了应用程序生命周期管理的基础设施.
 package app
 
 import (
@@ -20,8 +20,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Builder 提供了构建 App 的灵活方式，采用建造者模式管理复杂的初始化流程。
-type Builder struct {
+const (
+	defaultRateLimit   = 1000
+	defaultRateBurst   = 100
+	defaultMetricsPath = "/metrics"
+)
+
+// Builder 提供了构建 App 的灵活方式.
+type Builder struct { //nolint:govet
 	serviceName      string
 	configInstance   any
 	initService      any
@@ -34,7 +40,7 @@ type Builder struct {
 	ginMiddleware    []gin.HandlerFunc
 }
 
-// NewBuilder 创建一个新的应用构建器。
+// NewBuilder 创建一个新的应用构建器.
 func NewBuilder(serviceName string) *Builder {
 	return &Builder{
 		serviceName:      serviceName,
@@ -42,82 +48,87 @@ func NewBuilder(serviceName string) *Builder {
 		healthCheckers:   make([]func() error, 0),
 		grpcInterceptors: make([]grpc.UnaryServerInterceptor, 0),
 		ginMiddleware:    make([]gin.HandlerFunc, 0),
+		configInstance:   nil,
+		initService:      nil,
+		registerGRPC:     nil,
+		registerGin:      nil,
+		metricsPort:      "",
 	}
 }
 
-// WithConfig 设置配置实例。
+// WithConfig 设置配置实例.
 func (b *Builder) WithConfig(conf any) *Builder {
 	b.configInstance = conf
 
 	return b
 }
 
-// WithGRPC 注册 gRPC 服务注册钩子。
+// WithGRPC 注册 gRPC 服务注册钩子.
 func (b *Builder) WithGRPC(register func(*grpc.Server, any)) *Builder {
 	b.registerGRPC = register
 
 	return b
 }
 
-// WithGin 注册 Gin 路由注册钩子。
+// WithGin 注册 Gin 路由注册钩子.
 func (b *Builder) WithGin(register func(*gin.Engine, any)) *Builder {
 	b.registerGin = register
 
 	return b
 }
 
-// WithService 注册核心业务初始化逻辑。
+// WithService 注册核心业务初始化逻辑.
 func (b *Builder) WithService(init func(any, *metrics.Metrics) (any, func(), error)) *Builder {
 	b.initService = init
 
 	return b
 }
 
-// WithMetrics 在指定端口启用指标暴露。
+// WithMetrics 在指定端口启用指标暴露.
 func (b *Builder) WithMetrics(port string) *Builder {
 	b.metricsPort = port
 
 	return b
 }
 
-// WithHealthChecker 添加自定义健康检查。
+// WithHealthChecker 添加自定义健康检查.
 func (b *Builder) WithHealthChecker(checker func() error) *Builder {
 	b.healthCheckers = append(b.healthCheckers, checker)
 
 	return b
 }
 
-// WithGRPCInterceptor 添加 gRPC 拦截器。
+// WithGRPCInterceptor 添加 gRPC 拦截器.
 func (b *Builder) WithGRPCInterceptor(interceptors ...grpc.UnaryServerInterceptor) *Builder {
 	b.grpcInterceptors = append(b.grpcInterceptors, interceptors...)
 
 	return b
 }
 
-// WithGinMiddleware 添加 Gin 中间件。
-func (b *Builder) WithGinMiddleware(middleware ...gin.HandlerFunc) *Builder {
-	b.ginMiddleware = append(b.ginMiddleware, middleware...)
+// WithGinMiddleware 添加 Gin 中间件.
+func (b *Builder) WithGinMiddleware(mw ...gin.HandlerFunc) *Builder {
+	b.ginMiddleware = append(b.ginMiddleware, mw...)
 
 	return b
 }
 
-// Build 构建并组装完整的 App 实例。
+// Build 构建并组装完整的 App 实例.
 func (b *Builder) Build() *App {
 	cfg := b.loadConfig()
-	loggerInstance := b.initLogger(cfg)
+	loggerInstance := b.initLogger(&cfg)
 
 	if cfg.Tracing.Enabled {
-		b.initTracing(cfg, loggerInstance)
+		b.initTracing(&cfg, loggerInstance)
 	}
 
-	metricsInstance := b.initMetrics(cfg)
+	metricsInstance := b.initMetrics(&cfg)
 
-	b.setupMiddleware(cfg, metricsInstance, loggerInstance)
+	b.setupMiddleware(&cfg, metricsInstance, loggerInstance)
 
 	serviceInstance, cleanup := b.assembleService(metricsInstance, loggerInstance)
 	b.appOpts = append(b.appOpts, WithCleanup(cleanup))
 
-	b.registerServers(cfg, serviceInstance, metricsInstance, loggerInstance)
+	b.registerServers(&cfg, serviceInstance, metricsInstance, loggerInstance)
 
 	for _, checker := range b.healthCheckers {
 		b.appOpts = append(b.appOpts, WithHealthChecker(checker))
@@ -143,7 +154,7 @@ func (b *Builder) loadConfig() config.Config {
 		val := reflect.ValueOf(b.configInstance).Elem()
 		found := false
 
-		for i := 0; i < val.NumField(); i++ {
+		for i := range val.NumField() {
 			field := val.Type().Field(i)
 			if (field.Name == "Config" || field.Anonymous) && field.Type == reflect.TypeFor[config.Config]() {
 				cfg = val.Field(i).Interface().(config.Config)
@@ -161,7 +172,7 @@ func (b *Builder) loadConfig() config.Config {
 	return cfg
 }
 
-func (b *Builder) initLogger(cfg config.Config) *logging.Logger {
+func (b *Builder) initLogger(cfg *config.Config) *logging.Logger {
 	logConfig := logging.Config{
 		Service:    b.serviceName,
 		Module:     "app",
@@ -177,13 +188,13 @@ func (b *Builder) initLogger(cfg config.Config) *logging.Logger {
 		logConfig.File = ""
 	}
 
-	loggerInstance := logging.NewFromConfig(logConfig)
+	loggerInstance := logging.NewFromConfig(&logConfig)
 	slog.SetDefault(loggerInstance.Logger)
 
 	return loggerInstance
 }
 
-func (b *Builder) initTracing(cfg config.Config, logger *logging.Logger) {
+func (b *Builder) initTracing(cfg *config.Config, logger *logging.Logger) {
 	shutdown, err := tracing.InitTracer(cfg.Tracing)
 	if err != nil {
 		logger.Logger.Error("failed to initialize tracer", "error", err)
@@ -200,7 +211,7 @@ func (b *Builder) initTracing(cfg config.Config, logger *logging.Logger) {
 	b.ginMiddleware = append([]gin.HandlerFunc{middleware.TracingMiddleware(b.serviceName)}, b.ginMiddleware...)
 }
 
-func (b *Builder) initMetrics(cfg config.Config) *metrics.Metrics {
+func (b *Builder) initMetrics(cfg *config.Config) *metrics.Metrics {
 	metricsPort := b.metricsPort
 	if metricsPort == "" && cfg.Metrics.Enabled {
 		metricsPort = cfg.Metrics.Port
@@ -216,17 +227,18 @@ func (b *Builder) initMetrics(cfg config.Config) *metrics.Metrics {
 	return metricsInstance
 }
 
-func (b *Builder) setupMiddleware(cfg config.Config, m *metrics.Metrics, logger *logging.Logger) {
+func (b *Builder) setupMiddleware(cfg *config.Config, m *metrics.Metrics, logger *logging.Logger) {
 	if cfg.RateLimit.Enabled {
 		rate := cfg.RateLimit.Rate
 		if rate <= 0 {
-			rate = 1000
+			rate = defaultRateLimit
 		}
 
 		burst := cfg.RateLimit.Burst
 		if burst <= 0 {
-			burst = 100
+			burst = defaultRateBurst
 		}
+
 		logger.Logger.Info("rate limit middleware enabled", "rate", rate, "burst", burst)
 		b.ginMiddleware = append(b.ginMiddleware, middleware.NewLocalRateLimitMiddleware(rate, burst))
 	}
@@ -240,9 +252,12 @@ func (b *Builder) setupMiddleware(cfg config.Config, m *metrics.Metrics, logger 
 }
 
 func (b *Builder) assembleService(m *metrics.Metrics, logger *logging.Logger) (any, func()) {
-	initFn := b.initService.(func(any, *metrics.Metrics) (any, func(), error))
-	instance, cleanup, err := initFn(b.configInstance, m)
+	initFn, ok := b.initService.(func(any, *metrics.Metrics) (any, func(), error))
+	if !ok {
+		panic("invalid initService format")
+	}
 
+	instance, cleanup, err := initFn(b.configInstance, m)
 	if err != nil {
 		logger.Logger.Error("failed to initialize service", "error", err)
 		panic(err)
@@ -251,13 +266,15 @@ func (b *Builder) assembleService(m *metrics.Metrics, logger *logging.Logger) (a
 	return instance, cleanup
 }
 
-func (b *Builder) registerServers(cfg config.Config, svc any, m *metrics.Metrics, logger *logging.Logger) {
+func (b *Builder) registerServers(cfg *config.Config, svc any, m *metrics.Metrics, logger *logging.Logger) {
 	var servers []server.Server
 
 	if b.registerGRPC != nil {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.GRPC.Addr, cfg.Server.GRPC.Port)
 		srv := server.NewGRPCServer(addr, logger.Logger, func(s *grpc.Server) {
-			b.registerGRPC.(func(*grpc.Server, any))(s, svc)
+			if reg, ok := b.registerGRPC.(func(*grpc.Server, any)); ok {
+				reg(s, svc)
+			}
 		}, b.grpcInterceptors...)
 
 		servers = append(servers, srv)
@@ -269,7 +286,9 @@ func (b *Builder) registerServers(cfg config.Config, svc any, m *metrics.Metrics
 
 		b.registerAdminRoutes(engine, cfg, m)
 
-		b.registerGin.(func(*gin.Engine, any))(engine, svc)
+		if reg, ok := b.registerGin.(func(*gin.Engine, any)); ok {
+			reg(engine, svc)
+		}
 
 		servers = append(servers, server.NewGinServer(engine, addr, logger.Logger))
 	}
@@ -277,7 +296,7 @@ func (b *Builder) registerServers(cfg config.Config, svc any, m *metrics.Metrics
 	b.appOpts = append(b.appOpts, WithServer(servers...))
 }
 
-func (b *Builder) registerAdminRoutes(engine *gin.Engine, cfg config.Config, m *metrics.Metrics) {
+func (b *Builder) registerAdminRoutes(engine *gin.Engine, cfg *config.Config, m *metrics.Metrics) {
 	sys := engine.Group("/sys")
 	{
 		sys.GET("/health", func(c *gin.Context) {
@@ -292,7 +311,7 @@ func (b *Builder) registerAdminRoutes(engine *gin.Engine, cfg config.Config, m *
 	if cfg.Metrics.Enabled && m != nil {
 		path := cfg.Metrics.Path
 		if path == "" {
-			path = "/metrics"
+			path = defaultMetricsPath
 		}
 
 		engine.GET(path, gin.WrapH(m.Handler()))

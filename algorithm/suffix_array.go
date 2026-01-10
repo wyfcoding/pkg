@@ -84,7 +84,7 @@ func (sa *SuffixArray) build() {
 	c := make([]int, m)
 
 	// 初始排序 (k=0)。
-	for i := 0; i < n; i++ {
+	for i := range n {
 		x[i] = int(sa.text[i])
 		c[x[i]]++
 	}
@@ -104,7 +104,7 @@ func (sa *SuffixArray) build() {
 			y[p] = i
 			p++
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if sa.sa[i] >= k {
 				y[p] = sa.sa[i] - k
 				p++
@@ -112,10 +112,10 @@ func (sa *SuffixArray) build() {
 		}
 
 		// 2. 基数排序处理第一关键字。
-		for i := 0; i < m; i++ {
+		for i := range m {
 			c[i] = 0
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			c[x[y[i]]]++
 		}
 		for i := 1; i < m; i++ {
@@ -181,12 +181,13 @@ func (sa *SuffixArray) Search(pattern string) []int {
 	for l <= r {
 		mid := l + (r-l)/2
 		cmp := sa.compare(sa.sa[mid], pattern)
-		if cmp >= 0 {
-			if cmp == 0 {
-				first = mid
-			}
+		switch {
+		case cmp == 0:
+			first = mid
 			r = mid - 1
-		} else {
+		case cmp > 0:
+			r = mid - 1
+		default:
 			l = mid + 1
 		}
 	}
@@ -201,12 +202,13 @@ func (sa *SuffixArray) Search(pattern string) []int {
 	for l <= r {
 		mid := l + (r-l)/2
 		cmp := sa.compare(sa.sa[mid], pattern)
-		if cmp == 0 {
+		switch {
+		case cmp == 0:
 			last = mid
 			l = mid + 1
-		} else if cmp > 0 {
+		case cmp > 0:
 			r = mid - 1
-		} else {
+		default:
 			l = mid + 1
 		}
 	}
@@ -222,7 +224,7 @@ func (sa *SuffixArray) Search(pattern string) []int {
 func (sa *SuffixArray) compare(start int, pattern string) int {
 	n := len(sa.text)
 	m := len(pattern)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		if start+i >= n {
 			return -1 // 后缀更短。
 		}

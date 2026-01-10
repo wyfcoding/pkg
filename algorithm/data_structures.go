@@ -12,9 +12,9 @@ import (
 
 // OrderBookSnapshot 订单簿快.
 type OrderBookSnapshot struct {
-	Symbol    string
 	Bids      []*PriceLevel
 	Asks      []*PriceLevel
+	Symbol    string
 	Timestamp int64
 }
 
@@ -29,7 +29,6 @@ type PriceLevel struct {
 
 // RiskMetricsSnapshot 风险指标快.
 type RiskMetricsSnapshot struct {
-	UserID         string
 	VaR95          decimal.Decimal
 	VaR99          decimal.Decimal
 	MaxDrawdown    decimal.Decimal
@@ -38,6 +37,7 @@ type RiskMetricsSnapshot struct {
 	PortfolioValue decimal.Decimal
 	DailyLoss      decimal.Decimal
 	Leverage       decimal.Decimal
+	UserID         string
 	Timestamp      int64
 }
 
@@ -45,26 +45,26 @@ type RiskMetricsSnapshot struct {
 
 // PositionSnapshot 持仓快.
 type PositionSnapshot struct {
-	UserID        string
-	Symbol        string
-	Side          string
 	Quantity      decimal.Decimal
 	EntryPrice    decimal.Decimal
 	CurrentPrice  decimal.Decimal
 	UnrealizedPnL decimal.Decimal
 	RealizedPnL   decimal.Decimal
 	Leverage      decimal.Decimal
+	UserID        string
+	Symbol        string
+	Side          string
 	Timestamp     int64
 }
 
 // PortfolioSnapshot 投资组合快.
 type PortfolioSnapshot struct {
-	UserID             string
 	TotalValue         decimal.Decimal
 	CashBalance        decimal.Decimal
 	TotalUnrealizedPnL decimal.Decimal
 	TotalRealizedPnL   decimal.Decimal
 	Positions          []*PositionSnapshot
+	UserID             string
 	Timestamp          int64
 }
 
@@ -72,21 +72,21 @@ type PortfolioSnapshot struct {
 
 // SettlementBatch 清算批.
 type SettlementBatch struct {
-	BatchID     string
 	Trades      []*TradeSettlement
+	CompletedAt *int64
+	BatchID     string
 	Status      string
 	CreatedAt   int64
-	CompletedAt *int64
 }
 
 // TradeSettlement 交易清算记.
 type TradeSettlement struct {
+	Quantity   decimal.Decimal
+	Price      decimal.Decimal
 	TradeID    string
 	BuyUserID  string
 	SellUserID string
 	Symbol     string
-	Quantity   decimal.Decimal
-	Price      decimal.Decimal
 	Status     string
 	SettledAt  int64
 }
@@ -95,13 +95,13 @@ type TradeSettlement struct {
 
 // OptionPricingModel 期权定价模.
 type OptionPricingModel struct {
-	OptionType      string // CALL or PU.
 	UnderlyingPrice decimal.Decimal
 	StrikePrice     decimal.Decimal
 	TimeToExpiry    decimal.Decimal // 年.
 	RiskFreeRate    decimal.Decimal
 	Volatility      decimal.Decimal
 	DividendYield   decimal.Decimal
+	OptionType      string // CALL or PU.
 }
 
 // OptionPricingResult 期权定价结.
@@ -120,25 +120,25 @@ type OptionPricingResult struct {
 
 // MarketMakingQuote 做市报.
 type MarketMakingQuote struct {
-	Symbol      string
 	BidPrice    decimal.Decimal
 	AskPrice    decimal.Decimal
 	BidQuantity decimal.Decimal
 	AskQuantity decimal.Decimal
 	Spread      decimal.Decimal
+	Symbol      string
 	Timestamp   int64
 }
 
 // MarketMakingMetrics 做市指.
 type MarketMakingMetrics struct {
-	MarketMakerID string
-	Symbol        string
 	TotalPnL      decimal.Decimal
 	DailyPnL      decimal.Decimal
 	SpreadEarned  decimal.Decimal
-	TradesCount   int64
 	WinRate       decimal.Decimal
 	AverageSpread decimal.Decimal
+	MarketMakerID string
+	Symbol        string
+	TradesCount   int64
 	Timestamp     int64
 }
 
@@ -146,13 +146,13 @@ type MarketMakingMetrics struct {
 
 // StrategySignal 策略信.
 type StrategySignal struct {
-	StrategyID  string
-	Symbol      string
-	Signal      string // BUY, SELL, HOL.
 	Confidence  decimal.Decimal
 	TargetPrice decimal.Decimal
 	StopLoss    decimal.Decimal
 	TakeProfit  decimal.Decimal
+	StrategyID  string
+	Symbol      string
+	Signal      string // BUY, SELL, HOL.
 	Timestamp   int64
 }
 
@@ -173,12 +173,12 @@ type BacktestMetrics struct {
 
 // PriceBar K线数.
 type PriceBar struct {
-	Timestamp int64
 	Open      decimal.Decimal
 	High      decimal.Decimal
 	Low       decimal.Decimal
 	Close     decimal.Decimal
 	Volume    decimal.Decimal
+	Timestamp int64
 }
 
 // SimulationState 模拟状.
@@ -195,21 +195,19 @@ type SimulationState struct {
 
 // SystemMetricsData 系统指标数.
 type SystemMetricsData struct {
-	Timestamp         int64
 	CPUUsage          decimal.Decimal
 	MemoryUsage       decimal.Decimal
 	DiskUsage         decimal.Decimal
 	NetworkThroughput decimal.Decimal
-	ActiveConnections int64
-	RequestsPerSecond int64
 	AverageLatency    decimal.Decimal
 	ErrorRate         decimal.Decimal
+	Timestamp         int64
+	ActiveConnections int64
+	RequestsPerSecond int64
 }
 
 // TradeStatisticsData 交易统计数.
 type TradeStatisticsData struct {
-	Symbol       string
-	TotalTrades  int64
 	TotalVolume  decimal.Decimal
 	TotalValue   decimal.Decimal
 	AveragePrice decimal.Decimal
@@ -217,19 +215,21 @@ type TradeStatisticsData struct {
 	LowPrice     decimal.Decimal
 	OpenPrice    decimal.Decimal
 	ClosePrice   decimal.Decimal
+	Symbol       string
+	TotalTrades  int64
 	Timestamp    int64
 }
 
 // UserAnalyticsData 用户分析数.
 type UserAnalyticsData struct {
-	UserID           string
-	TotalTrades      int64
 	TotalPnL         decimal.Decimal
 	WinRate          decimal.Decimal
 	AverageTradeSize decimal.Decimal
 	MaxDrawdown      decimal.Decimal
 	SharpeRatio      decimal.Decimal
 	ProfitFactor     decimal.Decimal
+	UserID           string
+	TotalTrades      int64
 	Timestamp        int64
 }
 
@@ -237,10 +237,6 @@ type UserAnalyticsData struct {
 
 // SymbolInfo 交易对信.
 type SymbolInfo struct {
-	Symbol      string
-	BaseAsset   string
-	QuoteAsset  string
-	Status      string
 	MinPrice    decimal.Decimal
 	MaxPrice    decimal.Decimal
 	MinQuantity decimal.Decimal
@@ -249,53 +245,57 @@ type SymbolInfo struct {
 	StepSize    decimal.Decimal
 	MakerFee    decimal.Decimal
 	TakerFee    decimal.Decimal
+	Symbol      string
+	BaseAsset   string
+	QuoteAsset  string
+	Status      string
 	UpdatedAt   int64
 }
 
 // ExchangeInfo 交易所信.
 type ExchangeInfo struct {
+	TradingDays      []string
 	Name             string
 	Timezone         string
 	TradingStartTime int64
 	TradingEndTime   int64
-	TradingDays      []string
 	UpdatedAt        int64
 }
 
 // AssetInfo 资产信.
 type AssetInfo struct {
-	Asset           string
-	Name            string
-	Decimals        int32
 	MinWithdrawal   decimal.Decimal
 	WithdrawalFee   decimal.Decimal
+	Asset           string
+	Name            string
+	UpdatedAt       int64
+	Decimals        int32
 	DepositEnabled  bool
 	WithdrawEnabled bool
-	UpdatedAt       int64
 }
 
 // ===== 通知相关数据结构 ====.
 
 // NotificationMessage 通知消.
 type NotificationMessage struct {
+	Metadata       map[string]string
+	ReadAt         *int64
 	NotificationID string
 	UserID         string
 	Type           string // ORDER, TRADE, RISK, SYSTE.
 	Title          string
 	Content        string
-	Metadata       map[string]string
-	IsRead         bool
 	CreatedAt      int64
-	ReadAt         *int64
+	IsRead         bool
 }
 
 // ===== 线程安全的缓存结构 ====.
 
 // ConcurrentCache 并发安全的缓.
 type ConcurrentCache struct {
-	mu       sync.RWMutex
 	data     map[string]any
 	expireAt map[string]int64 // 过期时间戳 (Unix Seconds.
+	mu       sync.RWMutex
 }
 
 // NewConcurrentCache 创建并发缓.

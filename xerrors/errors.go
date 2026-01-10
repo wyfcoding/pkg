@@ -1,7 +1,8 @@
-// Package xerrors 提供了具备类型分类、堆栈追踪、上下文关联及多协议（HTTP/gRPC）状态映射能力的增强型错误系统。
+// Package xerrors 提供了具备类型分类、堆栈追踪、上下文关联及多协议（HTTP/gRPC）状态映射能力的增强型错误系统.
 package xerrors
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -10,55 +11,72 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ErrorType 定义了错误的大类，用于跨协议的状态码映射逻辑。
+// ErrorType 定义了错误的大类.
 type ErrorType uint
 
 const (
-	ErrUnknown          ErrorType = iota // 未知错误
-	ErrInternal                          // 内部服务器错误
-	ErrInvalidArg                        // 参数校验失败
-	ErrNotFound                          // 资源不存在
-	ErrAlreadyExists                     // 资源已存在（冲突）
-	ErrPermissionDenied                  // 权限不足
-	ErrUnauthenticated                   // 未经过身份认证
-	ErrDeadlineExceeded                  // 操作超时
-	ErrUnavailable                       // 服务不可用
-	ErrLimitExceeded                     // 触发限流
+	// ErrUnknown 未知错误.
+	ErrUnknown ErrorType = iota
+	// ErrInternal 内部服务器错误.
+	ErrInternal
+	// ErrInvalidArg 参数校验失败.
+	ErrInvalidArg
+	// ErrNotFound 资源不存在.
+	ErrNotFound
+	// ErrAlreadyExists 资源已存在（冲突）.
+	ErrAlreadyExists
+	// ErrPermissionDenied 权限不足.
+	ErrPermissionDenied
+	// ErrUnauthenticated 未经过身份认证.
+	ErrUnauthenticated
+	// ErrDeadlineExceeded 操作超时.
+	ErrDeadlineExceeded
+	// ErrUnavailable 服务不可用.
+	ErrUnavailable
+	// ErrLimitExceeded 触发限流.
+	ErrLimitExceeded
 )
 
-// Error 结构体封装了详细的错误上下文信息。
-type Error struct {
-	Type    ErrorType      `json:"type"`    // 错误分类
-	Code    int            `json:"code"`    // 业务层面的自定义错误码
-	Message string         `json:"message"` // 面向前端或用户的友好提示消息
-	Detail  string         `json:"detail"`  // 面向开发者的详细调试信息
-	Cause   error          `json:"-"`       // 底层原始错误（不参与序列化）
-	Stack   []string       `json:"stack"`   // 自动捕获的函数调用栈
-	Context map[string]any `json:"context"` // 相关的业务上下文数据 (如 userID, orderID)
+// Error 结构体封装了详细的错误上下文信息.
+type Error struct { //nolint:govet
+	Cause   error
+	Context map[string]any
+	Message string
+	Detail  string
+	Stack   []string
+	Type    ErrorType
+	Code    int
 }
 
-// Error 实现 error 接口。
+// Error 实现 error 接口.
 func (e *Error) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("[%s] %d: %s (cause: %v)", e.Type.String(), e.Code, e.Message, e.Cause)
 	}
+
 	return fmt.Sprintf("[%s] %d: %s", e.Type.String(), e.Code, e.Message)
 }
 
-// Unwrap 实现 Go 1.13 解包接口。
+// Unwrap 实现 Go 1.13 解包接口.
 func (e *Error) Unwrap() error {
 	return e.Cause
 }
 
 func (t ErrorType) String() string {
-	return [...]string{
+	names := [...]string{
 		"Unknown", "Internal", "InvalidArg", "NotFound", "AlreadyExists",
 		"PermissionDenied", "Unauthenticated", "DeadlineExceeded", "Unavailable", "LimitExceeded",
-	}[t]
+	}
+
+	if t < ErrorType(len(names)) {
+		return names[t]
+	}
+
+	return "Unknown"
 }
 
-// New 构造一个新的增强型错误对象，并自动捕获当前的调用堆栈。
-func New(errType ErrorType, code int, message string, detail string, cause error) *Error {
+// New 构造一个新的增强型错误对象.
+func New(errType ErrorType, code int, message, detail string, cause error) *Error {
 	e := &Error{
 		Type:    errType,
 		Code:    code,
@@ -66,78 +84,95 @@ func New(errType ErrorType, code int, message string, detail string, cause error
 		Detail:  detail,
 		Cause:   cause,
 		Context: make(map[string]any),
+		Stack:   nil,
 	}
 	e.captureStack()
+
 	return e
 }
 
-// captureStack 提取当前代码的运行路径信息，辅助快速定位线上问题。
+const (
+	maxStackDepth = 10
+	skipCallers   = 3
+)
+
 func (e *Error) captureStack() {
-	const depth = 10
-	var pcs [depth]uintptr
-	n := runtime.Callers(3, pcs[:])
+	var pcs [maxStackDepth]uintptr
+	n := runtime.Callers(skipCallers, pcs[:])
 	frames := runtime.CallersFrames(pcs[:n])
 
 	for {
 		frame, more := frames.Next()
 		e.Stack = append(e.Stack, fmt.Sprintf("%s:%d (%s)", frame.File, frame.Line, frame.Function))
-		if !more || len(e.Stack) >= depth {
+		if !more || len(e.Stack) >= maxStackDepth {
 			break
 		}
 	}
 }
 
-// WithContext 为错误注入额外的业务上下文数据。
+// WithContext 为错误注入额外的业务上下文数据.
 func (e *Error) WithContext(key string, value any) *Error {
 	e.Context[key] = value
+
 	return e
 }
 
-// WithDetail 为错误注入详细的内部调试信息。
+// WithDetail 为错误注入详细的内部调试信息.
 func (e *Error) WithDetail(format string, args ...any) *Error {
 	e.Detail = fmt.Sprintf(format, args...)
+
 	return e
 }
 
-// Internal 快捷构造内部错误。
+const (
+	httpInternalError = 500
+	httpBadRequest    = 400
+	httpNotFound      = 404
+	httpUnauthorized  = 401
+)
+
+// Internal 快捷构造内部错误.
 func Internal(msg string, cause error) *Error {
-	return New(ErrInternal, 500, msg, "", cause)
+	return New(ErrInternal, httpInternalError, msg, "", cause)
 }
 
-// InvalidArg 快捷构造参数错误。
+// InvalidArg 快捷构造参数错误.
 func InvalidArg(msg string) *Error {
-	return New(ErrInvalidArg, 400, msg, "", nil)
+	return New(ErrInvalidArg, httpBadRequest, msg, "", nil)
 }
 
-// NotFound 快捷构造 404 错误。
+// NotFound 快捷构造 404 错误.
 func NotFound(msg string) *Error {
-	return New(ErrNotFound, 404, msg, "", nil)
+	return New(ErrNotFound, httpNotFound, msg, "", nil)
 }
 
-// Unauthenticated 快捷构造未认证错误。
+// Unauthenticated 快捷构造未认证错误.
 func Unauthenticated(msg string) *Error {
-	return New(ErrUnauthenticated, 401, msg, "", nil)
+	return New(ErrUnauthenticated, httpUnauthorized, msg, "", nil)
 }
 
-// Wrap 包装现有错误并捕获堆栈。
+// Wrap 包装现有错误并捕获堆栈.
 func Wrap(err error, errType ErrorType, msg string) *Error {
 	if err == nil {
 		return nil
 	}
+
 	if e, ok := FromError(err); ok {
 		e.Cause = err
 		e.Message = msg
+
 		return e
 	}
+
 	return New(errType, int(errType), msg, "", err)
 }
 
-// WrapInternal 快速包装内部服务器错误。
+// WrapInternal 快速包装内部服务器错误.
 func WrapInternal(err error, msg string) *Error {
 	return Wrap(err, ErrInternal, msg)
 }
 
-// HTTPStatus 实现了 response.HTTPStatusProvider 接口，执行错误类型到 HTTP 协议的自动映射。
+// HTTPStatus 实现了 response.HTTPStatusProvider 接口.
 func (e *Error) HTTPStatus() int {
 	switch e.Type {
 	case ErrInvalidArg:
@@ -154,12 +189,14 @@ func (e *Error) HTTPStatus() int {
 		return http.StatusTooManyRequests
 	case ErrDeadlineExceeded:
 		return http.StatusGatewayTimeout
+	case ErrUnknown, ErrInternal, ErrUnavailable:
+		return http.StatusInternalServerError
 	default:
 		return http.StatusInternalServerError
 	}
 }
 
-// GRPCCode 执行错误类型到 gRPC 标准状态码的映射。
+// GRPCCode 执行错误类型到 gRPC 标准状态码的映射.
 func (e *Error) GRPCCode() codes.Code {
 	switch e.Type {
 	case ErrInvalidArg:
@@ -178,22 +215,28 @@ func (e *Error) GRPCCode() codes.Code {
 		return codes.DeadlineExceeded
 	case ErrUnavailable:
 		return codes.Unavailable
+	case ErrUnknown, ErrInternal:
+		return codes.Internal
 	default:
 		return codes.Internal
 	}
 }
 
-// ToGRPCStatus 将 Error 转换为带 Details 的 gRPC Status。
+// ToGRPCStatus 将 Error 转换为带 Details 的 gRPC Status.
 func (e *Error) ToGRPCStatus() *status.Status {
-	st := status.New(e.GRPCCode(), e.Message)
-	return st
+	return status.New(e.GRPCCode(), e.Message)
 }
 
-// FromError 尝试从 error 类型转换回 *Error。
+// FromError 尝试从 error 类型转换回 *Error.
 func FromError(err error) (*Error, bool) {
 	if err == nil {
 		return nil, false
 	}
-	e, ok := err.(*Error)
-	return e, ok
+
+	var e *Error
+	if errors.As(err, &e) {
+		return e, true
+	}
+
+	return nil, false
 }

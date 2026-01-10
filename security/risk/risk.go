@@ -15,7 +15,7 @@ const (
 )
 
 // Assessment 描述了单次风控评估的详细结论。
-type Assessment struct {
+type Assessment struct { //nolint:govet
 	Level  Level  `json:"level"`  // 最终判定等.
 	Code   string `json:"code"`   // 命中的风险分类代码 (如: "RISK_GEO_IP_MISMATCH".
 	Reason string `json:"reason"` // 风险命中的详细原因说.
@@ -34,7 +34,7 @@ type Evaluator interface {
 // 用于在风控系统不可用或未配置规则时，保证业务连续性。
 type BaseEvaluator struct{}
 
-// Assess 执行基础的放行逻辑。
-func (e *BaseEvaluator) Assess(ctx context.Context, action string, data map[string]any) (*Assessment, error) {
-	return &Assessment{Level: Pass, Code: "DEFAULT_PASS", Score: 0}, nil
+// Assess 执行基础的放行逻辑.
+func (e *BaseEvaluator) Assess(_ context.Context, _ string, _ map[string]any) (*Assessment, error) {
+	return &Assessment{Level: Pass, Code: "DEFAULT_PASS", Reason: "default_base_evaluator", Score: 0}, nil
 }

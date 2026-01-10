@@ -2,7 +2,7 @@
 package algorithm
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
 	"sync"
 )
@@ -11,8 +11,8 @@ import (
 // 使用互斥锁保证线程安.
 // 时间复杂度：入队 O(1)，出队 O(1) (amortized.
 type ConcurrentQueue struct {
-	mu    sync.Mutex
 	items []any
+	mu    sync.Mutex
 }
 
 // NewConcurrentQueue 创建并发队.
@@ -36,7 +36,7 @@ func (cq *ConcurrentQueue) Dequeue() (any, error) {
 	defer cq.mu.Unlock()
 
 	if len(cq.items) == 0 {
-		return nil, fmt.Errorf("queue is empty")
+		return nil, errors.New("queue is empty")
 	}
 
 	item := cq.items[0]
@@ -61,7 +61,7 @@ func (cq *ConcurrentQueue) Peek() (any, error) {
 	defer cq.mu.Unlock()
 
 	if len(cq.items) == 0 {
-		return nil, fmt.Errorf("queue is empty")
+		return nil, errors.New("queue is empty")
 	}
 
 	return cq.items[0], nil
@@ -91,8 +91,8 @@ func (cq *ConcurrentQueue) Clear() {
 
 // ConcurrentStack 并发安全的.
 type ConcurrentStack struct {
-	mu    sync.Mutex
 	items []any
+	mu    sync.Mutex
 }
 
 // NewConcurrentStack 创建并发.
@@ -117,7 +117,7 @@ func (cs *ConcurrentStack) Pop() (any, error) {
 
 	n := len(cs.items)
 	if n == 0 {
-		return nil, fmt.Errorf("stack is empty")
+		return nil, errors.New("stack is empty")
 	}
 
 	item := cs.items[n-1]
@@ -133,7 +133,7 @@ func (cs *ConcurrentStack) Peek() (any, error) {
 	defer cs.mu.Unlock()
 
 	if len(cs.items) == 0 {
-		return nil, fmt.Errorf("stack is empty")
+		return nil, errors.New("stack is empty")
 	}
 
 	return cs.items[len(cs.items)-1], nil
@@ -164,8 +164,8 @@ func (cs *ConcurrentStack) Clear() {
 // 用于高性能的固定大小缓.
 // 建议：对于极致性能场景，请优先使用 lockfree_queue.go 或 ring_buffer.g.
 type ConcurrentRingBuffer struct {
-	mu       sync.Mutex
 	buffer   []any
+	mu       sync.Mutex
 	capacity int
 	head     int
 	tail     int
@@ -190,7 +190,7 @@ func (crb *ConcurrentRingBuffer) Write(item any) error {
 	defer crb.mu.Unlock()
 
 	if crb.size == crb.capacity {
-		return fmt.Errorf("ring buffer is full")
+		return errors.New("ring buffer is full")
 	}
 
 	crb.buffer[crb.tail] = item
@@ -206,7 +206,7 @@ func (crb *ConcurrentRingBuffer) Read() (any, error) {
 	defer crb.mu.Unlock()
 
 	if crb.size == 0 {
-		return nil, fmt.Errorf("ring buffer is empty")
+		return nil, errors.New("ring buffer is empty")
 	}
 
 	item := crb.buffer[crb.head]

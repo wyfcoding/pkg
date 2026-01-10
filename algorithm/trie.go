@@ -7,8 +7,8 @@ import (
 // TrieNode 结构体代表字典树中的一个节点。
 type TrieNode struct {
 	children map[rune]*TrieNode
-	isEnd    bool
 	value    any
+	isEnd    bool
 }
 
 var trieNodePool = sync.Pool{
@@ -35,8 +35,8 @@ func (n *TrieNode) reset() {
 
 // Trie 结构体实现了字典树（前缀树）数据结构。
 type Trie struct {
-	root *TrieNode
 	mu   sync.RWMutex
+	root *TrieNode
 }
 
 // NewTrie 创建并返回一个新的 Trie 实例。

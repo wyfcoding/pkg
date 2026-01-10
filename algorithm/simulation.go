@@ -2,7 +2,7 @@
 package algorithm
 
 import (
-	"fmt"
+	"errors"
 	"math"
 	"math/rand/v2"
 	"runtime"
@@ -69,7 +69,7 @@ func (gbm *GeometricBrownianMotion) SimulateMultiplePaths(steps, paths int) [][]
 	// 使用信号量限制最大并发协程，防止过多协程导致调度压.
 	sem := make(chan struct{}, numWorkers)
 
-	for i := 0; i < paths; i++ {
+	for i := range paths {
 		go func(pathIdx int) {
 			defer wg.Done()
 			sem <- struct{}{}
@@ -143,7 +143,7 @@ func NewMonteCarlo(gbm *GeometricBrownianMotion) *MonteCarlo {
 // CalculateOptionPrice 使用蒙特卡洛方法计算期权价.
 func (mc *MonteCarlo) CalculateOptionPrice(optionType string, strikePrice decimal.Decimal, steps, paths int, riskFreeRate decimal.Decimal) (decimal.Decimal, error) {
 	if optionType != "CALL" && optionType != "PUT" {
-		return decimal.Zero, fmt.Errorf("invalid option type")
+		return decimal.Zero, errors.New("invalid option type")
 	}
 
 	// 模拟多条路.

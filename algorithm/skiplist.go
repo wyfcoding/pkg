@@ -26,12 +26,11 @@ type SkipListNode[K cmp.Ordered, V any] struct {
 // SkipList 高性能泛型跳表实现。
 // 优化：使用原子操作的 Xorshift 随机数生成器，去除了随机数生成的全局锁。
 type SkipList[K cmp.Ordered, V any] struct {
-	mu     sync.RWMutex
-	header *SkipListNode[K, V]
-	level  int
-	size   int
-	// randState 用于 Xorshift 随机数生成器。
+	header    *SkipListNode[K, V]
+	mu        sync.RWMutex
 	randState uint64
+	level     int
+	size      int
 }
 
 // NewSkipList 创建一个新的跳表。
@@ -163,7 +162,7 @@ func (sl *SkipList[K, V]) Delete(key K) bool {
 	}
 
 	// 移除每一层的链接。
-	for i := 0; i < sl.level; i++ {
+	for i := range sl.level {
 		if update[i].next[i] != curr {
 			break
 		}
@@ -200,7 +199,7 @@ type SkipListIterator[K cmp.Ordered, V any] struct {
 	curr *SkipListNode[K, V]
 }
 
-func (it *SkipListIterator[K, V]) Next() (K, V, bool) {
+func (it *SkipListIterator[K, V]) Next() (key K, value V, ok bool) {
 	if it.curr == nil {
 		var zk K
 		var zv V

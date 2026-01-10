@@ -94,7 +94,7 @@ func (g *MinCostMaxFlowGraph) MinCostMaxFlow(source, sink string, maxFlow int64)
 
 	for totalFlow < maxFlow {
 		// --- SPFA --.
-		for i := 0; i < n; i++ {
+		for i := range n {
 			dist[i] = math.MaxInt64
 			inQueue[i] = false
 		}

@@ -13,11 +13,11 @@ type SVMPoint struct {
 
 // SVM 结构体实现了支持向量机分类器，支持线性与 RBF 核。
 type SVM struct {
-	weights []float64
-	bias    float64
 	mu      sync.RWMutex
-	kernel  string  // "linear" 或 "rbf.
-	gamma   float64 // RBF 专用参.
+	weights []float64
+	kernel  string // "linear" 或 "rbf"
+	bias    float64
+	gamma   float64 // RBF 专用参数
 }
 
 // NewSVM 创建一个新的 SVM 实例。
@@ -33,7 +33,7 @@ func NewSVM(kernel string, gamma float64) *SVM {
 
 // Train 使用随机梯度下降 (SGD) 训练支持向量机模型。
 // 最小化 Hinge Loss + L2 正则化项: J(w) = 1/2 * ||w||^2 + C * sum(max(0, 1 - y*(w*x + b)).
-func (s *SVM) Train(points [][]float64, labels []int, epochs int, lr float64, lambda float64) {
+func (s *SVM) Train(points [][]float64, labels []int, epochs int, lr, lambda float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -53,13 +53,13 @@ func (s *SVM) Train(points [][]float64, labels []int, epochs int, lr float64, la
 			if y*prediction < 1 {
 				// 更新权重 (梯度包含正则项和 Loss 项.
 				for j := range dim {
-					s.weights[j] = s.weights[j] - lr*(lambda*s.weights[j]-y*x[j])
+					s.weights[j] -= lr * (lambda*s.weights[j] - y*x[j])
 				}
 				s.bias += lr * y
 			} else {
 				// 仅更新权重中的正则项部.
 				for j := range dim {
-					s.weights[j] = s.weights[j] - lr*(lambda*s.weights[j])
+					s.weights[j] -= lr * (lambda * s.weights[j])
 				}
 			}
 		}

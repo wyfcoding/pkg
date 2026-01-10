@@ -44,7 +44,7 @@ type Cache interface {
 }
 
 // RedisCache 是基于 Redis 实现的具体缓存结构
-type RedisCache struct {
+type RedisCache struct { //nolint:govet
 	client  *redis.Client      // Redis 原生客户端
 	cleanup func()             // 资源清理回调函数
 	prefix  string             // 缓存 Key 的全局前缀
@@ -116,7 +116,7 @@ func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
 	// 这里的 Execute 提供了熔断保护，防止 Redis 故障拖垮服务
 	_, err := c.cb.Execute(func() (any, error) {
 		val, err := c.client.Get(ctx, c.buildKey(key)).Bytes()
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			c.misses.WithLabelValues(c.prefix).Inc()
 			return nil, ErrCacheMiss
 		}
@@ -172,7 +172,7 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 
 		// 异步回写 (不阻塞 singleflight 释放)
 		go func() {
-			if err := c.Set(context.Background(), key, data, expiration); err != nil {
+			if err := c.Set(ctx, key, data, expiration); err != nil {
 				c.logger.Error("cache backfill failed", "key", key, "error", err)
 			}
 		}()

@@ -2,6 +2,7 @@
 package algorithm
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -36,19 +37,19 @@ func NewBlackScholesCalculator() *BlackScholesCalculator {
 //   - q: 股息收益率（可选，默认为 0）。
 //
 // 返回：期权价格。
-func (bsc *BlackScholesCalculator) CalculateCallPrice(S, K, T, r, sigma, q decimal.Decimal) (decimal.Decimal, error) {
+func (bsc *BlackScholesCalculator) CalculateCallPrice(spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
 	// 验证输入。
-	if S.LessThanOrEqual(decimal.Zero) || K.LessThanOrEqual(decimal.Zero) || T.LessThanOrEqual(decimal.Zero) || sigma.LessThanOrEqual(decimal.Zero) {
+	if spot.LessThanOrEqual(decimal.Zero) || strike.LessThanOrEqual(decimal.Zero) || expiry.LessThanOrEqual(decimal.Zero) || vol.LessThanOrEqual(decimal.Zero) {
 		return decimal.Zero, fmt.Errorf("invalid input parameters")
 	}
 
 	// 转换为 float64 进行计算。
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	sigmaFloat := sigma.InexactFloat64()
-	qFloat := q.InexactFloat64()
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	sigmaFloat := vol.InexactFloat64()
+	qFloat := div.InexactFloat64()
 
 	// 计算 d1 和 d2。
 	d1 := (math.Log(sFloat/kFloat) + (rFloat-qFloat+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
@@ -61,19 +62,19 @@ func (bsc *BlackScholesCalculator) CalculateCallPrice(S, K, T, r, sigma, q decim
 }
 
 // CalculatePutPrice 计算看跌期权价格。
-func (bsc *BlackScholesCalculator) CalculatePutPrice(S, K, T, r, sigma, q decimal.Decimal) (decimal.Decimal, error) {
+func (bsc *BlackScholesCalculator) CalculatePutPrice(spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
 	// 验证输入。
-	if S.LessThanOrEqual(decimal.Zero) || K.LessThanOrEqual(decimal.Zero) || T.LessThanOrEqual(decimal.Zero) || sigma.LessThanOrEqual(decimal.Zero) {
+	if spot.LessThanOrEqual(decimal.Zero) || strike.LessThanOrEqual(decimal.Zero) || expiry.LessThanOrEqual(decimal.Zero) || vol.LessThanOrEqual(decimal.Zero) {
 		return decimal.Zero, fmt.Errorf("invalid input parameters")
 	}
 
 	// 转换为 float64 进行计算。
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	sigmaFloat := sigma.InexactFloat64()
-	qFloat := q.InexactFloat64()
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	sigmaFloat := vol.InexactFloat64()
+	qFloat := div.InexactFloat64()
 
 	// 计算 d1 和 d2。
 	d1 := (math.Log(sFloat/kFloat) + (rFloat-qFloat+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
@@ -86,13 +87,13 @@ func (bsc *BlackScholesCalculator) CalculatePutPrice(S, K, T, r, sigma, q decima
 }
 
 // CalculateDelta 计算 Delta（期权价格对标的资产价格的敏感度）。
-func (bsc *BlackScholesCalculator) CalculateDelta(optionType string, S, K, T, r, sigma, q decimal.Decimal) (decimal.Decimal, error) {
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	sigmaFloat := sigma.InexactFloat64()
-	qFloat := q.InexactFloat64()
+func (bsc *BlackScholesCalculator) CalculateDelta(optionType string, spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	sigmaFloat := vol.InexactFloat64()
+	qFloat := div.InexactFloat64()
 
 	d1 := (math.Log(sFloat/kFloat) + (rFloat-qFloat+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
 
@@ -110,13 +111,13 @@ func (bsc *BlackScholesCalculator) CalculateDelta(optionType string, S, K, T, r,
 }
 
 // CalculateGamma 计算 Gamma（Delta 对标的资产价格的敏感度）。
-func (bsc *BlackScholesCalculator) CalculateGamma(S, K, T, r, sigma, q decimal.Decimal) (decimal.Decimal, error) {
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	sigmaFloat := sigma.InexactFloat64()
-	qFloat := q.InexactFloat64()
+func (bsc *BlackScholesCalculator) CalculateGamma(spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	sigmaFloat := vol.InexactFloat64()
+	qFloat := div.InexactFloat64()
 
 	d1 := (math.Log(sFloat/kFloat) + (rFloat-qFloat+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
 
@@ -126,13 +127,13 @@ func (bsc *BlackScholesCalculator) CalculateGamma(S, K, T, r, sigma, q decimal.D
 }
 
 // CalculateVega 计算 Vega（期权价格对波动率的敏感度）。
-func (bsc *BlackScholesCalculator) CalculateVega(S, K, T, r, sigma, q decimal.Decimal) (decimal.Decimal, error) {
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	sigmaFloat := sigma.InexactFloat64()
-	qFloat := q.InexactFloat64()
+func (bsc *BlackScholesCalculator) CalculateVega(spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	sigmaFloat := vol.InexactFloat64()
+	qFloat := div.InexactFloat64()
 
 	d1 := (math.Log(sFloat/kFloat) + (rFloat-qFloat+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
 
@@ -142,13 +143,13 @@ func (bsc *BlackScholesCalculator) CalculateVega(S, K, T, r, sigma, q decimal.De
 }
 
 // CalculateTheta 计算 Theta（期权价格对时间的敏感度）。
-func (bsc *BlackScholesCalculator) CalculateTheta(optionType string, S, K, T, r, sigma, q decimal.Decimal) (decimal.Decimal, error) {
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	sigmaFloat := sigma.InexactFloat64()
-	qFloat := q.InexactFloat64()
+func (bsc *BlackScholesCalculator) CalculateTheta(optionType string, spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	sigmaFloat := vol.InexactFloat64()
+	qFloat := div.InexactFloat64()
 
 	d1 := (math.Log(sFloat/kFloat) + (rFloat-qFloat+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
 	d2 := d1 - sigmaFloat*math.Sqrt(tFloat)
@@ -160,21 +161,21 @@ func (bsc *BlackScholesCalculator) CalculateTheta(optionType string, S, K, T, r,
 	case OptionTypePut:
 		theta = -sFloat*math.Exp(-qFloat*tFloat)*normPDF(d1)*sigmaFloat/(2*math.Sqrt(tFloat)) + rFloat*kFloat*math.Exp(-rFloat*tFloat)*normCDF(-d2) - qFloat*sFloat*math.Exp(-qFloat*tFloat)*normCDF(-d1)
 	default:
-		return decimal.Zero, fmt.Errorf("invalid option type")
+		return decimal.Zero, errors.New("invalid option type")
 	}
 
 	return decimal.NewFromFloat(theta / 365), nil // 转换为每日 theta。
 }
 
 // CalculateRho 计算 Rho（期权价格对利率的敏感度）。
-func (bsc *BlackScholesCalculator) CalculateRho(optionType string, S, K, T, r, sigma, q decimal.Decimal) (decimal.Decimal, error) {
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	sigmaFloat := sigma.InexactFloat64()
+func (bsc *BlackScholesCalculator) CalculateRho(optionType string, spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	sigmaFloat := vol.InexactFloat64()
 
-	d1 := (math.Log(sFloat/kFloat) + (rFloat-q.InexactFloat64()+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
+	d1 := (math.Log(sFloat/kFloat) + (rFloat-div.InexactFloat64()+0.5*sigmaFloat*sigmaFloat)*tFloat) / (sigmaFloat * math.Sqrt(tFloat))
 	d2 := d1 - sigmaFloat*math.Sqrt(tFloat)
 
 	var rho float64
@@ -184,7 +185,7 @@ func (bsc *BlackScholesCalculator) CalculateRho(optionType string, S, K, T, r, s
 	case OptionTypePut:
 		rho = -kFloat * tFloat * math.Exp(-rFloat*tFloat) * normCDF(-d2) / 100
 	default:
-		return decimal.Zero, fmt.Errorf("invalid option type")
+		return decimal.Zero, errors.New("invalid option type")
 	}
 
 	return decimal.NewFromFloat(rho), nil
@@ -201,12 +202,12 @@ func normPDF(x float64) float64 {
 }
 
 // CalculateImpliedVolatility 计算隐含波动率（使用牛顿法）。
-func (bsc *BlackScholesCalculator) CalculateImpliedVolatility(optionType string, S, K, T, r, q, marketPrice decimal.Decimal) (decimal.Decimal, error) {
-	sFloat := S.InexactFloat64()
-	kFloat := K.InexactFloat64()
-	tFloat := T.InexactFloat64()
-	rFloat := r.InexactFloat64()
-	qFloat := q.InexactFloat64()
+func (bsc *BlackScholesCalculator) CalculateImpliedVolatility(optionType string, spot, strike, expiry, rate, div, marketPrice decimal.Decimal) (decimal.Decimal, error) {
+	sFloat := spot.InexactFloat64()
+	kFloat := strike.InexactFloat64()
+	tFloat := expiry.InexactFloat64()
+	rFloat := rate.InexactFloat64()
+	qFloat := div.InexactFloat64()
 	marketPriceFloat := marketPrice.InexactFloat64()
 
 	// 初始猜测。

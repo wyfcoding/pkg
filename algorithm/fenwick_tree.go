@@ -9,8 +9,8 @@ import (
 // 在实际应用中，例如库存管理（快速查询某个仓库区域的总库存）、销量统计等场景中非常有用。
 type FenwickTree struct {
 	tree []int64      // 存储树状数组的数据，通常为1-indexed。
-	n    int          // 原始数组的大小。
 	mu   sync.RWMutex // 读写锁，用于保护树状数组的并发访问。
+	n    int          // 原始数组的大小。
 }
 
 // NewFenwickTree 创建并返回一个新的 FenwickTree 实例。

@@ -7,19 +7,19 @@ import (
 
 // Edge 代表流网络中的一条边。
 type Edge struct {
-	To     int
 	Cap    int64
 	Flow   int64
+	To     int
 	RevIdx int // 反向边在邻接表中的索引。
 }
 
 // DinicGraph 实现了基于分层图和 DFS 的 Dinic 最大流算法。
 type DinicGraph struct {
-	nodes int
 	adj   [][]Edge
 	level []int // 节点深度。
 	ptr   []int // 当前弧优化：记录 DFS 遍历到哪个边了。
 	queue []int // 复用 buffer。
+	nodes int
 	mu    sync.Mutex
 }
 

@@ -1,201 +1,162 @@
-// Package algorithm 提供了高性能算法实现。
+// Package algorithm 提供了高性能算法实现.
 package algorithm
 
 import (
-	"log/slog"
 	"math"
 	"sync"
-	"time"
 )
 
-// WeightedBipartiteGraph 结构体代表一个带权的二分图。
-// 使用 KM (Kuhn-Munkres) 算法解决最大权完美匹配问题。
+// WeightedBipartiteGraph 实现了 KM 算法 (Kuhn-Munkres) 用于寻找二分图的最大权完美匹配.
+// 优化后的实现采用 BFS + Slack 数组，复杂度为 O(N^3).
 type WeightedBipartiteGraph struct {
-	nx, ny     int         // 左右两侧节点数。
-	weights    [][]float64 // 权重矩阵。
-	lx, ly     []float64   // 左右顶标。
-	matchX     []int       // 左侧匹配结果。
-	matchY     []int       // 右侧匹配结果。
-	slack      []float64   // 松弛量。
-	visX, visY []bool      // 访问标志。
-	mu         sync.Mutex
+	weights [][]int
+	lx      []int
+	ly      []int
+	matchY  []int
+	slack   []int
+	pre     []int
+	visY    []bool
+	mu      sync.RWMutex
+	nx      int
+	ny      int
 }
 
-const eps = 1e-9
-
-// NewWeightedBipartiteGraph 创建一个新的带权二分图。
+// NewWeightedBipartiteGraph 初始化二分图.
 func NewWeightedBipartiteGraph(nx, ny int) *WeightedBipartiteGraph {
-	maxNodes := nx
-	if ny > maxNodes {
-		maxNodes = ny
-	}
-
-	weights := make([][]float64, maxNodes)
-	for i := range weights {
-		weights[i] = make([]float64, maxNodes)
-		for j := range weights[i] {
-			weights[i][j] = -math.MaxFloat64 // 默认极小值。
-		}
+	weights := make([][]int, nx)
+	for i := range nx {
+		weights[i] = make([]int, ny)
 	}
 
 	return &WeightedBipartiteGraph{
+		weights: weights,
+		lx:      make([]int, nx),
+		ly:      make([]int, ny),
+		matchY:  make([]int, ny),
+		slack:   make([]int, ny),
+		pre:     make([]int, ny),
+		visY:    make([]bool, ny),
 		nx:      nx,
 		ny:      ny,
-		weights: weights,
-		lx:      make([]float64, maxNodes),
-		ly:      make([]float64, maxNodes),
-		matchX:  make([]int, maxNodes),
-		matchY:  make([]int, maxNodes),
-		slack:   make([]float64, maxNodes),
-		visX:    make([]bool, maxNodes),
-		visY:    make([]bool, maxNodes),
 	}
 }
 
-// SetWeight 设置权重。
-func (g *WeightedBipartiteGraph) SetWeight(u, v int, weight float64) {
-	g.weights[u][v] = weight
-}
-
-func (g *WeightedBipartiteGraph) dfs(u int) bool {
-	g.visX[u] = true
-
-	for v := 0; v < g.ny; v++ {
-		if g.visY[v] {
-			continue
-		}
-
-		tmp := g.lx[u] + g.ly[v] - g.weights[u][v]
-		if math.Abs(tmp) < eps {
-			g.visY[v] = true
-			if g.matchY[v] == -1 || g.dfs(g.matchY[v]) {
-				g.matchY[v] = u
-				g.matchX[u] = v
-
-				return true
-			}
-		} else if g.slack[v] > tmp {
-			g.slack[v] = tmp
-		}
-	}
-
-	return false
-}
-
-// Solve 运行 KM 算法，返回最大权重和。
-func (g *WeightedBipartiteGraph) Solve() float64 {
-	startTime := time.Now()
-
+// AddEdge 添加边.
+func (g *WeightedBipartiteGraph) AddEdge(u, v, weight int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.initializeLabels()
+	if u >= 0 && u < g.nx && v >= 0 && v < g.ny {
+		g.weights[u][v] = weight
+	}
+}
 
-	for i := 0; i < g.nx; i++ {
-		for j := 0; j < g.ny; j++ {
-			g.slack[j] = math.MaxFloat64
+// bfs 寻找增广路.
+func (g *WeightedBipartiteGraph) bfs(u int) {
+	for i := range g.ny {
+		g.slack[i] = math.MaxInt
+		g.visY[i] = false
+		g.pre[i] = -1
+	}
+
+	var x, y, delta int
+	x = u
+	y = -1
+	for {
+		if y != -1 {
+			g.visY[y] = true
+			x = g.matchY[y]
 		}
 
-		for {
-			g.resetVisits()
-
-			if g.dfs(i) {
-				break
+		delta = math.MaxInt
+		nextY := -1
+		for j := range g.ny {
+			if !g.visY[j] {
+				if g.lx[x]+g.ly[j]-g.weights[x][j] < g.slack[j] {
+					g.slack[j] = g.lx[x] + g.ly[j] - g.weights[x][j]
+					g.pre[j] = y
+				}
+				if g.slack[j] < delta {
+					delta = g.slack[j]
+					nextY = j
+				}
 			}
+		}
 
-			if !g.adjustLabels() {
-				break
+		if delta > 0 {
+			g.lx[u] -= delta
+			for i := range g.ny {
+				if g.visY[i] {
+					g.lx[g.matchY[i]] -= delta
+					g.ly[i] += delta
+				} else {
+					g.slack[i] -= delta
+				}
 			}
+		}
+
+		y = nextY
+		if g.matchY[y] == -1 {
+			break
 		}
 	}
 
-	return g.calculateResult(startTime)
+	for y != -1 {
+		prevY := g.pre[y]
+		if prevY != -1 {
+			g.matchY[y] = g.matchY[prevY]
+		} else {
+			g.matchY[y] = u
+		}
+		y = prevY
+	}
 }
 
-func (g *WeightedBipartiteGraph) initializeLabels() {
-	for i := 0; i < g.nx; i++ {
-		g.matchX[i] = -1
-		g.matchY[i] = -1
-		g.lx[i] = -math.MaxFloat64
-		g.ly[i] = 0
+// MaxWeightMatch 执行 KM 算法并返回最大权和.
+func (g *WeightedBipartiteGraph) MaxWeightMatch() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-		for j := 0; j < g.ny; j++ {
+	// 初始化顶标
+	for i := range g.nx {
+		g.lx[i] = math.MinInt
+		for j := range g.ny {
 			if g.weights[i][j] > g.lx[i] {
 				g.lx[i] = g.weights[i][j]
 			}
 		}
 	}
-}
 
-func (g *WeightedBipartiteGraph) resetVisits() {
-	for j := 0; j < g.nx; j++ {
-		g.visX[j] = false
+	for i := range g.ny {
+		g.ly[i] = 0
+		g.matchY[i] = -1
 	}
 
-	for j := 0; j < g.ny; j++ {
-		g.visY[j] = false
-	}
-}
-
-func (g *WeightedBipartiteGraph) adjustLabels() bool {
-	delta := math.MaxFloat64
-	for j := 0; j < g.ny; j++ {
-		if !g.visY[j] && g.slack[j] < delta {
-			delta = g.slack[j]
-		}
+	for i := range g.nx {
+		g.bfs(i)
 	}
 
-	if delta == math.MaxFloat64 {
-		return false
-	}
-
-	for j := 0; j < g.nx; j++ {
-		if g.visX[j] {
-			g.lx[j] -= delta
-		}
-	}
-
-	for j := 0; j < g.ny; j++ {
-		if g.visY[j] {
-			g.ly[j] += delta
-		} else {
-			g.slack[j] -= delta
-		}
-	}
-
-	return true
-}
-
-func (g *WeightedBipartiteGraph) calculateResult(startTime time.Time) float64 {
-	totalWeight := 0.0
-	matchCount := 0
-
-	for i := 0; i < g.ny; i++ {
+	res := 0
+	for i := range g.ny {
 		if g.matchY[i] != -1 {
-			totalWeight += g.weights[g.matchY[i]][i]
-			matchCount++
-		}
-	}
-
-	slog.Info("Weighted bipartite matching Solve completed",
-		"nx", g.nx,
-		"ny", g.ny,
-		"matches", matchCount,
-		"weight_sum", totalWeight,
-		"duration", time.Since(startTime))
-
-	return totalWeight
-}
-
-// GetMatch 获取匹配结果 map[leftNodeIndex]rightNodeIndex。
-func (g *WeightedBipartiteGraph) GetMatch() map[int]int {
-	res := make(map[int]int)
-
-	for i := 0; i < g.nx; i++ {
-		if g.matchX[i] != -1 {
-			res[i] = g.matchX[i]
+			res += g.weights[g.matchY[i]][i]
 		}
 	}
 
 	return res
+}
+
+// GetMatches 返回最终匹配结果.
+func (g *WeightedBipartiteGraph) GetMatches() map[int]int {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	matches := make(map[int]int)
+	for i := range g.ny {
+		if g.matchY[i] != -1 {
+			matches[g.matchY[i]] = i
+		}
+	}
+
+	return matches
 }

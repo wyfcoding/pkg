@@ -105,7 +105,7 @@ func (re *RecommendationEngine) UserBasedCF(userID uint64, topN int) []uint64 {
 
 	chunkSize := (len(candidateUsers) + numWorkers - 1) / numWorkers
 
-	for w := 0; w < numWorkers; w++ {
+	for w := range numWorkers {
 		start := w * chunkSize
 		end := start + chunkSize
 		if end > len(candidateUsers) {
