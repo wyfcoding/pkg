@@ -9,10 +9,10 @@ import (
 // 相较于后缀树，后缀数组在空间效率上通常更优。
 type SuffixArray struct {
 	text   string       // 原始字符串。
-	sa     []int        // 后缀数组
-	rank   []int        // 排名数组
-	height []int        // LCP 数组：height[i] 表示 sa[i] 和 sa[i-1] 后缀的最长公共前缀
-	mu     sync.RWMutex // 读写锁
+	sa     []int        // 后缀数组。
+	rank   []int        // 排名数组。
+	height []int        // LCP 数组：height[i] 表示 sa[i] 和 sa[i-1] 后缀的最长公共前缀。
+	mu     sync.RWMutex // 读写锁。
 }
 
 // NewSuffixArray 创建并返回一个新的 SuffixArray 实例。
@@ -28,8 +28,6 @@ func NewSuffixArray(text string) *SuffixArray {
 	sa.computeLCP()
 	return sa
 }
-
-// ... (build() logic remains same)
 
 // computeLCP 使用 Kasai 算法在 O(N) 时间内计算 LCP 数组。
 func (sa *SuffixArray) computeLCP() {
@@ -73,7 +71,7 @@ func (sa *SuffixArray) LongestRepeatedSubstring() string {
 
 func (sa *SuffixArray) build() {
 	n := len(sa.text)
-	m := 256 // 初始字符集大小
+	m := 256 // 初始字符集大小。
 	if n > m {
 		m = n
 	}
@@ -85,7 +83,7 @@ func (sa *SuffixArray) build() {
 	y := make([]int, n)
 	c := make([]int, m)
 
-	// 初始排序 (k=0)
+	// 初始排序 (k=0)。
 	for i := 0; i < n; i++ {
 		x[i] = int(sa.text[i])
 		c[x[i]]++
@@ -98,10 +96,10 @@ func (sa *SuffixArray) build() {
 		c[x[i]]--
 	}
 
-	// 倍增排序
+	// 倍增排序。
 	for k := 1; k < n; k <<= 1 {
 		p := 0
-		// 1. 处理第二关键字
+		// 1. 处理第二关键字。
 		for i := n - k; i < n; i++ {
 			y[p] = i
 			p++
@@ -113,7 +111,7 @@ func (sa *SuffixArray) build() {
 			}
 		}
 
-		// 2. 基数排序处理第一关键字
+		// 2. 基数排序处理第一关键字。
 		for i := 0; i < m; i++ {
 			c[i] = 0
 		}
@@ -128,7 +126,7 @@ func (sa *SuffixArray) build() {
 			c[x[y[i]]]--
 		}
 
-		// 3. 更新排名数组 x，并存入 y 暂存旧排名
+		// 3. 更新排名数组 x，并存入 y 暂存旧排名。
 		x, y = y, x
 		p = 1
 		x[sa.sa[0]] = 0
@@ -143,10 +141,10 @@ func (sa *SuffixArray) build() {
 		if p >= n {
 			break
 		}
-		m = p // 更新字符集大小为当前排名总数
+		m = p // 更新字符集大小为当前排名总数。
 	}
 
-	// 填充最终排名
+	// 填充最终排名。
 	copy(sa.rank, x)
 }
 
@@ -177,7 +175,7 @@ func (sa *SuffixArray) Search(pattern string) []int {
 		return nil
 	}
 
-	// 1. 寻找左边界
+	// 1. 寻找左边界。
 	l, r := 0, n-1
 	first := -1
 	for l <= r {
@@ -197,7 +195,7 @@ func (sa *SuffixArray) Search(pattern string) []int {
 		return nil
 	}
 
-	// 2. 寻找右边界
+	// 2. 寻找右边界。
 	l, r = first, n-1
 	last := first
 	for l <= r {
@@ -226,7 +224,7 @@ func (sa *SuffixArray) compare(start int, pattern string) int {
 	m := len(pattern)
 	for i := 0; i < m; i++ {
 		if start+i >= n {
-			return -1 // 后缀更短
+			return -1 // 后缀更短。
 		}
 		if sa.text[start+i] < pattern[i] {
 			return -1
@@ -235,10 +233,10 @@ func (sa *SuffixArray) compare(start int, pattern string) int {
 			return 1
 		}
 	}
-	return 0 // 前缀匹配成功
+	return 0 // 前缀匹配成功。
 }
 
-// Count 统计模式串出现的次数
+// Count 统计模式串出现的次数。
 func (sa *SuffixArray) Count(pattern string) int {
 	pos := sa.Search(pattern)
 	return len(pos)

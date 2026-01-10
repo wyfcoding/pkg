@@ -13,21 +13,21 @@ import (
 
 var defaultManager *Manager
 
-// Default 返回全局默认分片管理器实例
+// Default 返回全局默认分片管理器实例。
 func Default() *Manager {
 	return defaultManager
 }
 
-// SetDefault 设置全局默认分片管理器实例
+// SetDefault 设置全局默认分片管理器实例。
 func SetDefault(m *Manager) {
 	defaultManager = m
 }
 
 // Manager 封装了水平分片（Sharding）的数据库访问逻辑，支持按 Key 路由。
 type Manager struct {
-	shards     map[int]*database.DB // 分片索引与数据库实例的映射
-	shardCount int                  // 总分片数量
-	mu         sync.RWMutex         // 保护分片映射的并发安全
+	shards     map[int]*database.DB // 分片索引与数据库实例的映射。
+	shardCount int                  // 总分片数量。
+	mu         sync.RWMutex         // 保护分片映射的并发安全。
 }
 
 // NewManager 初始化分片集群管理器。

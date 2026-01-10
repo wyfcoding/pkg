@@ -19,10 +19,10 @@ type Handler func(ctx context.Context, from State, to State, args ...any) error
 
 // Machine 封装了有限状态机的核心状态与流转逻辑。
 type Machine struct {
-	current     State                       // 当前所处的状态
-	transitions map[State]map[Event]State   // 注册的状态转移矩阵
-	handlers    map[State]map[State]Handler // 注册的状态转移执行动作
-	mu          sync.RWMutex                // 保证并发安全
+	current     State                       // 当前所处的状态。
+	transitions map[State]map[Event]State   // 注册的状态转移矩阵。
+	handlers    map[State]map[State]Handler // 注册的状态转移执行动作。
+	mu          sync.RWMutex                // 保证并发安全。
 }
 
 // NewMachine 创建一个新的状态机。
@@ -75,7 +75,7 @@ func (m *Machine) Trigger(ctx context.Context, event Event, args ...any) error {
 		return fmt.Errorf("invalid event %s for state %s", event, from)
 	}
 
-	// 如果注册了转移处理器，则执行特定的业务逻辑
+	// 如果注册了转移处理器，则执行特定的业务逻辑。
 	if handler, ok := m.handlers[from][to]; ok {
 		if err := handler(ctx, from, to, args...); err != nil {
 			return fmt.Errorf("handler failed for transition %s -> %s: %w", from, to, err)
@@ -84,7 +84,7 @@ func (m *Machine) Trigger(ctx context.Context, event Event, args ...any) error {
 
 	m.current = to
 
-	// 输出结构化审计日志，用于追踪业务状态变更
+	// 输出结构化审计日志，用于追踪业务状态变化。
 	slog.InfoContext(ctx, "fsm state transitioned",
 		"from", string(from),
 		"to", string(to),

@@ -60,9 +60,9 @@ func (m *GroupBuyMatcher) FindBestGroup(
 	now := time.Now()
 
 	for _, g := range groups {
-		if g.ActivityID == activityID && // 匹配活动ID
-			g.CurrentCount < g.RequiredCount && // 未满员
-			g.ExpireAt.After(now) { // 未过期
+		if g.ActivityID == activityID && // 匹配活动I.
+			g.CurrentCount < g.RequiredCount && // 未满.
+			g.ExpireAt.After(now) { // 未过.
 			available = append(available, g)
 		}
 	}
@@ -103,7 +103,7 @@ func (m *GroupBuyMatcher) matchFastest(groups []GroupBuyGroup) *GroupBuyGroup {
 			return 1
 		}
 
-		// 如果剩余人数相同，则按照过期时间降序排序
+		// 如果剩余人数相同，则按照过期时间降序排.
 		if a.ExpireAt.After(b.ExpireAt) {
 			return -1
 		}
@@ -209,7 +209,7 @@ func (m *GroupBuyMatcher) matchAlmostFull(groups []GroupBuyGroup) *GroupBuyGroup
 }
 
 // SmartMatch 实现“智能匹配”策略。
-// 它综合考虑拼团组的完成度、时间紧迫度和与用户的地域距离等多个因素，计算一个综合评分，
+// 它综合考虑拼团组的完成度、时间紧迫度和与用户的地域距离等多个因素，计算一个综合评分.
 // 从而找到最符合用户需求的拼团组。
 func (m *GroupBuyMatcher) SmartMatch(
 	activityID uint64,
@@ -302,7 +302,7 @@ func (m *GroupBuyMatcher) BatchMatch(
 		Region string
 	},
 	groups []GroupBuyGroup,
-) map[uint64]uint64 { // userID -> groupID
+) map[uint64]uint64 { // userID -> groupI.
 
 	result := make(map[uint64]uint64)
 

@@ -14,13 +14,13 @@ import (
 
 // GRPCServer 封装了标准的 grpc.Server，提供了简化的生命周期管理逻辑。
 type GRPCServer struct {
-	server *grpc.Server // 底层 gRPC 服务器实例
-	addr   string       // 监听地址 (Host:Port)
-	logger *slog.Logger // 日志记录器
+	server *grpc.Server // 底层 gRPC 服务器实.
+	addr   string       // 监听地址 (Host:Port.
+	logger *slog.Logger // 日志记录.
 }
 
 // NewGRPCServer 构造一个新的 gRPC 协议服务器实例。
-// 核心特性：
+// 核心特性.
 // 1. 自动启用 OpenTelemetry StatsHandler 进行全链路监控。
 // 2. 支持自定义拦截器链。
 // 3. 自动开启 gRPC Reflection（反射服务），便于调试与工具集成。

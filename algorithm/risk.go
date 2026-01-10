@@ -1,4 +1,4 @@
-// Package algos - 风险管理算法
+// Package algos - 风险管理算.
 package algorithm
 
 import (
@@ -9,35 +9,35 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// RiskCalculator 风险计算器
+// RiskCalculator 风险计算.
 type RiskCalculator struct{}
 
-// NewRiskCalculator 创建风险计算器
+// NewRiskCalculator 创建风险计算.
 func NewRiskCalculator() *RiskCalculator {
 	return &RiskCalculator{}
 }
 
-// CalculateVaR 计算风险价值（Value at Risk）
-// 参数：
-//   - returns: 历史收益率列表
-//   - confidenceLevel: 置信水平（如 0.95 表示 95%）
+// CalculateVaR 计算风险价值（Value at Risk.
+// 参数.
+//   - returns: 历史收益率列.
+//   - confidenceLevel: 置信水平（如 0.95 表示 95%.
 //
-// 返回：VaR 值
+// 返回：VaR .
 func (rc *RiskCalculator) CalculateVaR(returns []decimal.Decimal, confidenceLevel float64) (decimal.Decimal, error) {
 	if len(returns) == 0 {
 		return decimal.Zero, fmt.Errorf("empty returns list")
 	}
 
-	// 转换为 float64
+	// 转换为 float6.
 	floatReturns := make([]float64, len(returns))
 	for i, r := range returns {
 		floatReturns[i] = r.InexactFloat64()
 	}
 
-	// 排序
+	// 排.
 	slices.Sort(floatReturns)
 
-	// 计算 VaR（历史方法）
+	// 计算 VaR（历史方法.
 	index := int(float64(len(floatReturns)) * (1 - confidenceLevel))
 	if index >= len(floatReturns) {
 		index = len(floatReturns) - 1
@@ -46,23 +46,23 @@ func (rc *RiskCalculator) CalculateVaR(returns []decimal.Decimal, confidenceLeve
 	return decimal.NewFromFloat(floatReturns[index]), nil
 }
 
-// CalculateCVaR 计算条件风险价值（Conditional Value at Risk）
-// 也称为 Expected Shortfall
+// CalculateCVaR 计算条件风险价值（Conditional Value at Risk.
+// 也称为 Expected Shortfal.
 func (rc *RiskCalculator) CalculateCVaR(returns []decimal.Decimal, confidenceLevel float64) (decimal.Decimal, error) {
 	if len(returns) == 0 {
 		return decimal.Zero, fmt.Errorf("empty returns list")
 	}
 
-	// 转换为 float64
+	// 转换为 float6.
 	floatReturns := make([]float64, len(returns))
 	for i, r := range returns {
 		floatReturns[i] = r.InexactFloat64()
 	}
 
-	// 排序
+	// 排.
 	slices.Sort(floatReturns)
 
-	// 计算 CVaR
+	// 计算 CVa.
 	index := int(float64(len(floatReturns)) * (1 - confidenceLevel))
 	if index >= len(floatReturns) {
 		index = len(floatReturns) - 1
@@ -77,7 +77,7 @@ func (rc *RiskCalculator) CalculateCVaR(returns []decimal.Decimal, confidenceLev
 	return decimal.NewFromFloat(cvar), nil
 }
 
-// CalculateMaxDrawdown 计算最大回撤
+// CalculateMaxDrawdown 计算最大回.
 func (rc *RiskCalculator) CalculateMaxDrawdown(prices []decimal.Decimal) (decimal.Decimal, error) {
 	if len(prices) == 0 {
 		return decimal.Zero, fmt.Errorf("empty prices list")
@@ -100,25 +100,25 @@ func (rc *RiskCalculator) CalculateMaxDrawdown(prices []decimal.Decimal) (decima
 	return maxDrawdown, nil
 }
 
-// CalculateSharpeRatio 计算夏普比率
-// 参数：
-//   - returns: 收益率列表
-//   - riskFreeRate: 无风险利率
+// CalculateSharpeRatio 计算夏普比.
+// 参数.
+//   - returns: 收益率列.
+//   - riskFreeRate: 无风险利.
 //
-// 返回：夏普比率
+// 返回：夏普比.
 func (rc *RiskCalculator) CalculateSharpeRatio(returns []decimal.Decimal, riskFreeRate decimal.Decimal) (decimal.Decimal, error) {
 	if len(returns) == 0 {
 		return decimal.Zero, fmt.Errorf("empty returns list")
 	}
 
-	// 计算平均收益
+	// 计算平均收.
 	sum := decimal.Zero
 	for _, r := range returns {
 		sum = sum.Add(r)
 	}
 	avgReturn := sum.Div(decimal.NewFromInt(int64(len(returns))))
 
-	// 计算标准差
+	// 计算标准.
 	varianceSum := decimal.Zero
 	for _, r := range returns {
 		diff := r.Sub(avgReturn)
@@ -131,25 +131,25 @@ func (rc *RiskCalculator) CalculateSharpeRatio(returns []decimal.Decimal, riskFr
 		return decimal.Zero, fmt.Errorf("zero standard deviation")
 	}
 
-	// 计算夏普比率
+	// 计算夏普比.
 	sharpeRatio := avgReturn.Sub(riskFreeRate).Div(stdDev)
 	return sharpeRatio, nil
 }
 
-// CalculateVolatility 计算波动率
+// CalculateVolatility 计算波动.
 func (rc *RiskCalculator) CalculateVolatility(returns []decimal.Decimal) (decimal.Decimal, error) {
 	if len(returns) == 0 {
 		return decimal.Zero, fmt.Errorf("empty returns list")
 	}
 
-	// 计算平均收益
+	// 计算平均收.
 	sum := decimal.Zero
 	for _, r := range returns {
 		sum = sum.Add(r)
 	}
 	avgReturn := sum.Div(decimal.NewFromInt(int64(len(returns))))
 
-	// 计算方差
+	// 计算方.
 	varianceSum := decimal.Zero
 	for _, r := range returns {
 		diff := r.Sub(avgReturn)
@@ -157,20 +157,20 @@ func (rc *RiskCalculator) CalculateVolatility(returns []decimal.Decimal) (decima
 	}
 	variance := varianceSum.Div(decimal.NewFromInt(int64(len(returns))))
 
-	// 计算标准差（年化）
+	// 计算标准差（年化.
 	stdDev := decimal.NewFromFloat(math.Sqrt(variance.InexactFloat64()))
-	annualizedVolatility := stdDev.Mul(decimal.NewFromFloat(math.Sqrt(252))) // 252 个交易日
+	annualizedVolatility := stdDev.Mul(decimal.NewFromFloat(math.Sqrt(252))) // 252 个交易.
 
 	return annualizedVolatility, nil
 }
 
-// CalculateCorrelation 计算两个资产的相关系数
+// CalculateCorrelation 计算两个资产的相关系.
 func (rc *RiskCalculator) CalculateCorrelation(returns1, returns2 []decimal.Decimal) (decimal.Decimal, error) {
 	if len(returns1) != len(returns2) || len(returns1) == 0 {
 		return decimal.Zero, fmt.Errorf("invalid returns lists")
 	}
 
-	// 计算平均值
+	// 计算平均.
 	sum1 := decimal.Zero
 	sum2 := decimal.Zero
 	for i := range returns1 {
@@ -180,7 +180,7 @@ func (rc *RiskCalculator) CalculateCorrelation(returns1, returns2 []decimal.Deci
 	avg1 := sum1.Div(decimal.NewFromInt(int64(len(returns1))))
 	avg2 := sum2.Div(decimal.NewFromInt(int64(len(returns2))))
 
-	// 计算协方差和标准差
+	// 计算协方差和标准.
 	covSum := decimal.Zero
 	var1Sum := decimal.Zero
 	var2Sum := decimal.Zero
@@ -205,19 +205,19 @@ func (rc *RiskCalculator) CalculateCorrelation(returns1, returns2 []decimal.Deci
 	return correlation, nil
 }
 
-// CalculateBeta 计算 Beta（相对于市场的系统风险）
+// CalculateBeta 计算 Beta（相对于市场的系统风险.
 func (rc *RiskCalculator) CalculateBeta(assetReturns, marketReturns []decimal.Decimal) (decimal.Decimal, error) {
 	if len(assetReturns) != len(marketReturns) || len(assetReturns) == 0 {
 		return decimal.Zero, fmt.Errorf("invalid returns lists")
 	}
 
-	// 计算协方差
+	// 计算协方.
 	covariance, err := rc.calculateCovariance(assetReturns, marketReturns)
 	if err != nil {
 		return decimal.Zero, err
 	}
 
-	// 计算市场方差
+	// 计算市场方.
 	marketVariance, err := rc.calculateVariance(marketReturns)
 	if err != nil {
 		return decimal.Zero, err
@@ -231,13 +231,13 @@ func (rc *RiskCalculator) CalculateBeta(assetReturns, marketReturns []decimal.De
 	return beta, nil
 }
 
-// calculateCovariance 计算协方差
+// calculateCovariance 计算协方.
 func (rc *RiskCalculator) calculateCovariance(x, y []decimal.Decimal) (decimal.Decimal, error) {
 	if len(x) != len(y) || len(x) == 0 {
 		return decimal.Zero, fmt.Errorf("invalid input")
 	}
 
-	// 计算平均值
+	// 计算平均.
 	sumX := decimal.Zero
 	sumY := decimal.Zero
 	for i := range x {
@@ -247,7 +247,7 @@ func (rc *RiskCalculator) calculateCovariance(x, y []decimal.Decimal) (decimal.D
 	avgX := sumX.Div(decimal.NewFromInt(int64(len(x))))
 	avgY := sumY.Div(decimal.NewFromInt(int64(len(y))))
 
-	// 计算协方差
+	// 计算协方.
 	covSum := decimal.Zero
 	for i := range x {
 		covSum = covSum.Add(x[i].Sub(avgX).Mul(y[i].Sub(avgY)))
@@ -256,20 +256,20 @@ func (rc *RiskCalculator) calculateCovariance(x, y []decimal.Decimal) (decimal.D
 	return covSum.Div(decimal.NewFromInt(int64(len(x)))), nil
 }
 
-// calculateVariance 计算方差
+// calculateVariance 计算方.
 func (rc *RiskCalculator) calculateVariance(data []decimal.Decimal) (decimal.Decimal, error) {
 	if len(data) == 0 {
 		return decimal.Zero, fmt.Errorf("empty data")
 	}
 
-	// 计算平均值
+	// 计算平均.
 	sum := decimal.Zero
 	for _, d := range data {
 		sum = sum.Add(d)
 	}
 	avg := sum.Div(decimal.NewFromInt(int64(len(data))))
 
-	// 计算方差
+	// 计算方.
 	varSum := decimal.Zero
 	for _, d := range data {
 		diff := d.Sub(avg)
@@ -294,7 +294,7 @@ func (rc *RiskCalculator) EvaluateFraudScore(factors map[string]float64, weights
 	for key, score := range factors {
 		w, ok := weights[key]
 		if !ok {
-			w = 1.0 / float64(len(factors)) // 默认等权重
+			w = 1.0 / float64(len(factors)) // 默认等权.
 		}
 		totalScore += score * w
 		weightSum += w
@@ -304,7 +304,7 @@ func (rc *RiskCalculator) EvaluateFraudScore(factors map[string]float64, weights
 		totalScore /= weightSum
 	}
 
-	// 归一化到 0-1 范围
+	// 归一化到 0-1 范.
 	if totalScore > 1.0 {
 		totalScore = 1.0
 	} else if totalScore < 0 {

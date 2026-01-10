@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-// CountMinSketch 高性能概率数据结构
+// CountMinSketch 高性能概率数据结构。
 type CountMinSketch struct {
 	width  uint
 	depth  uint
-	count  uint64   // 总计数，使用 atomic
-	matrix []uint64 // 扁平化矩阵，便于原子操作 (index = depth_idx * width + width_idx)
+	count  uint64   // 总计数，使用 atomic。
+	matrix []uint64 // 扁平化矩阵，便于原子操作 (index = depth_idx * width + width_idx)。
 	seeds  []uint32
 }
 
@@ -45,7 +45,7 @@ func generateSeeds(depth uint) []uint32 {
 	return seeds
 }
 
-// Add 原子增加元素的计数
+// Add 原子增加元素的计数。
 func (cms *CountMinSketch) Add(data []byte, count uint64) {
 	atomic.AddUint64(&cms.count, count)
 	h1, h2 := hash(data)
@@ -56,12 +56,12 @@ func (cms *CountMinSketch) Add(data []byte, count uint64) {
 	}
 }
 
-// AddString 增加字符串元素的计数
+// AddString 增加字符串元素的计数。
 func (cms *CountMinSketch) AddString(key string, count uint64) {
 	cms.Add([]byte(key), count)
 }
 
-// Estimate 估算频率
+// Estimate 估算频率。
 func (cms *CountMinSketch) Estimate(data []byte) uint64 {
 	minCount := uint64(math.MaxUint64)
 	h1, h2 := hash(data)
@@ -76,12 +76,12 @@ func (cms *CountMinSketch) Estimate(data []byte) uint64 {
 	return minCount
 }
 
-// EstimateString 估算字符串频率
+// EstimateString 估算字符串频率。
 func (cms *CountMinSketch) EstimateString(key string) uint64 {
 	return cms.Estimate([]byte(key))
 }
 
-// Decay 衰减机制：将所有计数值减半
+// Decay 衰减机制：将所有计数值减半。
 func (cms *CountMinSketch) Decay() {
 	start := time.Now()
 	for i := range cms.matrix {
@@ -94,7 +94,7 @@ func (cms *CountMinSketch) Decay() {
 	slog.Info("CountMinSketch decay completed", "duration", time.Since(start))
 }
 
-// Reset 重置所有计数
+// Reset 重置所有计数。
 func (cms *CountMinSketch) Reset() {
 	for i := range cms.matrix {
 		atomic.StoreUint64(&cms.matrix[i], 0)
@@ -102,12 +102,12 @@ func (cms *CountMinSketch) Reset() {
 	atomic.StoreUint64(&cms.count, 0)
 }
 
-// TotalCount 返回总的添加次数
+// TotalCount 返回总的添加次数。
 func (cms *CountMinSketch) TotalCount() uint64 {
 	return atomic.LoadUint64(&cms.count)
 }
 
-// Merge 合并另一个 CMS
+// Merge 合并另一个 CMS。
 func (cms *CountMinSketch) Merge(other *CountMinSketch) error {
 	if cms.width != other.width || cms.depth != other.depth {
 		return errors.New("cannot merge CountMinSketch with different dimensions")
@@ -121,7 +121,7 @@ func (cms *CountMinSketch) Merge(other *CountMinSketch) error {
 	return nil
 }
 
-// hash 使用 FNV-1a 算法生成两个基础哈希值 (Zero Allocation)
+// hash 使用 FNV-1a 算法生成两个基础哈希值 (Zero Allocation)。
 func hash(data []byte) (uint32, uint32) {
 	const (
 		offset64 = 14695981039346656037

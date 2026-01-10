@@ -1,68 +1,61 @@
+// Package text 提供了字符串处理、随机生成等基础工具。
 package text
 
 import (
-	"crypto/md5"   // 导入MD5哈希算法库。
-	"encoding/hex" // 导入hex编码解码库。
-	"math/rand/v2" // 导入随机数生成库 (v2)。
-	"strings"      // 导入字符串操作库。
-	"time"         // 导入时间操作库。
+	"crypto/md5" //nolint:gosec // 仅用于生成非安全哈希（如文件名）。
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/hex"
+	randv2 "math/rand/v2"
+	"strings"
+	"time"
 )
 
-// RandomString 生成指定长度的随机字符串。
-// 随机字符串由大小写字母和数字组成。
-// length: 待生成的随机字符串的长度。
-// 返回生成的随机字符串。
+// RandomString 生成指定长度的随机字符串（由数字和字母组成）。
 func RandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	// 使用当前时间戳作为随机数种子，确保每次生成的随机数序列不同。
-	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[r.IntN(len(charset))] // 从字符集中随机选择字符。
+	result := make([]byte, length)
+
+	var seed [8]byte
+	if _, err := rand.Read(seed[:]); err != nil {
+		// 极低概率失败，退化为时间戳。
+		binary.LittleEndian.PutUint64(seed[:], uint64(time.Now().UnixNano()))
 	}
-	return string(b)
-}
 
-// MD5 计算给定字符串的MD5哈希值。
-// MD5是一种广泛使用的密码散列函数，可以生成一个128位的散列值（通常表示为32位十六进制数）。
-// s: 待计算哈希的字符串。
-// 返回字符串的MD5哈希值（小写十六进制字符串）。
-func MD5(s string) string {
-	h := md5.New()                        // 创建一个新的MD5哈希实例。
-	h.Write([]byte(s))                    // 将字符串数据写入哈希实例。
-	return hex.EncodeToString(h.Sum(nil)) // 计算哈希值并编码为十六进制字符串。
-}
+	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
 
-// TruncateString 截断字符串到指定的最大长度，并在末尾添加 "..."。
-// 如果字符串的长度小于或等于maxLen，则不进行截断。
-// s: 待截断的字符串。
-// maxLen: 字符串的最大保留长度。
-// 返回截断后的字符串。
-func TruncateString(s string, maxLen int) string {
-	runes := []rune(s) // 将字符串转换为rune切片，以正确处理Unicode字符。
-	if len(runes) <= maxLen {
-		return s // 如果字符串长度未超过最大长度，则直接返回原字符串。
+	for i := range result {
+		result[i] = charset[randomSrc.IntN(len(charset))]
 	}
-	// 截断字符串并在末尾添加 "..."。
-	return string(runes[:maxLen]) + "..."
+
+	return string(result)
 }
 
-// Contains 检查字符串 s 是否包含任何一个给定的子串。
-// s: 待检查的字符串。
-// substrs: 子串列表。
-// 返回：如果 s 包含任何一个子串，则返回 true；否则返回 false。
-func Contains(s string, substrs ...string) bool {
-	for _, substr := range substrs {
-		if strings.Contains(s, substr) {
+// MD5 计算字符串的 MD5 哈希值（返回 32 位十六进制字符串）。
+// 注意：MD5 已不再适用于密码学安全场景，仅用于普通校验。
+func MD5(text string) string {
+	hash := md5.New() //nolint:gosec
+	hash.Write([]byte(text))
+
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// Mask 字符串脱敏处理（保留前 prefixLen 位和后 suffixLen 位，中间用 * 代替）。
+func Mask(s string, prefixLen, suffixLen int) string {
+	if len(s) <= prefixLen+suffixLen {
+		return s
+	}
+
+	return s[:prefixLen] + "****" + s[len(s)-suffixLen:]
+}
+
+// IsAnyEmpty 检查是否有任意一个字符串为空。
+func IsAnyEmpty(ss ...string) bool {
+	for _, s := range ss {
+		if strings.TrimSpace(s) == "" {
 			return true
 		}
 	}
-	return false
-}
 
-// IsBlank 检查字符串是否为空或只包含空白字符。
-// s: 待检查的字符串。
-// 返回：如果字符串为空或只包含空白字符，则返回 true；否则返回 false。
-func IsBlank(s string) bool {
-	return strings.TrimSpace(s) == "" // 去除字符串两端的空白字符后，检查是否为空。
+	return false
 }

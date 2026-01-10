@@ -1,3 +1,4 @@
+// Package middleware 提供了 Gin 与 gRPC 的通用中间件实现。
 package middleware
 
 import (
@@ -5,9 +6,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// GrpcTracingServerOption returns a gRPC ServerOption that enables OpenTelemetry tracing
-// 使用 stats handler 机制。
-// 注意：otelgrpc v0.64.0+ 更倾向于使用 StatsHandler 而不是 Interceptors，以获得更好的精度和指标支持。
-func GrpcTracingServerOption(opts ...otelgrpc.Option) grpc.ServerOption {
-	return grpc.StatsHandler(otelgrpc.NewServerHandler(opts...))
+// GRPCTracingServerOption 返回启用 OpenTelemetry 链路追踪的 gRPC ServerOption。
+func GRPCTracingServerOption() grpc.ServerOption {
+	return grpc.StatsHandler(otelgrpc.NewServerHandler())
 }

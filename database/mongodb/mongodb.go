@@ -37,11 +37,11 @@ func init() {
 
 // Config 封装了 MongoDB 驱动初始化所需的各类参数。
 type Config struct {
-	URI            string        `toml:"uri"`             // 连接字符串 (例如: mongodb://user:pass@host:27017)
-	Database       string        `toml:"database"`        // 默认操作的数据库名称
-	ConnectTimeout time.Duration `toml:"connect_timeout"` // 连接建立超时阈值
-	MinPoolSize    uint64        `toml:"min_pool_size"`   // 最小空闲连接池规模
-	MaxPoolSize    uint64        `toml:"max_pool_size"`   // 最大并发连接数限制
+	URI            string        `toml:"uri"`             // 连接字符串 (例如: mongodb://user:pass@host:27017)。
+	Database       string        `toml:"database"`        // 默认操作的数据库名称。
+	ConnectTimeout time.Duration `toml:"connect_timeout"` // 连接建立超时阈值。
+	MinPoolSize    uint64        `toml:"min_pool_size"`   // 最小空闲连接池规模。
+	MaxPoolSize    uint64        `toml:"max_pool_size"`   // 最大并发连接数限制。
 }
 
 // NewMongoClient 初始化并返回一个功能增强的 MongoDB 客户端及其对应的清理闭包。
@@ -51,13 +51,13 @@ func NewMongoClient(conf *Config) (*mongo.Client, func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), conf.ConnectTimeout)
 	defer cancel() // 确保上下文在函数退出时被取消。
 
-	// 配置指标监控
+	// 配置指标监控。
 	monitor := &event.CommandMonitor{
-		Succeeded: func(ctx context.Context, evt *event.CommandSucceededEvent) {
+		Succeeded: func(_ context.Context, evt *event.CommandSucceededEvent) {
 			mongoOps.WithLabelValues(evt.CommandName, "success").Inc()
 			mongoDuration.WithLabelValues(evt.CommandName).Observe(evt.Duration.Seconds())
 		},
-		Failed: func(ctx context.Context, evt *event.CommandFailedEvent) {
+		Failed: func(_ context.Context, evt *event.CommandFailedEvent) {
 			mongoOps.WithLabelValues(evt.CommandName, "failed").Inc()
 			mongoDuration.WithLabelValues(evt.CommandName).Observe(evt.Duration.Seconds())
 		},

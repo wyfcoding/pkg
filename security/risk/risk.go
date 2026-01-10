@@ -9,17 +9,17 @@ import (
 type Level string
 
 const (
-	Pass   Level = "PASS"   // 放行：无风险或风险极低，正常执行业务逻辑
-	Review Level = "REVIEW" // 审核：存在可疑风险，建议转人工审核或触发二次身份验证（如短信验证码）
-	Reject Level = "REJECT" // 拒绝：明确的高风险行为，必须立即拦截
+	Pass   Level = "PASS"   // 放行：无风险或风险极低，正常执行业务逻.
+	Review Level = "REVIEW" // 审核：存在可疑风险，建议转人工审核或触发二次身份验证（如短信验证码.
+	Reject Level = "REJECT" // 拒绝：明确的高风险行为，必须立即拦.
 )
 
 // Assessment 描述了单次风控评估的详细结论。
 type Assessment struct {
-	Level  Level  `json:"level"`  // 最终判定等级
-	Code   string `json:"code"`   // 命中的风险分类代码 (如: "RISK_GEO_IP_MISMATCH")
-	Reason string `json:"reason"` // 风险命中的详细原因说明
-	Score  int    `json:"score"`  // 风险量化评分 (0-100，分数越高风险越大)
+	Level  Level  `json:"level"`  // 最终判定等.
+	Code   string `json:"code"`   // 命中的风险分类代码 (如: "RISK_GEO_IP_MISMATCH".
+	Reason string `json:"reason"` // 风险命中的详细原因说.
+	Score  int    `json:"score"`  // 风险量化评分 (0-100，分数越高风险越大.
 }
 
 // Evaluator 是风控评估器的标准接口。

@@ -7,16 +7,15 @@ import (
 )
 
 // HiddenMarkovModel 结构体实现了隐马尔可夫模型 (HMM)。
-// 优化：内部使用数组代替 Map 存储概率，显著提升 Viterbi 算法性能 (避免哈希查找开销)。
 type HiddenMarkovModel struct {
-	states         []string // 状态列表
-	observations   []string // 观测符号列表
+	states         []string // 状态列表。
+	observations   []string // 观测符号列表。
 	stateIdx       map[string]int
 	obsIdx         map[string]int
-	transitionProb []float64    // M x M 矩阵 (扁平化): trans[i][j] -> [i*M + j]
-	emissionProb   []float64    // M x K 矩阵 (扁平化): emit[i][k] -> [i*K + k]
-	initialProb    []float64    // M 向量
-	mu             sync.RWMutex // 读写锁
+	transitionProb []float64    // M x M 矩阵 (扁平化): trans[i][j] -> [i*M + j]。
+	emissionProb   []float64    // M x K 矩阵 (扁平化): emit[i][k] -> [i*K + k]。
+	initialProb    []float64    // M 维初始概率向量。
+	mu             sync.RWMutex // 读写锁。
 }
 
 // NewHiddenMarkovModel 创建并返回一个新的 HiddenMarkovModel 实例。
@@ -81,7 +80,7 @@ func (hmm *HiddenMarkovModel) SetInitialProb(state string, prob float64) {
 }
 
 // Viterbi 算法用于寻找给定一个观测序列时，最有可能的隐藏状态序列。
-// 时间复杂度：O(T * M^2)，空间复杂度：O(T * M)
+// 时间复杂度：O(T * M^2)，空间复杂度：O(T * M)。
 func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	if len(observations) == 0 {
 		return nil
@@ -94,32 +93,32 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	m := len(hmm.states)
 	numObs := len(hmm.observations)
 
-	// 预先将观测序列转换为索引，避免循环中查找 Map
+	// 预先将观测序列转换为索引，避免循环中查找 Map。
 	obsIndices := make([]int, n)
 	for t, obs := range observations {
 		if idx, ok := hmm.obsIdx[obs]; ok {
 			obsIndices[t] = idx
 		} else {
-			// 未知观测值，通常视其概率为0。使用 -1 标记。
+			// 未知观测值，通常视其概率为 0。使用 -1 标记。
 			obsIndices[t] = -1
 		}
 	}
 
-	// 辅助函数：安全对数计算
+	// 辅助函数：安全对数计算。
 	const minLogProb = -1e10
 	safeLog := func(p float64) float64 {
-		if p <= 1e-300 { // 接近 0
+		if p <= 1e-300 { // 接近 0。
 			return minLogProb
 		}
 		return math.Log(p)
 	}
 
-	// dp[t][state_idx]
+	// dp[t][state_idx]。
 	dp := make([]float64, n*m)
-	// path[t][state_idx] = prev_state_idx
+	// path[t][state_idx] = prev_state_id。
 	path := make([]int, n*m)
 
-	// 1. 初始化 (t=0)
+	// 1. 初始化 (t=0)。
 	obs0 := obsIndices[0]
 	for j := 0; j < m; j++ {
 		emitP := 0.0
@@ -129,13 +128,13 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 		dp[j] = safeLog(hmm.initialProb[j]) + safeLog(emitP)
 	}
 
-	// 2. 递推 (t=1..n-1)
+	// 2. 递推 (t=1..n-1)。
 	for t := 1; t < n; t++ {
 		obsT := obsIndices[t]
 		baseCurr := t * m
 		basePrev := (t - 1) * m
 
-		for j := 0; j < m; j++ { // 当前状态 j
+		for j := 0; j < m; j++ { // 当前状态 j。
 			maxProb := -1e20
 			maxPrevState := 0
 
@@ -145,9 +144,9 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 			}
 			logEmit := safeLog(emitP)
 
-			for k := 0; k < m; k++ { // 前一状态 k
-				// prob = dp[t-1][k] * trans[k][j] * emit[j][obs]
-				// log_prob = dp[t-1][k] + log(trans[k][j]) + log(emit)
+			for k := 0; k < m; k++ { // 前一状态 k。
+				// prob = dp[t-1][k] * trans[k][j] * emit[j][obs]。
+				// log_prob = dp[t-1][k] + log(trans[k][j]) + log(emit)。
 				transP := hmm.transitionProb[k*m+j]
 				prob := dp[basePrev+k] + safeLog(transP)
 				if prob > maxProb {
@@ -161,7 +160,7 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 		}
 	}
 
-	// 3. 回溯
+	// 3. 回溯。
 	result := make([]string, n)
 	maxProb := -1e20
 	maxIdx := 0
@@ -183,7 +182,7 @@ func (hmm *HiddenMarkovModel) Viterbi(observations []string) []string {
 	return result
 }
 
-// Validate 校验模型参数是否完整合法 (各概率分布之和是否近似为 1)
+// Validate 校验模型参数是否完整合法 (各概率分布之和是否近似为 1)。
 func (hmm *HiddenMarkovModel) Validate() error {
 	hmm.mu.RLock()
 	defer hmm.mu.RUnlock()
@@ -192,7 +191,7 @@ func (hmm *HiddenMarkovModel) Validate() error {
 	m := len(hmm.states)
 	numObs := len(hmm.observations)
 
-	// 1. 校验初始概率
+	// 1. 校验初始概率。
 	sumInit := 0.0
 	for _, p := range hmm.initialProb {
 		sumInit += p
@@ -201,7 +200,7 @@ func (hmm *HiddenMarkovModel) Validate() error {
 		return fmt.Errorf("initial probabilities sum to %f, expected 1.0", sumInit)
 	}
 
-	// 2. 校验转移概率
+	// 2. 校验转移概率。
 	for i := 0; i < m; i++ {
 		sumTrans := 0.0
 		for j := 0; j < m; j++ {
@@ -212,7 +211,7 @@ func (hmm *HiddenMarkovModel) Validate() error {
 		}
 	}
 
-	// 3. 校验发射概率
+	// 3. 校验发射概率。
 	for i := 0; i < m; i++ {
 		sumEmit := 0.0
 		for k := 0; k < numObs; k++ {

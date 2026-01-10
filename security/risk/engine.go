@@ -10,8 +10,8 @@ import (
 // DynamicRiskEngine 是基于可编程规则引擎实现的高级风控器。
 // 支持在不重启服务的情况下，通过修改规则表达式动态调整风控策略。
 type DynamicRiskEngine struct {
-	re     *ruleengine.Engine // 底层规则执行引擎
-	logger *slog.Logger       // 日志记录器
+	re     *ruleengine.Engine // 底层规则执行引.
+	logger *slog.Logger       // 日志记录.
 }
 
 // NewDynamicRiskEngine 初始化并返回一个新的动态风控引擎实例。
@@ -29,7 +29,7 @@ func NewDynamicRiskEngine(logger *slog.Logger) (*DynamicRiskEngine, error) {
 
 // initDefaultRules 预置常用的风控规则模版。
 func (e *DynamicRiskEngine) initDefaultRules() error {
-	// 规则 1: 特定黑名单用户或 IP 拦截
+	// 规则 1: 特定黑名单用户或 IP 拦.
 	if err := e.re.AddRule(ruleengine.Rule{
 		ID:         "R001",
 		Name:       "Blacklist Check",
@@ -39,7 +39,7 @@ func (e *DynamicRiskEngine) initDefaultRules() error {
 		return err
 	}
 
-	// 规则 2: 大额交易安全性检查（未实名拦截）
+	// 规则 2: 大额交易安全性检查（未实名拦截.
 	if err := e.re.AddRule(ruleengine.Rule{
 		ID:         "R002",
 		Name:       "High Value Unverified",
@@ -49,7 +49,7 @@ func (e *DynamicRiskEngine) initDefaultRules() error {
 		return err
 	}
 
-	// 规则 3: 异常高频行为审计
+	// 规则 3: 异常高频行为审.
 	if err := e.re.AddRule(ruleengine.Rule{
 		ID:         "R003",
 		Name:       "Suspicious Frequency",
@@ -76,7 +76,7 @@ func (e *DynamicRiskEngine) Assess(ctx context.Context, _ string, data map[strin
 		if !ok {
 			continue
 		}
-		// 一票否决逻辑：一旦命中 Reject，立即返回
+		// 一票否决逻辑：一旦命中 Reject，立即返.
 		if levelStr == Reject {
 			code, _ := hit.Metadata["code"].(string)
 			return &Assessment{
@@ -85,7 +85,7 @@ func (e *DynamicRiskEngine) Assess(ctx context.Context, _ string, data map[strin
 				Reason: "rule hit: " + hit.RuleID,
 			}, nil
 		}
-		// 升级判定逻辑：如果当前是 Pass，可以升级为 Review
+		// 升级判定逻辑：如果当前是 Pass，可以升级为 Revie.
 		if levelStr == Review {
 			finalAssessment.Level = Review
 			finalAssessment.Code, _ = hit.Metadata["code"].(string)

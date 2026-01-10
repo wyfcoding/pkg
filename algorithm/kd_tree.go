@@ -6,13 +6,13 @@ import (
 	"sync"
 )
 
-// KDPoint 多维空间中的一个点
+// KDPoint 多维空间中的一个.
 type KDPoint struct {
 	ID     uint64
 	Vector []float64
 }
 
-// KDNode K-D 树节点
+// KDNode K-D 树节.
 type KDNode struct {
 	Point KDPoint
 	Left  *KDNode
@@ -35,13 +35,13 @@ func newKDNode(p KDPoint, axis int) *KDNode {
 	return node
 }
 
-// KDTree K-D 树
+// KDTree K-D .
 type KDTree struct {
 	Root *KDNode
 	K    int
 }
 
-// NewKDTree 构建 K-D 树
+// NewKDTree 构建 K-D .
 func NewKDTree(points []KDPoint) (*KDTree, error) {
 	if len(points) == 0 {
 		return nil, errors.New("points must not be empty")
@@ -52,7 +52,7 @@ func NewKDTree(points []KDPoint) (*KDTree, error) {
 	return tree, nil
 }
 
-// build 使用 QuickSelect 思想实现 O(n log n) 构建
+// build 使用 QuickSelect 思想实现 O(n log n) 构.
 func (t *KDTree) build(points []KDPoint, depth int) *KDNode {
 	if len(points) == 0 {
 		return nil
@@ -61,7 +61,7 @@ func (t *KDTree) build(points []KDPoint, depth int) *KDNode {
 	axis := depth % t.K
 	mid := len(points) / 2
 
-	// 使用 QuickSelect 找到中位数所在位置的点，并对数组进行分区
+	// 使用 QuickSelect 找到中位数所在位置的点，并对数组进行分.
 	t.quickSelect(points, mid, axis)
 
 	node := newKDNode(points[mid], axis)
@@ -70,7 +70,7 @@ func (t *KDTree) build(points []KDPoint, depth int) *KDNode {
 	return node
 }
 
-// quickSelect 在 O(n) 时间内找到第 k 小的元素并对区间进行分区
+// quickSelect 在 O(n) 时间内找到第 k 小的元素并对区间进行分.
 func (t *KDTree) quickSelect(points []KDPoint, k int, axis int) {
 	left, right := 0, len(points)-1
 	for left < right {
@@ -98,7 +98,7 @@ func (t *KDTree) partition(points []KDPoint, left, right, axis int) int {
 	return i
 }
 
-// Nearest 寻找最近邻
+// Nearest 寻找最近.
 func (t *KDTree) Nearest(target []float64) (KDPoint, float64) {
 	var bestPoint KDPoint
 	minDist := math.MaxFloat64
@@ -120,7 +120,7 @@ func (t *KDTree) search(node *KDNode, target []float64, bestPoint *KDPoint, minD
 	axis := node.Axis
 	diff := target[axis] - node.Point.Vector[axis]
 
-	// 优先进入目标点所在的一侧
+	// 优先进入目标点所在的一.
 	var near, far *KDNode
 	if diff < 0 {
 		near, far = node.Left, node.Right
@@ -130,7 +130,7 @@ func (t *KDTree) search(node *KDNode, target []float64, bestPoint *KDPoint, minD
 
 	t.search(near, target, bestPoint, minDist)
 
-	// 回溯检查另一侧是否可能存在更近的点
+	// 回溯检查另一侧是否可能存在更近的.
 	if diff*diff < *minDist {
 		t.search(far, target, bestPoint, minDist)
 	}

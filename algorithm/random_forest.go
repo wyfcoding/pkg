@@ -7,7 +7,7 @@ import (
 )
 
 // RandomForest 结构体实现了随机森林算法。
-// 随机森林是一种集成学习方法，通过构建大量的决策树并聚合它们的预测结果，
+// 随机森林是一种集成学习方法，通过构建大量的决策树并聚合它们的预测结果.
 // 以提高预测的准确性和稳定性，常用于分类和回归任务。
 type RandomForest struct {
 	trees    []*DecisionTree // 包含在森林中的所有决策树实例。
@@ -25,7 +25,7 @@ func NewRandomForest(numTrees int) *RandomForest {
 }
 
 // Fit 训练随机森林模型。
-// 在训练过程中，会使用Bootstrap Aggregating（Bagging）方法对原始数据集进行采样，
+// 在训练过程中，会使用Bootstrap Aggregating（Bagging）方法对原始数据集进行采样.
 // 然后为每个采样数据集训练一个独立的决策树。
 // 应用场景：复杂用户行为预测、欺诈检测、推荐系统等。
 // points: 训练数据集的特征点切片。
@@ -34,7 +34,7 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 	rf.mu.Lock()         // 训练过程需要加写锁。
 	defer rf.mu.Unlock() // 确保函数退出时解锁。
 
-	// 并发控制
+	// 并发控.
 	numWorkers := runtime.GOMAXPROCS(0)
 	sem := make(chan struct{}, numWorkers)
 	var wg sync.WaitGroup
@@ -44,17 +44,17 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			sem <- struct{}{}        // Acquire token
-			defer func() { <-sem }() // Release token
+			sem <- struct{}{}        // Acquire toke.
+			defer func() { <-sem }() // Release toke.
 
 			// 步骤1: Bootstrap采样 (有放回随机采样)。
-			// 从原始数据集中有放回地随机抽取与原始数据集相同数量的样本，
+			// 从原始数据集中有放回地随机抽取与原始数据集相同数量的样本.
 			// 形成一个Bootstrap数据集。
 			bootstrapPoints := make([]*DTPoint, len(points))
 			bootstrapLabels := make([]int, len(labels))
 
 			for j := range points {
-				// 随机选择一个索引 (有放回采样)
+				// 随机选择一个索引 (有放回采样.
 				idx := rand.IntN(len(points))
 				bootstrapPoints[j] = points[idx]
 				bootstrapLabels[j] = labels[idx]

@@ -22,9 +22,9 @@ import (
 // BloomFilter 封装了高空间利用率的概率型数据结构。
 type BloomFilter struct {
 	mu     sync.RWMutex
-	bits   []uint64 // 底层位数组
-	size   uint     // 位数组总长度 (m)
-	hashes uint     // 最优哈希函数个数 (k)
+	bits   []uint64 // 底层位数组。
+	size   uint     // 位数组总长度 (m)。
+	hashes uint     // 最优哈希函数个数 (k)。
 }
 
 // NewBloomFilter 根据预估容量与允许的误报率，科学计算并初始化布隆过滤器。
@@ -55,11 +55,11 @@ func (bf *BloomFilter) Add(data []byte) {
 
 	h1, h2 := bf.hash(data)
 	for i := uint(0); i < bf.hashes; i++ {
-		// 使用 h1 + i*h2 模拟多次哈希 (Kirsch-Mitzenmacher optimization)
-		// 注意：这里可能会溢出，利用 uint 的溢出特性是安全的
+		// 使用 h1 + i*h2 模拟多次哈希 (Kirsch-Mitzenmacher optimization)。
+		// 注意：这里可能会溢出，利用 uint 的溢出特性是安全的。
 		idx := (h1 + i*h2) % bf.size
-		// idx / 64 -> idx >> 6
-		// idx % 64 -> idx & 63
+		// idx / 64 -> idx >> 6。
+		// idx % 64 -> idx & 63。
 		bf.bits[idx>>6] |= (1 << (idx & 63))
 	}
 }
@@ -80,7 +80,7 @@ func (bf *BloomFilter) Contains(data []byte) bool {
 	return true
 }
 
-// hash 使用 FNV-1a 生成两个 64 位哈希值 (Zero Allocation)
+// hash 使用 FNV-1a 生成两个 64 位哈希值 (Zero Allocation)。
 func (bf *BloomFilter) hash(data []byte) (uint, uint) {
 	const (
 		offset64 = 14695981039346656037

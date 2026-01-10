@@ -25,33 +25,33 @@ func InitClients(services map[string]config.ServiceAddr, m *metrics.Metrics, cbC
 
 	var conns []*grpc.ClientConn
 
-	// 创建 ClientFactory
+	// 创建 ClientFactory 实例。
 	factory := NewClientFactory(logging.Default(), m, cbCfg)
 
 	for i := 0; i < elem.NumField(); i++ {
 		field := elem.Field(i)
 		fieldType := typ.Field(i)
 
-		// 跳过未导出的字段
+		// 跳过未导出的字段。
 		if !field.CanSet() {
 			continue
 		}
 
-		// 仅处理 *grpc.ClientConn 类型的字段
+		// 仅处理 *grpc.ClientConn 类型的字段。
 		if field.Type() != reflect.TypeFor[*grpc.ClientConn]() {
 			continue
 		}
 
-		// 从 tag 或字段名确定服务名称
+		// 从 tag 或字段名确定服务名称。
 		serviceName := fieldType.Tag.Get("service")
 		if serviceName == "" {
 			serviceName = strings.ToLower(fieldType.Name)
 		}
 
-		// 在配置中查找服务地址
+		// 在配置中查找服务地址。
 		addrConfig, ok := services[serviceName]
 		if !ok {
-			// 警告但不失败，也许它是可选的或在其他地方配置？
+			// 警告但不失败，也许它是可选的或在其他地方配置了。
 			// 目前我们只记录信息并跳过。
 			slog.Info("service config not found for field, skipping auto-wiring", "field", fieldType.Name, "service", serviceName)
 			continue
@@ -62,12 +62,12 @@ func InitClients(services map[string]config.ServiceAddr, m *metrics.Metrics, cbC
 			continue
 		}
 
-		// 拨号连接 (使用 ClientFactory)
+		// 拨号连接 (使用 ClientFactory)。
 		conn, err := factory.NewClient(addrConfig.GRPCAddr)
 		if err != nil {
-			// 关闭已打开的连接
-			for _, c := range conns {
-				c.Close()
+			// 关闭已打开的连接。
+			for _, connItem := range conns {
+				connItem.Close()
 			}
 			return nil, fmt.Errorf("failed to connect to service %s at %s: %w", serviceName, addrConfig.GRPCAddr, err)
 		}

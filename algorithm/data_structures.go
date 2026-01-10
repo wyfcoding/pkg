@@ -1,4 +1,4 @@
-// Package algos 提供高性能数据结构和算法
+// Package algos 提供高性能数据结构和算.
 package algorithm
 
 import (
@@ -8,9 +8,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ===== 撮合引擎相关数据结构 =====
+// ===== 撮合引擎相关数据结构 ====.
 
-// OrderBookSnapshot 订单簿快照
+// OrderBookSnapshot 订单簿快.
 type OrderBookSnapshot struct {
 	Symbol    string
 	Bids      []*PriceLevel
@@ -18,16 +18,16 @@ type OrderBookSnapshot struct {
 	Timestamp int64
 }
 
-// PriceLevel 价格层级
+// PriceLevel 价格层.
 type PriceLevel struct {
 	Price    decimal.Decimal
 	Quantity decimal.Decimal
-	Count    int64 // 订单数量
+	Count    int64 // 订单数.
 }
 
-// ===== 风险管理相关数据结构 =====
+// ===== 风险管理相关数据结构 ====.
 
-// RiskMetricsSnapshot 风险指标快照
+// RiskMetricsSnapshot 风险指标快.
 type RiskMetricsSnapshot struct {
 	UserID         string
 	VaR95          decimal.Decimal
@@ -41,9 +41,9 @@ type RiskMetricsSnapshot struct {
 	Timestamp      int64
 }
 
-// ===== 持仓管理相关数据结构 =====
+// ===== 持仓管理相关数据结构 ====.
 
-// PositionSnapshot 持仓快照
+// PositionSnapshot 持仓快.
 type PositionSnapshot struct {
 	UserID        string
 	Symbol        string
@@ -57,7 +57,7 @@ type PositionSnapshot struct {
 	Timestamp     int64
 }
 
-// PortfolioSnapshot 投资组合快照
+// PortfolioSnapshot 投资组合快.
 type PortfolioSnapshot struct {
 	UserID             string
 	TotalValue         decimal.Decimal
@@ -68,9 +68,9 @@ type PortfolioSnapshot struct {
 	Timestamp          int64
 }
 
-// ===== 清算相关数据结构 =====
+// ===== 清算相关数据结构 ====.
 
-// SettlementBatch 清算批次
+// SettlementBatch 清算批.
 type SettlementBatch struct {
 	BatchID     string
 	Trades      []*TradeSettlement
@@ -79,7 +79,7 @@ type SettlementBatch struct {
 	CompletedAt *int64
 }
 
-// TradeSettlement 交易清算记录
+// TradeSettlement 交易清算记.
 type TradeSettlement struct {
 	TradeID    string
 	BuyUserID  string
@@ -91,20 +91,20 @@ type TradeSettlement struct {
 	SettledAt  int64
 }
 
-// ===== 定价相关数据结构 =====
+// ===== 定价相关数据结构 ====.
 
-// OptionPricingModel 期权定价模型
+// OptionPricingModel 期权定价模.
 type OptionPricingModel struct {
-	OptionType      string // CALL or PUT
+	OptionType      string // CALL or PU.
 	UnderlyingPrice decimal.Decimal
 	StrikePrice     decimal.Decimal
-	TimeToExpiry    decimal.Decimal // 年份
+	TimeToExpiry    decimal.Decimal // 年.
 	RiskFreeRate    decimal.Decimal
 	Volatility      decimal.Decimal
 	DividendYield   decimal.Decimal
 }
 
-// OptionPricingResult 期权定价结果
+// OptionPricingResult 期权定价结.
 type OptionPricingResult struct {
 	OptionPrice    decimal.Decimal
 	IntrinsicValue decimal.Decimal
@@ -116,9 +116,9 @@ type OptionPricingResult struct {
 	Rho            decimal.Decimal
 }
 
-// ===== 做市相关数据结构 =====
+// ===== 做市相关数据结构 ====.
 
-// MarketMakingQuote 做市报价
+// MarketMakingQuote 做市报.
 type MarketMakingQuote struct {
 	Symbol      string
 	BidPrice    decimal.Decimal
@@ -129,7 +129,7 @@ type MarketMakingQuote struct {
 	Timestamp   int64
 }
 
-// MarketMakingMetrics 做市指标
+// MarketMakingMetrics 做市指.
 type MarketMakingMetrics struct {
 	MarketMakerID string
 	Symbol        string
@@ -142,13 +142,13 @@ type MarketMakingMetrics struct {
 	Timestamp     int64
 }
 
-// ===== 量化相关数据结构 =====
+// ===== 量化相关数据结构 ====.
 
-// StrategySignal 策略信号
+// StrategySignal 策略信.
 type StrategySignal struct {
 	StrategyID  string
 	Symbol      string
-	Signal      string // BUY, SELL, HOLD
+	Signal      string // BUY, SELL, HOL.
 	Confidence  decimal.Decimal
 	TargetPrice decimal.Decimal
 	StopLoss    decimal.Decimal
@@ -156,7 +156,7 @@ type StrategySignal struct {
 	Timestamp   int64
 }
 
-// BacktestMetrics 回测指标
+// BacktestMetrics 回测指.
 type BacktestMetrics struct {
 	TotalReturn   decimal.Decimal
 	AnnualReturn  decimal.Decimal
@@ -169,9 +169,9 @@ type BacktestMetrics struct {
 	LosingTrades  int64
 }
 
-// ===== 市场模拟相关数据结构 =====
+// ===== 市场模拟相关数据结构 ====.
 
-// PriceBar K线数据
+// PriceBar K线数.
 type PriceBar struct {
 	Timestamp int64
 	Open      decimal.Decimal
@@ -181,7 +181,7 @@ type PriceBar struct {
 	Volume    decimal.Decimal
 }
 
-// SimulationState 模拟状态
+// SimulationState 模拟状.
 type SimulationState struct {
 	CurrentPrice decimal.Decimal
 	MinPrice     decimal.Decimal
@@ -191,9 +191,9 @@ type SimulationState struct {
 	Timestamp    int64
 }
 
-// ===== 监控分析相关数据结构 =====
+// ===== 监控分析相关数据结构 ====.
 
-// SystemMetricsData 系统指标数据
+// SystemMetricsData 系统指标数.
 type SystemMetricsData struct {
 	Timestamp         int64
 	CPUUsage          decimal.Decimal
@@ -206,7 +206,7 @@ type SystemMetricsData struct {
 	ErrorRate         decimal.Decimal
 }
 
-// TradeStatisticsData 交易统计数据
+// TradeStatisticsData 交易统计数.
 type TradeStatisticsData struct {
 	Symbol       string
 	TotalTrades  int64
@@ -220,7 +220,7 @@ type TradeStatisticsData struct {
 	Timestamp    int64
 }
 
-// UserAnalyticsData 用户分析数据
+// UserAnalyticsData 用户分析数.
 type UserAnalyticsData struct {
 	UserID           string
 	TotalTrades      int64
@@ -233,9 +233,9 @@ type UserAnalyticsData struct {
 	Timestamp        int64
 }
 
-// ===== 参考数据相关数据结构 =====
+// ===== 参考数据相关数据结构 ====.
 
-// SymbolInfo 交易对信息
+// SymbolInfo 交易对信.
 type SymbolInfo struct {
 	Symbol      string
 	BaseAsset   string
@@ -252,7 +252,7 @@ type SymbolInfo struct {
 	UpdatedAt   int64
 }
 
-// ExchangeInfo 交易所信息
+// ExchangeInfo 交易所信.
 type ExchangeInfo struct {
 	Name             string
 	Timezone         string
@@ -262,7 +262,7 @@ type ExchangeInfo struct {
 	UpdatedAt        int64
 }
 
-// AssetInfo 资产信息
+// AssetInfo 资产信.
 type AssetInfo struct {
 	Asset           string
 	Name            string
@@ -274,13 +274,13 @@ type AssetInfo struct {
 	UpdatedAt       int64
 }
 
-// ===== 通知相关数据结构 =====
+// ===== 通知相关数据结构 ====.
 
-// NotificationMessage 通知消息
+// NotificationMessage 通知消.
 type NotificationMessage struct {
 	NotificationID string
 	UserID         string
-	Type           string // ORDER, TRADE, RISK, SYSTEM
+	Type           string // ORDER, TRADE, RISK, SYSTE.
 	Title          string
 	Content        string
 	Metadata       map[string]string
@@ -289,16 +289,16 @@ type NotificationMessage struct {
 	ReadAt         *int64
 }
 
-// ===== 线程安全的缓存结构 =====
+// ===== 线程安全的缓存结构 ====.
 
-// ConcurrentCache 并发安全的缓存
+// ConcurrentCache 并发安全的缓.
 type ConcurrentCache struct {
 	mu       sync.RWMutex
 	data     map[string]any
-	expireAt map[string]int64 // 过期时间戳 (Unix Seconds)
+	expireAt map[string]int64 // 过期时间戳 (Unix Seconds.
 }
 
-// NewConcurrentCache 创建并发缓存
+// NewConcurrentCache 创建并发缓.
 func NewConcurrentCache() *ConcurrentCache {
 	return &ConcurrentCache{
 		data:     make(map[string]any),
@@ -306,7 +306,7 @@ func NewConcurrentCache() *ConcurrentCache {
 	}
 }
 
-// Set 设置缓存值
+// Set 设置缓存.
 // expireAt: 过期时间戳 (Unix Seconds)。如果为 0，表示永不过期。
 func (cc *ConcurrentCache) Set(key string, value any, expireAt int64) {
 	cc.mu.Lock()
@@ -315,7 +315,7 @@ func (cc *ConcurrentCache) Set(key string, value any, expireAt int64) {
 	cc.expireAt[key] = expireAt
 }
 
-// Get 获取缓存值
+// Get 获取缓存.
 func (cc *ConcurrentCache) Get(key string) (any, bool) {
 	cc.mu.RLock()
 	expiry, hasExpiry := cc.expireAt[key]
@@ -326,11 +326,11 @@ func (cc *ConcurrentCache) Get(key string) (any, bool) {
 		return nil, false
 	}
 
-	// 检查过期 (Lazy Expiration)
+	// 检查过期 (Lazy Expiration.
 	if hasExpiry && expiry > 0 && time.Now().Unix() > expiry {
-		// 升级锁进行删除
+		// 升级锁进行删.
 		cc.mu.Lock()
-		// 双重检查
+		// 双重检.
 		if exp, exists := cc.expireAt[key]; exists && exp > 0 && time.Now().Unix() > exp {
 			delete(cc.data, key)
 			delete(cc.expireAt, key)
@@ -342,7 +342,7 @@ func (cc *ConcurrentCache) Get(key string) (any, bool) {
 	return val, true
 }
 
-// Delete 删除缓存值
+// Delete 删除缓存.
 func (cc *ConcurrentCache) Delete(key string) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
@@ -350,7 +350,7 @@ func (cc *ConcurrentCache) Delete(key string) {
 	delete(cc.expireAt, key)
 }
 
-// Clear 清空缓存
+// Clear 清空缓.
 func (cc *ConcurrentCache) Clear() {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()

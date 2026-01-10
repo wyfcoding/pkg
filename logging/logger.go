@@ -18,33 +18,44 @@ import (
 	"gorm.io/gorm/logger"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace" // OpenTelemetry追踪
+	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	// LevelDebug 调试级别。
+	LevelDebug = "debug"
+	// LevelInfo 信息级别。
+	LevelInfo = "info"
+	// LevelWarn 警告级别。
+	LevelWarn = "warn"
+	// LevelError 错误级别。
+	LevelError = "error"
 )
 
 var (
-	// defaultLogger 是全局默认的Logger实例，采用单例模式。
+	// defaultLogger 是全局默认的 Logger 实例，采用单例模式。
 	defaultLogger *Logger
-	// once 用于确保InitLogger函数只被执行一次，保证defaultLogger的单例性。
+	// once 用于确保 InitLogger 函数只被执行一次，保证 defaultLogger 的单例性。
 	once sync.Once
 )
 
-// Config 定义日志配置
+// Config 定义日志配置结构。
 type Config struct {
 	Service    string
 	Module     string
 	Level      string
-	File       string // 日志文件路径，为空则只输出到 stdout
-	MaxSize    int    // 每个日志文件最大尺寸 (MB)
-	MaxBackups int    // 保留旧日志文件的最大个数
-	MaxAge     int    // 保留旧日志文件的最大天数
-	Compress   bool   // 是否压缩旧日志
+	File       string // 日志文件路径，为空则只输出到标准输出。
+	MaxSize    int    // 每个日志文件最大尺寸 (MB)。
+	MaxBackups int    // 保留旧日志文件的最大个数。
+	MaxAge     int    // 保留旧日志文件的最大天数。
+	Compress   bool   // 是否压缩旧日志。
 }
 
-// Logger 结构体封装了原生的 `*slog.Logger`，并添加了服务名和模块名，方便在日志中区分来源。
+// Logger 结构体封装了原生的 *slog.Logger，并添加了服务名和模块名，方便在日志中区分来源。
 type Logger struct {
 	*slog.Logger
-	Service string // 所属微服务名称
-	Module  string // 所属业务模块名称
+	Service string // 所属微服务名称。
+	Module  string // 所属业务模块名称。
 }
 
 // TraceHandler 是一个 Handler 中间件，负责从 Context 中提取链路追踪信息并扁平化到日志条目中。
@@ -53,76 +64,75 @@ type TraceHandler struct {
 }
 
 // Handle 实现日志条目的最终处理，自动补全链路追踪字段。
-func (h *TraceHandler) Handle(ctx context.Context, r slog.Record) error {
+func (h *TraceHandler) Handle(ctx context.Context, record slog.Record) error {
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
-		// 严格遵循规范字段命名：trace_id, span_id
-		r.AddAttrs(
+		// 严格遵循规范字段命名：trace_id, span_id。
+		record.AddAttrs(
 			slog.String("trace_id", spanCtx.TraceID().String()),
 			slog.String("span_id", spanCtx.SpanID().String()),
 		)
 	}
-	return h.Handler.Handle(ctx, r)
+
+	return h.Handler.Handle(ctx, record)
 }
 
-// NewFromConfig 创建一个新的Logger实例。
+// NewFromConfig 创建一个新的 Logger 实例。
 // 支持通过 Config 结构体配置日志切割。
 func NewFromConfig(cfg Config) *Logger {
 	var logLevel slog.Level
+
 	switch cfg.Level {
-	case "debug":
+	case LevelDebug:
 		logLevel = slog.LevelDebug
-	case "info":
+	case LevelInfo:
 		logLevel = slog.LevelInfo
-	case "warn":
+	case LevelWarn:
 		logLevel = slog.LevelWarn
-	case "error":
+	case LevelError:
 		logLevel = slog.LevelError
 	default:
 		logLevel = slog.LevelInfo
 	}
 
-	replaceAttr := func(_ []string, a slog.Attr) slog.Attr {
-		if a.Key == slog.TimeKey {
-			a.Key = "timestamp"
+	replaceAttr := func(_ []string, attr slog.Attr) slog.Attr {
+		if attr.Key == slog.TimeKey {
+			attr.Key = "timestamp"
 		}
-		return a
+
+		return attr
 	}
 
 	var handler slog.Handler
 
-	// 如果配置了文件路径，则使用 lumberjack 进行日志切割
 	if cfg.File != "" {
 		fileWriter := &lumberjack.Logger{
 			Filename:   cfg.File,
-			MaxSize:    cfg.MaxSize, // MB
+			MaxSize:    cfg.MaxSize,
 			MaxBackups: cfg.MaxBackups,
-			MaxAge:     cfg.MaxAge, // days
+			MaxAge:     cfg.MaxAge,
 			Compress:   cfg.Compress,
 		}
-		// JSONHandler 输出到文件
 		handler = slog.NewJSONHandler(fileWriter, &slog.HandlerOptions{
 			Level:       logLevel,
 			ReplaceAttr: replaceAttr,
 		})
 	} else {
-		// 默认输出到 Stdout
 		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			Level:       logLevel,
 			ReplaceAttr: replaceAttr,
 		})
 	}
 
-	// 使用TraceHandler装饰
 	traceHandler := &TraceHandler{Handler: handler}
 
-	logger := slog.New(traceHandler).With(
+	loggerInstance := slog.New(traceHandler).With(
 		slog.String("service", cfg.Service),
 		slog.String("module", cfg.Module),
 	)
 
 	return &Logger{
-		Logger:  logger,
+		Logger:  loggerInstance,
 		Service: cfg.Service,
 		Module:  cfg.Module,
 	}
@@ -130,164 +140,152 @@ func NewFromConfig(cfg Config) *Logger {
 
 // NewLogger 是创建一个带有简单参数的 logger 的兼容别名。
 func NewLogger(service, module string, level ...string) *Logger {
-	lvl := "info"
+	levelStr := LevelInfo
 	if len(level) > 0 {
-		lvl = level[0]
+		levelStr = level[0]
 	}
+
 	return NewFromConfig(Config{
 		Service: service,
 		Module:  module,
-		Level:   lvl,
+		Level:   levelStr,
 	})
 }
 
-// InitLogger 初始化全局默认日志记录器
-// 兼容旧的参数列表，但推荐使用新的 NewLogger(Config)
+// InitLogger 初始化全局默认日志记录器。
 func InitLogger(service, module string, level ...string) {
 	once.Do(func() {
-		lvl := "info"
+		levelStr := LevelInfo
 		if len(level) > 0 {
-			lvl = level[0]
+			levelStr = level[0]
 		}
+
 		defaultLogger = NewFromConfig(Config{
 			Service: service,
 			Module:  module,
-			Level:   lvl,
+			Level:   levelStr,
 		})
+
 		slog.SetDefault(defaultLogger.Logger)
 	})
 }
 
-// EnsureDefaultLogger 确保默认日志记录器已初始化
+// EnsureDefaultLogger 确保默认日志记录器已初始化。
 func EnsureDefaultLogger() {
 	if defaultLogger == nil {
-		InitLogger("default", "default", "info")
+		InitLogger("default", "default", LevelInfo)
 	}
 }
 
-// Default 返回默认日志记录器实例
+// Default 返回默认日志记录器实例。
 func Default() *Logger {
 	EnsureDefaultLogger()
+
 	return defaultLogger
 }
 
-// Info 记录 Info 级别日志
+// Info 记录 Info 级别日志。
 func Info(ctx context.Context, msg string, args ...any) {
 	EnsureDefaultLogger()
 	defaultLogger.InfoContext(ctx, msg, args...)
 }
 
-// Warn 记录 Warn 级别日志
+// Warn 记录 Warn 级别日志。
 func Warn(ctx context.Context, msg string, args ...any) {
 	EnsureDefaultLogger()
 	defaultLogger.WarnContext(ctx, msg, args...)
 }
 
-// Error 记录 Error 级别日志
+// Error 记录 Error 级别日志。
 func Error(ctx context.Context, msg string, args ...any) {
 	EnsureDefaultLogger()
 	defaultLogger.ErrorContext(ctx, msg, args...)
 }
 
-// Debug 记录 Debug 级别日志
+// Debug 记录 Debug 级别日志。
 func Debug(ctx context.Context, msg string, args ...any) {
 	EnsureDefaultLogger()
 	defaultLogger.DebugContext(ctx, msg, args...)
 }
 
-// InfoContext 兼容接口
+// InfoContext 兼容标准库接口。
 func InfoContext(ctx context.Context, msg string, args ...any) {
 	Info(ctx, msg, args...)
 }
 
-// WarnContext 兼容接口
+// WarnContext 兼容标准库接口。
 func WarnContext(ctx context.Context, msg string, args ...any) {
 	Warn(ctx, msg, args...)
 }
 
-// ErrorContext 兼容接口
+// ErrorContext 兼容标准库接口。
 func ErrorContext(ctx context.Context, msg string, args ...any) {
 	Error(ctx, msg, args...)
 }
 
-// DebugContext 兼容接口
+// DebugContext 兼容标准库接口。
 func DebugContext(ctx context.Context, msg string, args ...any) {
 	Debug(ctx, msg, args...)
 }
 
-// LogDuration 记录操作耗时
+// LogDuration 记录操作耗时。
 func LogDuration(ctx context.Context, operation string, args ...any) func() {
 	start := time.Now()
+
 	return func() {
-		// 将耗时附加到日志参数中
 		logArgs := append(args, "duration", time.Since(start))
 		Info(ctx, fmt.Sprintf("%s finished", operation), logArgs...)
 	}
 }
 
-// module: 日志所属的模块名称。
-// 返回一个配置好的Logger实例，其日志输出格式为JSON，并默认包含服务名和模块名。
-
-// InitLogger 初始化全局默认的Logger。
-// 此函数应在应用程序启动时调用一次，以配置全局日志行为。
-
-// GetLogger 返回全局默认的Logger实例。
-// 如果尚未通过InitLogger初始化，它会返回一个带有"unknown"服务和模块的默认Logger。
+// GetLogger 返回全局默认的 Logger 实例。
 func GetLogger() *Logger {
 	if defaultLogger == nil {
 		return NewFromConfig(Config{Service: "unknown", Module: "unknown"})
 	}
+
 	return defaultLogger
 }
 
-// GormLogger 是一个自定义的GORM日志器，它实现了 `gorm.io/gorm/logger.Interface` 接口，
-// 从而允许GORM将数据库操作日志输出到统一的slog日志系统中。
+// GormLogger 是一个自定义的 GORM 日志器。
 type GormLogger struct {
-	logger        *slog.Logger  // 用于输出日志的slog实例
-	SlowThreshold time.Duration // 慢查询阈值，超过此阈值的SQL查询将被记录为警告
+	loggerInstance *slog.Logger
+	SlowThreshold  time.Duration
 }
 
-// NewGormLogger 创建一个新的GormLogger实例。
-// logger: 使用的Logger实例。
-// slowThreshold: 慢查询的持续时间阈值。
-func NewGormLogger(logger *Logger, slowThreshold time.Duration) *GormLogger {
+// NewGormLogger 创建一个新的 GormLogger 实例。
+func NewGormLogger(loggerObj *Logger, slowThreshold time.Duration) *GormLogger {
 	return &GormLogger{
-		logger:        logger.Logger,
-		SlowThreshold: slowThreshold,
+		loggerInstance: loggerObj.Logger,
+		SlowThreshold:  slowThreshold,
 	}
 }
 
-// LogMode 实现了gorm logger.Interface的LogMode方法。
-// 鉴于slog的设计，通常不直接在运行时动态更改现有logger实例的级别，
-// 而是通过创建新的Handler或在HandlerOptions中配置。
-// 此处直接返回自身，表示沿用当前logger的配置。
+// LogMode 实现了 gorm logger.Interface 的 LogMode 方法。
 func (l *GormLogger) LogMode(_ logger.LogLevel) logger.Interface {
-	// GORM的LogLevel与slog的LogLevel映射关系需要自行定义，或者在此处根据level做过滤。
-	// 目前简单返回自身，意味着GORM的日志级别控制将主要依赖于NewLogger中配置的slog级别。
 	return l
 }
 
-// Info 实现了gorm logger.Interface的Info方法，将GORM的Info级别日志输出为slog的Info级别。
+// Info 实现了 gorm logger.Interface 的 Info 方法。
 func (l *GormLogger) Info(ctx context.Context, msg string, data ...any) {
-	l.logger.InfoContext(ctx, fmt.Sprintf(msg, data...))
+	l.loggerInstance.InfoContext(ctx, fmt.Sprintf(msg, data...))
 }
 
-// Warn 实现了gorm logger.Interface的Warn方法，将GORM的Warn级别日志输出为slog的Warn级别。
+// Warn 实现了 gorm logger.Interface 的 Warn 方法。
 func (l *GormLogger) Warn(ctx context.Context, msg string, data ...any) {
-	l.logger.WarnContext(ctx, fmt.Sprintf(msg, data...))
+	l.loggerInstance.WarnContext(ctx, fmt.Sprintf(msg, data...))
 }
 
-// Error 实现了gorm logger.Interface的Error方法，将GORM的Error级别日志输出为slog的Error级别。
+// Error 实现了 gorm logger.Interface 的 Error 方法。
 func (l *GormLogger) Error(ctx context.Context, msg string, data ...any) {
-	l.logger.ErrorContext(ctx, fmt.Sprintf(msg, data...))
+	l.loggerInstance.ErrorContext(ctx, fmt.Sprintf(msg, data...))
 }
 
-// Trace 实现了gorm logger.Interface的Trace方法
+// Trace 实现了 gorm logger.Interface 的 Trace 方法。
 func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	elapsed := time.Since(begin)
 	sql, rows := fc()
 
-	// 顶级可观测性优化：将 SQL 注入到分布式追踪的 Span 属性中
 	span := trace.SpanFromContext(ctx)
 	if span.IsRecording() {
 		span.SetAttributes(
@@ -300,17 +298,18 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (stri
 		slog.String("sql", sql),
 		slog.Duration("elapsed", elapsed),
 	}
-	if rows != -1 { // 检查是否返回了影响行数
-		fields = append(fields, slog.Int64("rows", rows)) // 影响行数
+
+	if rows != -1 {
+		fields = append(fields, slog.Int64("rows", rows))
 	}
 
-	if err != nil && err != logger.ErrRecordNotFound { // 如果存在错误且不是“未找到记录”错误
-		fields = append(fields, slog.Any("error", err)) // 错误信息
-		l.logger.ErrorContext(ctx, "gorm trace error", fields...)
-	} else if l.SlowThreshold != 0 && elapsed > l.SlowThreshold { // 如果是慢查询
+	if err != nil && err != logger.ErrRecordNotFound {
+		fields = append(fields, slog.Any("error", err))
+		l.loggerInstance.ErrorContext(ctx, "gorm trace error", fields...)
+	} else if l.SlowThreshold != 0 && elapsed > l.SlowThreshold {
 		fields = append(fields, slog.String("type", "slow_query"))
-		l.logger.WarnContext(ctx, "gorm trace slow query", fields...)
-	} else { // 普通查询
-		l.logger.DebugContext(ctx, "gorm trace", fields...)
+		l.loggerInstance.WarnContext(ctx, "gorm trace slow query", fields...)
+	} else {
+		l.loggerInstance.DebugContext(ctx, "gorm trace", fields...)
 	}
 }

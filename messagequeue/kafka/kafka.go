@@ -17,14 +17,14 @@ import (
 
 var defaultProducer *Producer
 
-// DefaultProducer 返回全局默认生产者实例
+// DefaultProducer 返回全局默认生产者实例。
 func DefaultProducer() *Producer {
 	return defaultProducer
 }
 
-// SetDefaultProducer 设置全局默认生产者实例
-func SetDefaultProducer(p *Producer) {
-	defaultProducer = p
+// SetDefaultProducer 设置全局默认生产者实例。
+func SetDefaultProducer(producer *Producer) {
+	defaultProducer = producer
 }
 
 // Handler 定义了消息处理函数的原型。
@@ -32,14 +32,14 @@ type Handler func(ctx context.Context, msg kafkago.Message) error
 
 // Producer 封装了 Kafka 消息生产者，支持自动 DLQ（死信队列）路由、指标监控及分布式追踪。
 type Producer struct {
-	writer    *kafkago.Writer  // 主消息写入器
-	dlqWriter *kafkago.Writer  // 死信队列写入器，用于处理发送失败的消息
-	logger    *logging.Logger  // 日志记录器
-	metrics   *metrics.Metrics // 指标采集组件
+	writer    *kafkago.Writer  // 主消息写入器。
+	dlqWriter *kafkago.Writer  // 死信队列写入器，用于处理发送失败的消息。
+	logger    *logging.Logger  // 日志记录器。
+	metrics   *metrics.Metrics // 指标采集组件。
 
-	// 监控指标
-	producedTotal *prometheus.CounterVec   // 消息发送总量计数器 (按 topic 和 status 维度)
-	duration      *prometheus.HistogramVec // 消息发送耗时分布
+	// 监控指标。
+	producedTotal *prometheus.CounterVec   // 消息发送总量计数器 (按 topic 和 status 维度)。
+	duration      *prometheus.HistogramVec // 消息发送耗时分布。
 }
 
 // NewProducer 初始化并返回一个功能增强的 Kafka 生产者。
@@ -139,13 +139,13 @@ func (p *Producer) Close() error {
 
 // Consumer 封装了 Kafka 消息消费者，支持自动提交、并发处理、指标监控及 Trace 传播。
 type Consumer struct {
-	reader  *kafkago.Reader  // Kafka 读取器实例
-	logger  *logging.Logger  // 日志记录器
-	metrics *metrics.Metrics // 指标采集组件
+	reader  *kafkago.Reader  // Kafka 读取器实例。
+	logger  *logging.Logger  // 日志记录器。
+	metrics *metrics.Metrics // 指标采集组件。
 
-	// 监控指标
-	consumedTotal *prometheus.CounterVec   // 消息消费总量计数器
-	consumeLag    *prometheus.HistogramVec // 消息消费延迟（从生产到消费的时间差）
+	// 监控指标。
+	consumedTotal *prometheus.CounterVec   // 消息消费总量计数器。
+	consumeLag    *prometheus.HistogramVec // 消息消费延迟（从生产到消费的时间差）。
 }
 
 func NewConsumer(cfg config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Consumer {
@@ -182,14 +182,14 @@ func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
 			continue
 		}
 
-		// 1. 从消息头提取 Trace 上下文
+		// 1. 从消息头提取 Trace 上下文。
 		carrier := propagation.MapCarrier{}
 		for _, h := range m.Headers {
 			carrier[h.Key] = string(h.Value)
 		}
 		extractedCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
 
-		// 2. 开启消费 Span
+		// 2. 开启消费 Span。
 		spanCtx, span := tracing.StartSpan(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
 
 		handleErr := handler(spanCtx, m)

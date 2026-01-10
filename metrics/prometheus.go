@@ -1,3 +1,4 @@
+// Package metrics 提供了基于 Prometheus 的应用指标采集能力。
 package metrics
 
 import (
@@ -13,13 +14,16 @@ import (
 
 // Metrics 封装了基于 Prometheus 的指标采集注册表及预定义的标准监控指标。
 type Metrics struct {
-	registry *prometheus.Registry // 内部独立的 Prometheus 注册中心
+	registry *prometheus.Registry
 
-	// 预定义的标准指标，减少各业务模块的样板代码
-	HTTPRequestsTotal   *prometheus.CounterVec   // HTTP 请求总量 (维度: method, path, status)
-	HTTPRequestDuration *prometheus.HistogramVec // HTTP 请求耗时分布
-	GRPCRequestsTotal   *prometheus.CounterVec   // gRPC 请求总量 (维度: service, method, status)
-	GRPCRequestDuration *prometheus.HistogramVec // gRPC 请求耗时分布
+	// HTTPRequestsTotal HTTP 请求总量 (维度: method, path, status)。
+	HTTPRequestsTotal *prometheus.CounterVec
+	// HTTPRequestDuration HTTP 请求耗时分布。
+	HTTPRequestDuration *prometheus.HistogramVec
+	// GRPCRequestsTotal gRPC 请求总量 (维度: service, method, status)。
+	GRPCRequestsTotal *prometheus.CounterVec
+	// GRPCRequestDuration gRPC 请求耗时分布。
+	GRPCRequestDuration *prometheus.HistogramVec
 }
 
 // NewMetrics 初始化并返回一个新的指标采集器。
@@ -29,54 +33,57 @@ func NewMetrics(serviceName string) *Metrics {
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
-	m := &Metrics{registry: reg}
+	metricsInstance := &Metrics{registry: reg}
 
-	// 初始化各标准指标...
-	m.HTTPRequestsTotal = m.NewCounterVec(prometheus.CounterOpts{
+	metricsInstance.HTTPRequestsTotal = metricsInstance.NewCounterVec(prometheus.CounterOpts{
 		Name: "http_server_requests_total",
 		Help: "Total number of HTTP requests",
 	}, []string{"method", "path", "status"})
 
-	m.HTTPRequestDuration = m.NewHistogramVec(prometheus.HistogramOpts{
+	metricsInstance.HTTPRequestDuration = metricsInstance.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "http_server_request_duration_seconds",
 		Help:    "HTTP request latency in seconds",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
-	m.GRPCRequestsTotal = m.NewCounterVec(prometheus.CounterOpts{
+	metricsInstance.GRPCRequestsTotal = metricsInstance.NewCounterVec(prometheus.CounterOpts{
 		Name: "grpc_server_requests_total",
 		Help: "Total number of gRPC requests",
 	}, []string{"service", "method", "status"})
 
-	m.GRPCRequestDuration = m.NewHistogramVec(prometheus.HistogramOpts{
+	metricsInstance.GRPCRequestDuration = metricsInstance.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "grpc_server_request_duration_seconds",
 		Help:    "gRPC request latency in seconds",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"service", "method"})
 
 	slog.Info("unified metrics registry initialized", "service", serviceName)
-	return m
+
+	return metricsInstance
 }
 
 // NewCounterVec 创建并注册一个新的计数器指标。
 func (m *Metrics) NewCounterVec(opts prometheus.CounterOpts, labelNames []string) *prometheus.CounterVec {
-	cv := prometheus.NewCounterVec(opts, labelNames)
-	m.registry.MustRegister(cv)
-	return cv
+	counterVec := prometheus.NewCounterVec(opts, labelNames)
+	m.registry.MustRegister(counterVec)
+
+	return counterVec
 }
 
 // NewGaugeVec 创建并注册一个新的仪表盘指标。
 func (m *Metrics) NewGaugeVec(opts prometheus.GaugeOpts, labelNames []string) *prometheus.GaugeVec {
-	gv := prometheus.NewGaugeVec(opts, labelNames)
-	m.registry.MustRegister(gv)
-	return gv
+	gaugeVec := prometheus.NewGaugeVec(opts, labelNames)
+	m.registry.MustRegister(gaugeVec)
+
+	return gaugeVec
 }
 
 // NewHistogramVec 创建并注册一个新的直方图指标。
 func (m *Metrics) NewHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
-	hv := prometheus.NewHistogramVec(opts, labelNames)
-	m.registry.MustRegister(hv)
-	return hv
+	histogramVec := prometheus.NewHistogramVec(opts, labelNames)
+	m.registry.MustRegister(histogramVec)
+
+	return histogramVec
 }
 
 // Handler 返回用于暴露指标的 HTTP 处理器。
@@ -87,19 +94,24 @@ func (m *Metrics) Handler() http.Handler {
 // ExposeHTTP 在指定端口启动一个独立的 HTTP 服务器用于暴露指标数据。
 // 返回一个清理函数用于优雅关闭该服务器。
 func (m *Metrics) ExposeHTTP(port string) func() {
-	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: m.Handler(),
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           m.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
 	}
+
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("metrics server error", "error", err)
 		}
 	}()
+
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		const shutdownTimeout = 5 * time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
+
+		if err := server.Shutdown(ctx); err != nil {
 			slog.Error("failed to shutdown metrics server", "error", err)
 		}
 	}

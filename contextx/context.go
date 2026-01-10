@@ -9,12 +9,12 @@ import (
 type contextKey string
 
 const (
-	UserIDKey   contextKey = "user_id"    // 用户唯一标识 Key
-	TenantIDKey contextKey = "tenant_id"  // 租户 ID Key
-	RoleKey     contextKey = "user_role"  // 用户角色 Key
-	IPKey       contextKey = "client_ip"  // 客户端 IP Key
-	UAKey       contextKey = "user_agent" // 用户代理 Key
-	DBTxKey     contextKey = "db_tx"      // 数据库事务 Key
+	UserIDKey   contextKey = "user_id"    // 用户唯一标识 Key。
+	TenantIDKey contextKey = "tenant_id"  // 租户 ID Key。
+	RoleKey     contextKey = "user_role"  // 用户角色 Key。
+	IPKey       contextKey = "client_ip"  // 客户端 IP Key。
+	UAKey       contextKey = "user_agent" // 用户代理 Key。
+	DBTxKey     contextKey = "db_tx"      // 数据库事务 Key。
 )
 
 // WithTx 将 GORM 事务实例注入到 Context 中。

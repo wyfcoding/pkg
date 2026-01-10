@@ -20,9 +20,9 @@ import (
 
 // ClientFactory 是一个生产级的 gRPC 客户端工厂，集成了治理能力（限流、熔断、重试、监控、追踪）。
 type ClientFactory struct {
-	logger  *logging.Logger             // 日志记录器
-	metrics *metrics.Metrics            // 性能指标采集组件
-	cfg     config.CircuitBreakerConfig // 全局默认熔断配置
+	logger  *logging.Logger             // 日志记录器。
+	metrics *metrics.Metrics            // 性能指标采集组件。
+	cfg     config.CircuitBreakerConfig // 全局默认熔断配置。
 }
 
 // NewClientFactory 初始化 gRPC 客户端工厂。

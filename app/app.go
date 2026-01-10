@@ -9,17 +9,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wyfcoding/pkg/server" // 导入服务器接口定义
+	"github.com/wyfcoding/pkg/server" // 导入服务器接口定义。
 )
 
-// App 是应用程序的核心容器，负责管理应用程序的生命周期，
+// App 是应用程序的核心容器，负责管理应用程序的生命周期。
 // 包括注册和启动服务器、处理信号量、以及优雅地关闭所有资源。
 type App struct {
-	name   string          // 应用程序的名称
-	logger *slog.Logger    // 应用程序的日志记录器
-	opts   options         // 应用程序的选项，包含服务器和清理函数列表
-	ctx    context.Context // 应用程序的根上下文，用于控制生命周期
-	cancel func()          // 取消函数，调用它会取消 `ctx`
+	name   string          // 应用程序的名称。
+	logger *slog.Logger    // 应用程序的日志记录器。
+	opts   options         // 应用程序的选项，包含服务器和清理函数列表。
+	ctx    context.Context // 应用程序的根上下文，用于控制生命周期。
+	cancel func()          // 取消函数，调用它会取消 a.ctx。
 }
 
 // New 创建一个新的应用程序实例。
@@ -75,7 +75,7 @@ func (a *App) Run() error {
 	}
 
 	// 创建一个带有超时机制的上下文，用于控制服务器的关闭时间，防止无限等待。
-	// 默认超时5秒，可通过Option配置（后续优化）
+	// 默认超时5秒，可通过Option配置（后续优化.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel() // 确保在函数退出时取消此上下文。
 
@@ -106,8 +106,8 @@ func (a *App) printBanner() {
      \/  \/          |_|     |_|       
 `
 	// 简单打印 Banner，不依赖外部库。后续可以加入更炫酷的ASCII Art。
-	// 这里使用 println 确保在日志初始化前也能看到，或者使用 logger.Info
-	// 鉴于 logger 已经初始化，使用 logger.Info
+	// 这里使用 println 确保在日志初始化前也能看到，或者使用 logger.Inf.
+	// 鉴于 logger 已经初始化，使用 logger.Inf.
 	a.logger.Info(banner)
 	a.logger.Info("Application starting...", "name", a.name, "pid", os.Getpid())
 }

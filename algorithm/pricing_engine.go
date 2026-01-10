@@ -1,7 +1,7 @@
 // Package algorithm 提供高性能算法集合。
 // 此文件实现了动态定价引擎，集成了多种经济学模型与优化算法。
 //
-// 核心算法与复杂度：
+// 核心算法与复杂度.
 // 1. 因子加权定价 (CalculatePrice): O(1)。
 // 2. 需求预测 (PredictDemand): O(N)，基于最小二乘法的线性回归，N 为历史数据点数量。
 // 3. 利润最优化搜索 (OptimalPriceForProfit): O(log((Max-Min)/epsilon))，采用黄金分割搜索算法 (Golden Section Search)。
@@ -48,14 +48,14 @@ type PricingFactors struct {
 
 // PricingResult 结构体包含价格计算结果及各因素的影响详情。
 type PricingResult struct {
-	FinalPrice       int64   // 最终价格
-	BasePrice        int64   // 基础价格
-	InventoryFactor  float64 // 库存因素调整系数
-	DemandFactor     float64 // 需求因素调整系数
-	CompetitorFactor float64 // 竞品因素调整系数
-	TimeFactor       float64 // 时间因素调整系数
-	SeasonFactor     float64 // 季节因素调整系数
-	UserFactor       float64 // 用户因素调整系数
+	FinalPrice       int64   // 最终价.
+	BasePrice        int64   // 基础价.
+	InventoryFactor  float64 // 库存因素调整系.
+	DemandFactor     float64 // 需求因素调整系.
+	CompetitorFactor float64 // 竞品因素调整系.
+	TimeFactor       float64 // 时间因素调整系.
+	SeasonFactor     float64 // 季节因素调整系.
+	UserFactor       float64 // 用户因素调整系.
 }
 
 // CalculatePrice 根据一系列动态定价因素计算商品的调整后价格。
@@ -158,7 +158,7 @@ func (pe *PricingEngine) CalculateDemandElasticity(currentPrice, currentDemand i
 // 弹性 e = (dQ/dP) * (P/Q)。 在线性模型 Q = a + bP 中， dQ/dP = b。
 func (pe *PricingEngine) EstimateElasticityFromHistory(price int64, historicalData []DemandData) float64 {
 	if len(historicalData) < 2 {
-		return pe.elasticity // 数据不足，返回默认弹性
+		return pe.elasticity // 数据不足，返回默认弹.
 	}
 
 	n := float64(len(historicalData))
@@ -173,7 +173,7 @@ func (pe *PricingEngine) EstimateElasticityFromHistory(price int64, historicalDa
 		sumX2 += x * x
 	}
 
-	// 计算回归系数 b (即 dQ/dP)
+	// 计算回归系数 b (即 dQ/dP.
 	denominator := n*sumX2 - sumX*sumX
 	if denominator == 0 {
 		return 0
@@ -181,13 +181,13 @@ func (pe *PricingEngine) EstimateElasticityFromHistory(price int64, historicalDa
 	b := (n*sumXY - sumX*sumY) / denominator
 	a := (sumY - b*sumX) / n
 
-	// 计算该价格点的预测需求 Q
+	// 计算该价格点的预测需求 .
 	q := a + b*float64(price)
 	if q <= 0 {
 		return 0
 	}
 
-	// 弹性 e = b * (P/Q)
+	// 弹性 e = b * (P/Q.
 	return b * (float64(price) / q)
 }
 
@@ -198,12 +198,12 @@ func (pe *PricingEngine) OptimalPrice(cost int64, historicalData []DemandData) i
 		return pe.basePrice
 	}
 
-	// 定义基于历史数据回归的需求函数
+	// 定义基于历史数据回归的需求函.
 	demandFunc := func(p int64) int64 {
 		return pe.PredictDemand(p, historicalData)
 	}
 
-	// 调用鲁棒的搜索算法
+	// 调用鲁棒的搜索算.
 	return pe.OptimalPriceForProfit(cost, demandFunc)
 }
 
@@ -397,7 +397,7 @@ func (pe *PricingEngine) CompetitivePricing(competitorPrices []int64, strategy s
 // 使用最小二乘线性回归模型预测：y = a + b*x，其中 y=需求量, x=价格。
 func (pe *PricingEngine) PredictDemand(price int64, historicalData []DemandData) int64 {
 	if len(historicalData) < 2 {
-		return 0 // 数据不足以进行回归分析
+		return 0 // 数据不足以进行回归分.
 	}
 
 	n := float64(len(historicalData))
@@ -412,21 +412,21 @@ func (pe *PricingEngine) PredictDemand(price int64, historicalData []DemandData)
 		sumX2 += x * x
 	}
 
-	// 计算分母
+	// 计算分.
 	denominator := n*sumX2 - sumX*sumX
 	if denominator == 0 {
-		// 如果所有历史价格都相同，无法计算斜率，退化为平均需求
+		// 如果所有历史价格都相同，无法计算斜率，退化为平均需.
 		return int64(sumY / n)
 	}
 
-	// 计算回归系数 b 和 a
+	// 计算回归系数 b 和 .
 	b := (n*sumXY - sumX*sumY) / denominator
 	a := (sumY - b*sumX) / n
 
 	// 预测需求。
 	predictedDemand := a + b*float64(price)
 
-	// 真实化处理：需求量不能为负，且不应超过历史最高需求的合理倍数
+	// 真实化处理：需求量不能为负，且不应超过历史最高需求的合理倍.
 	if predictedDemand < 0 {
 		predictedDemand = 0
 	}
@@ -437,8 +437,8 @@ func (pe *PricingEngine) PredictDemand(price int64, historicalData []DemandData)
 // DemandData 结构体定义了历史需求数据点。
 // 注意：此结构体通常在外部定义，此处为占位。
 type DemandData struct {
-	Price  int64 // 价格
-	Demand int64 // 需求量
+	Price  int64 // 价.
+	Demand int64 // 需求.
 }
 
 // CalculateRevenue 计算总收入。

@@ -10,15 +10,15 @@ import (
 // UserBehavior 结构体定义了用户的单个行为事件。
 // 它是机器人检测算法的基本输入。
 type UserBehavior struct {
-	UserID    uint64    // 用户的唯一标识符
-	IP        string    // 用户的IP地址
-	UserAgent string    // 用户的User-Agent字符串
-	Timestamp time.Time // 行为发生的时间戳
-	Action    string    // 用户的具体操作，例如 "view"（浏览），"add_to_cart"（加入购物车），"kill"（秒杀）
+	UserID    uint64    // 用户的唯一标识。
+	IP        string    // 用户的 IP 地址。
+	UserAgent string    // 用户的 User-Agent 字符串。
+	Timestamp time.Time // 行为发生的时间。
+	Action    string    // 用户的具体操作，例如 "view"（浏览），"add_to_cart"（加入购物车），"kill"（秒杀）。
 }
 
 // AntiBotDetector 是一个防刷检测器，用于识别和评分潜在的机器人行为。
-// 它通过分析用户的请求频率、行为模式和IP异常等多个维度进行判断。
+// 它通过分析用户的请求频率、行为模式和 IP 异常等多个维度进行判断。
 type AntiBotDetector struct {
 	// userRequests 存储每个用户ID在滑动窗口内的请求时间戳，用于检测用户级别的请求频率。
 	userRequests map[uint64][]time.Time
@@ -28,11 +28,11 @@ type AntiBotDetector struct {
 	// userBehaviors 存储每个用户ID的近期行为序列，用于分析行为模式。
 	userBehaviors map[uint64][]UserBehavior
 
-	mu sync.RWMutex // 读写锁，用于保护 detector 内部数据结构的并发访问
+	mu sync.RWMutex // 读写锁，用于保护 detector 内部数据结构的并发访问。
 }
 
 // NewAntiBotDetector 创建并返回一个新的 AntiBotDetector 实例。
-// 它会初始化内部数据结构，并启动一个后台goroutine定期清理过期数据。
+// 它会初始化内部数据结构，并启动一个后台 goroutine 定期清理过期数据。
 func NewAntiBotDetector() *AntiBotDetector {
 	detector := &AntiBotDetector{
 		userRequests:  make(map[uint64][]time.Time),
@@ -40,7 +40,7 @@ func NewAntiBotDetector() *AntiBotDetector {
 		userBehaviors: make(map[uint64][]UserBehavior),
 	}
 
-	// 启动一个独立的goroutine定期清理过期的用户行为和请求记录。
+	// 启动一个独立的 goroutine 定期清理过期的用户行为和请求记录。
 	go detector.cleanup()
 	slog.Info("AntiBotDetector initialized and background cleanup started")
 
@@ -48,7 +48,7 @@ func NewAntiBotDetector() *AntiBotDetector {
 }
 
 // IsBot 判断一个给定的用户行为是否属于机器人行为。
-// 它综合了请求频率、行为模式和IP异常等多种检测维度。
+// 它综合了请求频率、行为模式和 IP 异常等多种检测维度。
 // 返回值：一个布尔值表示是否是机器人，以及一个字符串说明判断为机器人的原因。
 func (d *AntiBotDetector) IsBot(behavior UserBehavior) (bool, string) {
 	start := time.Now()
@@ -67,7 +67,7 @@ func (d *AntiBotDetector) IsBot(behavior UserBehavior) (bool, string) {
 		return true, reason
 	}
 
-	// 3. 检查IP地址是否存在异常。
+	// 3. 检查 IP 地址是否存在异常。
 	if isAbnormalIP, reason := d.checkIPAbnormal(behavior); isAbnormalIP {
 		slog.Warn("Bot detected by IP abnormal", "user_id", behavior.UserID, "ip", behavior.IP, "reason", reason, "duration", time.Since(start))
 		return true, reason
@@ -79,13 +79,13 @@ func (d *AntiBotDetector) IsBot(behavior UserBehavior) (bool, string) {
 	return false, "" // 不是机器人。
 }
 
-// checkFrequency 检查用户和IP的请求频率是否超过阈值。
+// checkFrequency 检查用户和 IP 的请求频率是否超过阈值。
 // 使用滑动窗口机制来统计一段时间内的请求数量。
 func (d *AntiBotDetector) checkFrequency(behavior UserBehavior) (bool, string) {
 	now := behavior.Timestamp
-	windowSize := 10 * time.Second // 定义滑动窗口大小为10秒。
+	windowSize := 10 * time.Second // 定义滑动窗口大小为 10 秒。
 
-	// 检查用户ID的请求频率：
+	// 检查用户 ID 的请求频率。
 	// 清理当前用户在滑动窗口之外的旧请求记录，只保留在窗口内的请求。
 	if requests, exists := d.userRequests[behavior.UserID]; exists {
 		validRequests := make([]time.Time, 0)
@@ -96,14 +96,14 @@ func (d *AntiBotDetector) checkFrequency(behavior UserBehavior) (bool, string) {
 		}
 		d.userRequests[behavior.UserID] = validRequests
 
-		// 如果10秒内某个用户请求次数超过20次，则判断为高频率。
+		// 如果 10 秒内某个用户请求次数超过 20 次，则判断为高频率。
 		if len(validRequests) >= 20 {
 			return true, "用户请求频率过高"
 		}
 	}
 
-	// 检查IP地址的请求频率：
-	// 清理当前IP在滑动窗口之外的旧请求记录。
+	// 检查 IP 地址的请求频率。
+	// 清理当前 IP 在滑动窗口之外的旧请求记录。
 	if requests, exists := d.ipRequests[behavior.IP]; exists {
 		validRequests := make([]time.Time, 0)
 		for _, t := range requests {
@@ -113,8 +113,8 @@ func (d *AntiBotDetector) checkFrequency(behavior UserBehavior) (bool, string) {
 		}
 		d.ipRequests[behavior.IP] = validRequests
 
-		// 如果10秒内某个IP地址请求次数超过50次，则判断为高频率。
-		// 注意：同一IP下可能存在多个正常用户，所以阈值通常高于单个用户的。
+		// 如果 10 秒内某个 IP 地址请求次数超过 50 次，则判断为高频率。
+		// 注意：同一 IP 下可能存在多个正常用户，所以阈值通常高于单个用户的。
 		if len(validRequests) >= 50 {
 			return true, "IP请求频率过高"
 		}
@@ -128,11 +128,11 @@ func (d *AntiBotDetector) checkFrequency(behavior UserBehavior) (bool, string) {
 func (d *AntiBotDetector) checkBehaviorPattern(behavior UserBehavior) (bool, string) {
 	behaviors, exists := d.userBehaviors[behavior.UserID]
 	// 如果行为记录不足，或者用户不存在，则无法判断模式。
-	if !exists || len(behaviors) < 5 { // 至少需要5个行为才能初步分析模式。
+	if !exists || len(behaviors) < 5 { // 至少需要 5 个行为才能初步分析模式。
 		return false, ""
 	}
 
-	// 提取用户最近的10个行为进行分析。
+	// 提取用户最近的 10 个行为进行分析。
 	recentBehaviors := behaviors
 	if len(behaviors) > 10 {
 		recentBehaviors = behaviors[len(behaviors)-10:]
@@ -148,7 +148,7 @@ func (d *AntiBotDetector) checkBehaviorPattern(behavior UserBehavior) (bool, str
 		return true, "缺少正常浏览行为"
 	}
 
-	// 3. 检查UserAgent字符串是否异常，例如是空白的、伪造的或者非常罕见的。
+	// 3. 检查 UserAgent 字符串是否异常，例如是空白的、伪造的或者非常罕见的。
 	if d.isAbnormalUserAgent(behavior.UserAgent) {
 		return true, "UserAgent异常"
 	}
@@ -159,7 +159,7 @@ func (d *AntiBotDetector) checkBehaviorPattern(behavior UserBehavior) (bool, str
 // isRegularInterval 检查给定行为序列的时间间隔是否过于规律。
 // 通过计算行为间隔的方差来判断，方差越小表示越规律。
 func (d *AntiBotDetector) isRegularInterval(behaviors []UserBehavior) bool {
-	if len(behaviors) < 3 { // 至少需要3个行为才能计算2个间隔。
+	if len(behaviors) < 3 { // 至少需要 3 个行为才能计算 2 个间隔。
 		return false
 	}
 
@@ -184,7 +184,7 @@ func (d *AntiBotDetector) isRegularInterval(behaviors []UserBehavior) bool {
 	}
 	variance /= float64(len(intervals))
 
-	// 如果方差非常小（例如小于0.1）且平均间隔也很小（例如小于2秒），则认为时间间隔过于规律。
+	// 如果方差非常小（例如小于 0.1）且平均间隔也很小（例如小于 2 秒），则认为时间间隔过于规律。
 	return variance < 0.1 && mean < 2.0
 }
 
@@ -195,7 +195,7 @@ func (d *AntiBotDetector) isDirectKill(behaviors []UserBehavior, current UserBeh
 		return false
 	}
 
-	// 检查最近的5个行为中是否有“view”（浏览）行为。
+	// 检查最近的 5 个行为中是否有“view”（浏览）行为。
 	hasView := false
 	for i := len(behaviors) - 1; i >= 0 && i >= len(behaviors)-5; i-- {
 		if behaviors[i].Action == "view" {
@@ -207,14 +207,14 @@ func (d *AntiBotDetector) isDirectKill(behaviors []UserBehavior, current UserBeh
 	return !hasView // 如果没有浏览行为，则认为是直接秒杀。
 }
 
-// isAbnormalUserAgent 检查User-Agent字符串是否异常。
+// isAbnormalUserAgent 检查 User-Agent 字符串是否异常。
 func (d *AntiBotDetector) isAbnormalUserAgent(userAgent string) bool {
 	ua := strings.ToLower(userAgent)
 	if ua == "" || len(ua) < 10 {
-		return true // 空或过短的 UA 视为异常
+		return true // 空或过短的 UA 视为异常。
 	}
 
-	// 1. 检查已知的爬虫标识
+	// 1. 检查已知的爬虫标识。
 	botPatterns := []string{"bot", "crawler", "spider", "scrap", "curl", "wget", "python", "http-client"}
 	for _, p := range botPatterns {
 		if strings.Contains(ua, p) {
@@ -230,14 +230,14 @@ func (d *AntiBotDetector) isAbnormalUserAgent(userAgent string) bool {
 		}
 	}
 
-	return true // 如果不包含任何正常标识且通过了爬虫检查，仍视为异常 (可能是罕见或自定义客户端)
+	return true // 如果不包含任何正常标识且通过了爬虫检查，仍视为异常。
 }
 
-// checkIPAbnormal 检查IP地址是否存在异常。
-// 例如，一个IP地址下关联了过多的用户。
+// checkIPAbnormal 检查 IP 地址是否存在异常。
+// 例如，一个 IP 地址下关联了过多的用户。
 func (d *AntiBotDetector) checkIPAbnormal(behavior UserBehavior) (bool, string) {
-	// 统计同一IP地址下活跃的用户数量。
-	ipUsers := make(map[uint64]bool) // 使用map来去重用户ID。
+	// 统计同一 IP 地址下活跃的用户数量。
+	ipUsers := make(map[uint64]bool) // 使用 map 来去重用户ID。
 
 	for userID, behaviors := range d.userBehaviors {
 		for _, b := range behaviors {
@@ -247,7 +247,7 @@ func (d *AntiBotDetector) checkIPAbnormal(behavior UserBehavior) (bool, string) 
 		}
 	}
 
-	// 如果同一IP下关联的用户数量超过10个，则认为IP异常。
+	// 如果同一 IP 下关联的用户数量超过 10 个，则认为 IP 异常。
 	if len(ipUsers) > 10 {
 		return true, "同一IP用户数过多"
 	}
@@ -260,30 +260,30 @@ func (d *AntiBotDetector) recordBehavior(behavior UserBehavior) {
 	// 记录用户请求时间。
 	d.userRequests[behavior.UserID] = append(d.userRequests[behavior.UserID], behavior.Timestamp)
 
-	// 记录IP请求时间。
+	// 记录 IP 请求时间。
 	d.ipRequests[behavior.IP] = append(d.ipRequests[behavior.IP], behavior.Timestamp)
 
 	// 记录用户行为序列。
 	d.userBehaviors[behavior.UserID] = append(d.userBehaviors[behavior.UserID], behavior)
 
 	// 限制每个用户的行为记录数量，防止内存无限增长。
-	if len(d.userBehaviors[behavior.UserID]) > 100 { // 只保留最新的100个行为。
-		d.userBehaviors[behavior.UserID] = d.userBehaviors[behavior.UserID][50:] // 保留最近50个行为，丢弃最旧的50个。
+	if len(d.userBehaviors[behavior.UserID]) > 100 { // 只保留最新的 100 个行为。
+		d.userBehaviors[behavior.UserID] = d.userBehaviors[behavior.UserID][50:] // 保留最近 50 个行为，丢弃最旧的 50 个。
 	}
 }
 
 // cleanup 定期清理过期数据。
-// 此函数在一个独立的goroutine中运行，每分钟执行一次，清理超出保留时间的用户请求和行为记录。
+// 此函数在一个独立的 goroutine 中运行，每分钟执行一次，清理超出保留时间的用户请求和行为记录。
 func (d *AntiBotDetector) cleanup() {
 	ticker := time.NewTicker(1 * time.Minute) // 每分钟触发一次。
-	defer ticker.Stop()                       // 函数退出时停止ticker。
+	defer ticker.Stop()                       // 函数退出时停止 ticker。
 
-	for range ticker.C { // 循环等待ticker事件。
+	for range ticker.C { // 循环等待 ticker 事件。
 		start := time.Now()
 		d.mu.Lock() // 加写锁，以安全地修改数据。
 
 		now := time.Now()
-		expireTime := 5 * time.Minute // 数据保留5分钟。
+		expireTime := 5 * time.Minute // 数据保留 5 分钟。
 		userCount, ipCount, behaviorCount := 0, 0, 0
 
 		// 清理用户请求记录。
@@ -302,7 +302,7 @@ func (d *AntiBotDetector) cleanup() {
 			}
 		}
 
-		// 清理IP请求记录。
+		// 清理 IP 请求记录。
 		for ip, requests := range d.ipRequests {
 			validRequests := make([]time.Time, 0)
 			for _, t := range requests {
@@ -345,9 +345,9 @@ func (d *AntiBotDetector) GetRiskScore(behavior UserBehavior) int {
 	d.mu.RLock()         // 读锁，因为只读取数据。
 	defer d.mu.RUnlock() // 确保函数退出时解锁。
 
-	score := 0 // 初始风险评分为0。
+	score := 0 // 初始风险评分为 0。
 
-	// 1. 请求频率评分（权重较高，最高40分）
+	// 1. 请求频率评分（权重较高，最高 40 分）。
 	if requests, exists := d.userRequests[behavior.UserID]; exists {
 		windowSize := 10 * time.Second
 		now := behavior.Timestamp
@@ -369,7 +369,7 @@ func (d *AntiBotDetector) GetRiskScore(behavior UserBehavior) int {
 		}
 	}
 
-	// 2. 行为模式评分（次高权重，最高30分）
+	// 2. 行为模式评分（次高权重，最高 30 分）。
 	if behaviors, exists := d.userBehaviors[behavior.UserID]; exists && len(behaviors) >= 3 {
 		if d.isRegularInterval(behaviors) {
 			score += 30 // 时间间隔过于规律，加高分。
@@ -379,17 +379,17 @@ func (d *AntiBotDetector) GetRiskScore(behavior UserBehavior) int {
 		}
 	}
 
-	// 3. UserAgent评分（中等权重，最高20分）
+	// 3. UserAgent 评分（中等权重，最高 20 分）。
 	if d.isAbnormalUserAgent(behavior.UserAgent) {
 		score += 20
 	}
 
-	// 4. IP评分（较低权重，最高10分）
+	// 4. IP 评分（较低权重，最高 10 分）。
 	if isAbnormal, _ := d.checkIPAbnormal(behavior); isAbnormal {
 		score += 10
 	}
 
-	// 确保总分不超过100。
+	// 确保总分不超过 100。
 	if score > 100 {
 		score = 100
 	}

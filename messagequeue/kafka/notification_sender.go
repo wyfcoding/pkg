@@ -9,18 +9,18 @@ import (
 
 // NotificationCommand 定义了发送至 Kafka 的统一通知指令协议。
 type NotificationCommand struct {
-	Target  string `json:"target"`  // 通知目标（如用户 ID、手机号或邮箱）
-	Subject string `json:"subject"` // 通知主题（如“支付成功”、“系统告警”）
-	Content string `json:"content"` // 通知正文
+	Target  string `json:"target"`  // 通知目标（如用户 ID、手机号或邮箱）。
+	Subject string `json:"subject"` // 通知主题（如“支付成功”、“系统告警”）。
+	Content string `json:"content"` // 通知正文。
 }
 
 // NotificationSender 封装了通过 Kafka 异步发送通知的逻辑实现。
 type NotificationSender struct {
-	producer *Producer // 底层 Kafka 生产者
-	topic    string    // 目标消息主题
+	producer *Producer // 底层 Kafka 生产者。
+	topic    string    // 目标消息主题。
 }
 
-// NewNotificationSender 创建 Kafka 发送器实例
+// NewNotificationSender 创建 Kafka 发送器实例。
 func NewNotificationSender(producer *Producer, topic string) *NotificationSender {
 	return &NotificationSender{
 		producer: producer,

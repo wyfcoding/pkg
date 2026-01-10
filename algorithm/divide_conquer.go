@@ -33,9 +33,10 @@ func (dcp *DivideAndConquerProcessor) MergeSort() []int64 {
 	result := make([]int64, len(dcp.data))
 	copy(result, dcp.data)
 
-	// 预分配辅助数组
+	// 预分配辅助数组。
 	temp := make([]int64, len(dcp.data))
 	dcp.mergeSort(result, temp, 0, len(result)-1)
+
 	return result
 }
 
@@ -51,30 +52,30 @@ func (dcp *DivideAndConquerProcessor) mergeSort(arr, temp []int64, left, right i
 
 // merge 合并两个有序子数组。
 func (dcp *DivideAndConquerProcessor) merge(arr, temp []int64, left, mid, right int) {
-	// 将数据复制到辅助数组
+	// 将数据复制到辅助数组。
 	copy(temp[left:right+1], arr[left:right+1])
 
-	i := left    // 左半部分指针
-	j := mid + 1 // 右半部分指针
-	k := left    // 原数组指针
+	idxI := left    // 左半部分指针。
+	idxJ := mid + 1 // 右半部分指针。
+	idxK := left    // 原数组指针。
 
-	for i <= mid && j <= right {
-		if temp[i] <= temp[j] {
-			arr[k] = temp[i]
-			i++
+	for idxI <= mid && idxJ <= right {
+		if temp[idxI] <= temp[idxJ] {
+			arr[idxK] = temp[idxI]
+			idxI++
 		} else {
-			arr[k] = temp[j]
-			j++
+			arr[idxK] = temp[idxJ]
+			idxJ++
 		}
-		k++
+		idxK++
 	}
 
-	// 复制左半部分剩余元素
-	// 右半部分剩余元素不需要复制，因为它们已经在原数组的正确位置
-	for i <= mid {
-		arr[k] = temp[i]
-		i++
-		k++
+	// 复制左半部分剩余元素。
+	// 右半部分剩余元素不需要复制，因为它们已经在原数组的正确位置。
+	for idxI <= mid {
+		arr[idxK] = temp[idxI]
+		idxI++
+		idxK++
 	}
 }
 
@@ -86,12 +87,13 @@ func (dcp *DivideAndConquerProcessor) CountInversions() int64 {
 	defer dcp.mu.Unlock() // 确保函数退出时解锁。
 
 	if len(dcp.data) <= 1 {
-		return 0 // 0个或1个元素的数组没有逆序对。
+		return 0 // 0 个或 1 个元素的数组没有逆序对。
 	}
 
 	arr := make([]int64, len(dcp.data)) // 创建一个副本进行处理。
 	copy(arr, dcp.data)
 	_, count := dcp.mergeSortCount(arr, 0, len(arr)-1) // 调用递归函数计算逆序对。
+
 	return count
 }
 
@@ -126,36 +128,36 @@ func (dcp *DivideAndConquerProcessor) mergeCount(arr []int64, left, mid, right i
 	copy(leftArr, arr[left:mid+1])
 	copy(rightArr, arr[mid+1:right+1])
 
-	i, j, k := 0, 0, left
+	idxI, idxJ, idxK := 0, 0, left
 	var count int64 // 记录逆序对数量。
 
 	// 比较左右两个子数组的元素，并将较小的元素放回原数组。
-	for i < len(leftArr) && j < len(rightArr) {
-		if leftArr[i] <= rightArr[j] {
-			arr[k] = leftArr[i]
-			i++
+	for idxI < len(leftArr) && idxJ < len(rightArr) {
+		if leftArr[idxI] <= rightArr[idxJ] {
+			arr[idxK] = leftArr[idxI]
+			idxI++
 		} else {
-			arr[k] = rightArr[j]
-			// 如果 leftArr[i] > rightArr[j]，则 leftArr 中剩余的所有元素
-			// (从 i 到 len(leftArr)-1) 都比 rightArr[j] 大，形成逆序对。
-			count += int64(len(leftArr) - i)
-			j++
+			arr[idxK] = rightArr[idxJ]
+			// 如果 leftArr[i] > rightArr[j]，则 leftArr 中剩余的所有元素。
+			// (从 idxI 到 len(leftArr)-1) 都比 rightArr[idxJ] 大，形成逆序对。
+			count += int64(len(leftArr) - idxI)
+			idxJ++
 		}
-		k++
+		idxK++
 	}
 
 	// 将剩余的左半部分元素拷贝回原数组。
-	for i < len(leftArr) {
-		arr[k] = leftArr[i]
-		i++
-		k++
+	for idxI < len(leftArr) {
+		arr[idxK] = leftArr[idxI]
+		idxI++
+		idxK++
 	}
 
 	// 将剩余的右半部分元素拷贝回原数组。
-	for j < len(rightArr) {
-		arr[k] = rightArr[j]
-		j++
-		k++
+	for idxJ < len(rightArr) {
+		arr[idxK] = rightArr[idxJ]
+		idxJ++
+		idxK++
 	}
 
 	return count

@@ -5,25 +5,25 @@ import (
 	"sync"
 )
 
-// Edge 代表流网络中的一条边
+// Edge 代表流网络中的一条边。
 type Edge struct {
 	To     int
 	Cap    int64
 	Flow   int64
-	RevIdx int // 反向边在邻接表中的索引
+	RevIdx int // 反向边在邻接表中的索引。
 }
 
-// DinicGraph 实现了基于分层图和 DFS 的 Dinic 最大流算法
+// DinicGraph 实现了基于分层图和 DFS 的 Dinic 最大流算法。
 type DinicGraph struct {
 	nodes int
 	adj   [][]Edge
-	level []int // 节点深度
-	ptr   []int // 当前弧优化：记录 DFS 遍历到哪个边了
-	queue []int // 复用 buffer
+	level []int // 节点深度。
+	ptr   []int // 当前弧优化：记录 DFS 遍历到哪个边了。
+	queue []int // 复用 buffer。
 	mu    sync.Mutex
 }
 
-// NewDinicGraph 创建一个新的 Dinic 图
+// NewDinicGraph 创建一个新的 Dinic 图。
 func NewDinicGraph(n int) *DinicGraph {
 	return &DinicGraph{
 		nodes: n,
@@ -34,7 +34,7 @@ func NewDinicGraph(n int) *DinicGraph {
 	}
 }
 
-// AddEdge 添加有向边和对应的反向边
+// AddEdge 添加有向边和对应的反向边。
 func (g *DinicGraph) AddEdge(from, to int, capacity int64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -51,14 +51,14 @@ func (g *DinicGraph) AddEdge(from, to int, capacity int64) {
 	})
 }
 
-// bfs 构造分层图
+// bfs 构造分层图。
 func (g *DinicGraph) bfs(s, t int) bool {
 	for i := range g.level {
 		g.level[i] = -1
 	}
 	g.level[s] = 0
 
-	// 复用 queue
+	// 复用 queue。
 	g.queue = g.queue[:0]
 	g.queue = append(g.queue, s)
 
@@ -75,7 +75,7 @@ func (g *DinicGraph) bfs(s, t int) bool {
 	return g.level[t] != -1
 }
 
-// dfs 寻找阻塞流
+// dfs 寻找阻塞流。
 func (g *DinicGraph) dfs(v, t int, pushed int64) int64 {
 	if pushed == 0 || v == t {
 		return pushed
@@ -102,7 +102,7 @@ func (g *DinicGraph) dfs(v, t int, pushed int64) int64 {
 	return 0
 }
 
-// MaxFlow 计算从 s 到 t 的最大流
+// MaxFlow 计算从 s 到 t 的最大流。
 func (g *DinicGraph) MaxFlow(s, t int) int64 {
 	var flow int64
 	for g.bfs(s, t) {

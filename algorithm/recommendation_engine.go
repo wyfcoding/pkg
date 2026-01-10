@@ -84,7 +84,7 @@ func (re *RecommendationEngine) UserBasedCF(userID uint64, topN int) []uint64 {
 		return nil
 	}
 
-	// 1. 收集候选用户 (除自己外)
+	// 1. 收集候选用户 (除自己外.
 	candidateUsers := make([]uint64, 0, len(re.userItemMatrix))
 	for uid := range re.userItemMatrix {
 		if uid != userID {
@@ -92,7 +92,7 @@ func (re *RecommendationEngine) UserBasedCF(userID uint64, topN int) []uint64 {
 		}
 	}
 
-	// 2. 并发计算相似度并累积预测分
+	// 2. 并发计算相似度并累积预测.
 	numWorkers := runtime.GOMAXPROCS(0)
 	if len(candidateUsers) < 100 {
 		numWorkers = 1
@@ -118,9 +118,9 @@ func (re *RecommendationEngine) UserBasedCF(userID uint64, topN int) []uint64 {
 
 			for i := s; i < e; i++ {
 				otherUserID := candidateUsers[i]
-				// 优化：只有当相似度大于阈值时才计算预测
+				// 优化：只有当相似度大于阈值时才计算预.
 				sim := re.cosineSimilarity(userID, otherUserID)
-				if sim <= 0.01 { // 忽略微小相似度
+				if sim <= 0.01 { // 忽略微小相似.
 					continue
 				}
 
@@ -136,7 +136,7 @@ func (re *RecommendationEngine) UserBasedCF(userID uint64, topN int) []uint64 {
 	}
 	wg.Wait()
 
-	// 3. 合并结果
+	// 3. 合并结.
 	predictions := make(map[uint64]float64)
 	for _, res := range results {
 		for itemID, score := range res {
@@ -215,14 +215,14 @@ func (re *RecommendationEngine) HotItems(topN int, decayHours float64) []uint64 
 }
 
 // PersonalizedHot 个性化热门推荐。
-// 结合物品的热度（浏览量、销量、时间衰减）和用户的偏好（通过物品相似度计算），
+// 结合物品的热度（浏览量、销量、时间衰减）和用户的偏好（通过物品相似度计算）.
 // 为用户推荐个性化的热门物品。
 func (re *RecommendationEngine) PersonalizedHot(userID uint64, topN int) []uint64 {
 	re.mu.RLock()
 	userRatings := re.userItemMatrix[userID]
 	re.mu.RUnlock()
 
-	// 真实实现：冷启动自动降级
+	// 真实实现：冷启动自动降.
 	if len(userRatings) == 0 {
 		return re.HotItems(topN, 24.0)
 	}
@@ -233,7 +233,7 @@ func (re *RecommendationEngine) PersonalizedHot(userID uint64, topN int) []uint6
 	return re.internalPersonalizedHot(topN, userRatings)
 }
 
-// 为了解决递归锁问题，提取核心逻辑
+// 为了解决递归锁问题，提取核心逻.
 func (re *RecommendationEngine) internalPersonalizedHot(topN int, userRatings map[uint64]float64) []uint64 {
 	scores := make(map[uint64]float64)
 	now := time.Now()
@@ -397,12 +397,12 @@ func (re *RecommendationEngine) RecommendWithScores(userID uint64, topN int) map
 
 	userRatings := re.userItemMatrix[userID]
 
-	// 1. 尝试 User-Based CF 预测
+	// 1. 尝试 User-Based CF 预.
 	similarities := make(map[uint64]float64)
 	for otherUserID := range re.userItemMatrix {
 		if otherUserID != userID {
 			sim := re.cosineSimilarity(userID, otherUserID)
-			if sim > 0.1 { // 相似度门槛
+			if sim > 0.1 { // 相似度门.
 				similarities[otherUserID] = sim
 			}
 		}
@@ -418,7 +418,7 @@ func (re *RecommendationEngine) RecommendWithScores(userID uint64, topN int) map
 		}
 	}
 
-	// 2. 结合 Item-Based 补充 (如果 User-Based 结果较少)
+	// 2. 结合 Item-Based 补充 (如果 User-Based 结果较少.
 	if len(predictions) < topN {
 		for ratedItemID := range userRatings {
 			for candidateItemID := range re.itemUserMatrix {
@@ -426,7 +426,7 @@ func (re *RecommendationEngine) RecommendWithScores(userID uint64, topN int) map
 					continue
 				}
 				if _, exists := predictions[candidateItemID]; exists {
-					continue // 已由 User-Based 覆盖
+					continue // 已由 User-Based 覆.
 				}
 				sim := re.itemSimilarity(ratedItemID, candidateItemID)
 				if sim > 0.2 {
@@ -436,7 +436,7 @@ func (re *RecommendationEngine) RecommendWithScores(userID uint64, topN int) map
 		}
 	}
 
-	// 返回 TopN 的分数映射
+	// 返回 TopN 的分数映.
 	type itemScore struct {
 		id    uint64
 		score float64

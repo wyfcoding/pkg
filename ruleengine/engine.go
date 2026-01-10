@@ -1,4 +1,4 @@
-// Package ruleengine 提供了基于高性能 DSL 的动态规则判定引擎，支持实时风控与业务逻辑动态编排。
+// Package ruleengine 提供了基于 expr 库的动态规则评估引擎。
 package ruleengine
 
 import (
@@ -11,111 +11,113 @@ import (
 	"github.com/expr-lang/expr/vm"
 )
 
-// Result 定义了单条规则判定的结果。
+// Result 定义了单条规则执行的结果。
 type Result struct {
-	RuleID   string         `json:"rule_id"`  // 触发判定的规则唯一 ID
-	Passed   bool           `json:"passed"`   // 规则表达式计算结果是否为 true
-	Metadata map[string]any `json:"metadata"` // 规则关联的静态元数据 (如风险等级、拦截码)
+	Metadata map[string]any `json:"metadata"` // 规则关联的静态元数据。
+	RuleID   string         `json:"rule_id"`  // 触发判定的规则唯一 ID。
+	Passed   bool           `json:"passed"`   // 判定结果。
 }
 
-// Rule 描述了一条可执行的业务规则。
+// Rule 定义了一个业务判定规则。
 type Rule struct {
-	ID         string         `json:"id"`         // 规则唯一标识符
-	Name       string         `json:"name"`       // 规则友好名称
-	Expression string         `json:"expression"` // 符合 expr 语法的 DSL 判定表达式
-	Metadata   map[string]any `json:"metadata"`   // 命中后需要传递给上层的业务数据
-	Priority   int            `json:"priority"`   // 执行优先级（数值越大越高）
+	Metadata   map[string]any `json:"metadata"`   // 业务载荷数据。
+	ID         string         `json:"id"`         // 规则唯一标识。
+	Name       string         `json:"name"`       // 规则友好名称。
+	Expression string         `json:"expression"` // DSL 判定表达式。
+	Priority   int            `json:"priority"`   // 执行优先级。
 }
 
-// Engine 封装了规则引擎的执行上下文与编译后的字节码缓存。
+// Engine 负责管理和执行大规模规则集。
 type Engine struct {
+	logger   *slog.Logger
+	rules    map[string]*Rule
+	programs map[string]*vm.Program
 	mu       sync.RWMutex
-	rules    map[string]*Rule       // 原始规则映射
-	programs map[string]*vm.Program // 编译后的 VM 字节码，提升执行效率
-	logger   *slog.Logger           // 结构化日志记录器
 }
 
-// NewEngine 初始化规则引擎。
+// NewEngine 初始化并返回一个新的规则引擎。
 func NewEngine(logger *slog.Logger) *Engine {
-	if logger == nil {
-		logger = slog.Default().With("module", "rule_engine")
-	}
 	return &Engine{
+		logger:   logger.With("module", "rule_engine"),
 		rules:    make(map[string]*Rule),
 		programs: make(map[string]*vm.Program),
-		logger:   logger,
 	}
 }
 
-// AddRule 将规则表达式编译为字节码并存入引擎缓存。
-// 流程：编译语法 -> 校验合法性 -> 写入内存。
-func (e *Engine) AddRule(r Rule) error {
-	// 预编译表达式，提升后续千万次执行的性能
-	program, err := expr.Compile(r.Expression)
-	if err != nil {
-		return fmt.Errorf("failed to compile rule [%s]: %w", r.ID, err)
-	}
-
+// AddRule 向引擎中动态添加并编译一条新规则。
+func (e *Engine) AddRule(rule Rule) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.rules[r.ID] = &r
-	e.programs[r.ID] = program
+	program, err := expr.Compile(rule.Expression)
+	if err != nil {
+		return fmt.Errorf("failed to compile rule [%s]: %w", rule.ID, err)
+	}
 
-	e.logger.Info("rule added or updated successfully", "rule_id", r.ID, "name", r.Name)
+	e.rules[rule.ID] = &rule
+	e.programs[rule.ID] = program
+
 	return nil
 }
 
-// Execute 针对给定的事实数据 (facts) 运行特定的规则。
-func (e *Engine) Execute(ctx context.Context, ruleID string, facts map[string]any) (*Result, error) {
+// Execute 针对给定的事实数据评估单条已注册的规则。
+func (e *Engine) Execute(_ context.Context, ruleID string, facts map[string]any) (Result, error) {
 	e.mu.RLock()
-	program, ok := e.programs[ruleID]
-	rule, ruleOk := e.rules[ruleID]
+	program, exists := e.programs[ruleID]
+	rule, ruleExists := e.rules[ruleID]
 	e.mu.RUnlock()
 
-	if !ok || !ruleOk {
-		return nil, fmt.Errorf("rule [%s] not found", ruleID)
+	if !exists || !ruleExists {
+		return Result{}, fmt.Errorf("rule [%s] not found", ruleID)
 	}
 
-	// 在虚拟机中执行预编译的程序
 	output, err := expr.Run(program, facts)
 	if err != nil {
-		return nil, fmt.Errorf("execution error on rule [%s]: %w", ruleID, err)
+		return Result{}, fmt.Errorf("failed to execute rule [%s]: %w", ruleID, err)
 	}
 
 	passed, ok := output.(bool)
 	if !ok {
-		// 容错：若结果非布尔值，则按未命中处理
-		return &Result{RuleID: ruleID, Passed: false, Metadata: rule.Metadata}, nil
+		return Result{}, fmt.Errorf("rule [%s] output is not boolean (got %T)", ruleID, output)
 	}
 
-	return &Result{
+	return Result{
 		RuleID:   ruleID,
 		Passed:   passed,
 		Metadata: rule.Metadata,
 	}, nil
 }
 
-// ExecuteAll 遍历所有已注册规则进行全量判定，返回所有命中的结果集。
-func (e *Engine) ExecuteAll(ctx context.Context, facts map[string]any) ([]*Result, error) {
+// ExecuteAll 针对给定的事实数据（Facts）并行或顺序评估所有已注册规则。
+func (e *Engine) ExecuteAll(_ context.Context, facts map[string]any) ([]Result, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	var results []*Result
+	results := make([]Result, 0, len(e.rules))
+
 	for id, program := range e.programs {
 		output, err := expr.Run(program, facts)
 		if err != nil {
-			e.logger.ErrorContext(ctx, "rule execution failed", "rule_id", id, "error", err)
+			e.logger.Warn("failed to execute rule", "rule_id", id, "error", err)
+
 			continue
 		}
 
-		if passed, ok := output.(bool); ok && passed {
-			results = append(results, &Result{
+		passed, ok := output.(bool)
+		if !ok {
+			e.logger.Warn("rule output is not boolean", "rule_id", id, "output_type", fmt.Sprintf("%T", output))
+
+			continue
+		}
+
+		if passed {
+			results = append(results, Result{
 				RuleID:   id,
 				Passed:   true,
 				Metadata: e.rules[id].Metadata,
 			})
 		}
 	}
+
 	return results, nil
 }

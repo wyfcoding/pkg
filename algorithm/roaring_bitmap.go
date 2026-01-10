@@ -1,4 +1,4 @@
-// Package algorithm 提供高性能数据结构
+// Package algorithm 提供高性能数据结构。
 package algorithm
 
 import (
@@ -24,18 +24,18 @@ type RoaringBitmap struct {
 }
 
 type bitmapContainer struct {
-	data []uint64 // 内部使用 uint64 数组存储位信息 (Bitset 模式)
-	card int      // 基数，存储的元素个数
+	data []uint64 // 内部使用 uint64 数组存储位信息 (Bitset 模式)。
+	card int      // 基数，存储的元素个数。
 }
 
-// NewRoaringBitmap 创建一个新的 RoaringBitmap
+// NewRoaringBitmap 创建一个新的 RoaringBitmap。
 func NewRoaringBitmap() *RoaringBitmap {
 	return &RoaringBitmap{
 		chunks: make(map[uint16]*bitmapContainer),
 	}
 }
 
-// Release 释放位图资源回对象池
+// Release 释放位图资源回对象池。
 func (rb *RoaringBitmap) Release() {
 	for _, c := range rb.chunks {
 		bitsetPool.Put(&c.data)
@@ -43,7 +43,7 @@ func (rb *RoaringBitmap) Release() {
 	rb.chunks = nil
 }
 
-// Add 将一个 ID (uint32) 加入位图
+// Add 将一个 ID (uint32) 加入位图。
 func (rb *RoaringBitmap) Add(x uint32) {
 	high := uint16(x >> 16)
 	low := uint16(x & 0xFFFF)
@@ -52,7 +52,7 @@ func (rb *RoaringBitmap) Add(x uint32) {
 	if !ok {
 		dataPtr := bitsetPool.Get().(*[]uint64)
 		data := *dataPtr
-		// 必须清空从池中取出的数据
+		// 必须清空从池中取出的数据。
 		for i := range data {
 			data[i] = 0
 		}
@@ -70,7 +70,7 @@ func (rb *RoaringBitmap) Add(x uint32) {
 	}
 }
 
-// Contains 检查 ID 是否存在
+// Contains 检查 ID 是否存在。
 func (rb *RoaringBitmap) Contains(x uint32) bool {
 	high := uint16(x >> 16)
 	low := uint16(x & 0xFFFF)
@@ -93,7 +93,7 @@ func (c *bitmapContainer) recalculateCard() {
 	c.card = count
 }
 
-// And 与运算（交集）：返回两个位图的共同部分
+// And 与运算（交集）：返回两个位图的共同部分。
 func (rb *RoaringBitmap) And(other *RoaringBitmap) *RoaringBitmap {
 	result := NewRoaringBitmap()
 	for high, c1 := range rb.chunks {
@@ -115,10 +115,10 @@ func (rb *RoaringBitmap) And(other *RoaringBitmap) *RoaringBitmap {
 	return result
 }
 
-// Or 或运算（并集）：返回两个位图的合并部分
+// Or 或运算（并集）：返回两个位图的合并部分。
 func (rb *RoaringBitmap) Or(other *RoaringBitmap) *RoaringBitmap {
 	result := NewRoaringBitmap()
-	// 复制 rb
+	// 复制 rb。
 	for h, c := range rb.chunks {
 		dataPtr := bitsetPool.Get().(*[]uint64)
 		data := *dataPtr
@@ -126,7 +126,7 @@ func (rb *RoaringBitmap) Or(other *RoaringBitmap) *RoaringBitmap {
 		nc := &bitmapContainer{data: data, card: c.card}
 		result.chunks[h] = nc
 	}
-	// 合并 other
+	// 合并 other。
 	for h, c2 := range other.chunks {
 		if c1, ok := result.chunks[h]; ok {
 			for i := range 1024 {
@@ -144,8 +144,8 @@ func (rb *RoaringBitmap) Or(other *RoaringBitmap) *RoaringBitmap {
 	return result
 }
 
-// ToList 将位图转换回 ID 列表（用于最终发放优惠券）
-// 优化：使用 bits.TrailingZeros64 快速跳过零位
+// ToList 将位图转换回 ID 列表（用于最终发放优惠券）。
+// 优化：使用 bits.TrailingZeros64 快速跳过零位。
 func (rb *RoaringBitmap) ToList() []uint32 {
 	res := make([]uint32, 0)
 	for high, container := range rb.chunks {
@@ -158,7 +158,7 @@ func (rb *RoaringBitmap) ToList() []uint32 {
 			for temp != 0 {
 				bit := bits.TrailingZeros64(temp)
 				res = append(res, hBase|uint32(i<<6)|uint32(bit))
-				temp &= temp - 1 // 清除最低位的 1
+				temp &= temp - 1 // 清除最低位的 1。
 			}
 		}
 	}

@@ -25,16 +25,16 @@ func CallWithGorm(ctx context.Context, barrier any, db *gorm.DB, fn func(tx *gor
 		return errors.New("method callwithgorm not found")
 	}
 
-	// 准备反射参数：db (GORM 实例), fn (业务回调函数)
+	// 准备反射参数：db (GORM 实例), fn (业务回调函数)。
 	args := []reflect.Value{
 		reflect.ValueOf(db),
 		reflect.ValueOf(fn),
 	}
 
-	// 执行动态调用
+	// 执行动态调用。
 	results := method.Call(args)
 
-	// 统一处理执行结果中的错误
+	// 统一处理执行结果中的错误。
 	if len(results) > 0 && !results[0].IsNil() {
 		err := results[0].Interface().(error)
 		slog.WarnContext(ctx, "dtm barrier transaction reported error", "error", err)

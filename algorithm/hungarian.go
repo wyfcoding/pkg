@@ -4,8 +4,8 @@ import (
 	"sync"
 )
 
-// HungarianAlgorithm 结构体实现了匈牙利算法，用于解决二分图的最大权匹配问题，
-// 尤其适用于解决分配问题（Assignment Problem），例如将一组工人分配给一组任务，
+// HungarianAlgorithm 结构体实现了匈牙利算法，用于解决二分图的最大权匹配问题.
+// 尤其适用于解决分配问题（Assignment Problem），例如将一组工人分配给一组任务.
 // 以最小化总成本或最大化总效益。
 type HungarianAlgorithm struct {
 	cost    [][]int64    // 成本矩阵，cost[i][j] 表示将第i个元素分配给第j个元素的成本。
@@ -62,7 +62,7 @@ func (ha *HungarianAlgorithm) dfsHungarian(u int) bool {
 		if !ha.visited[v] && ha.cost[u][v] > 0 { // 注意：实际匈牙利算法通常处理最小成本，这里是最大匹配的变种。
 			ha.visited[v] = true // 标记任务 v 为已访问。
 
-			// 如果任务 v 尚未被匹配（ha.match[v] == -1），
+			// 如果任务 v 尚未被匹配（ha.match[v] == -1）.
 			// 或者任务 v 已经被匹配给工人 ha.match[v]，但工人 ha.match[v] 可以找到另一个任务来匹配（通过递归调用dfsHungarian）。
 			if ha.match[v] == -1 || ha.dfsHungarian(ha.match[v]) {
 				ha.match[v] = u // 将任务 v 匹配给工人 u。

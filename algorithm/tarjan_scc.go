@@ -1,21 +1,21 @@
 // Package algorithm 提供高性能算法集合。
 // 此文件实现了 Tarjan 强连通分量 (Strongly Connected Components, SCC) 算法。
 //
-// 算法原理：
+// 算法原理.
 // 基于深度优先搜索 (DFS)，利用栈和两个辅助数组（indices 和 lowlink）在单次遍历中识别有向图中的所有强连通分量。
 //
-// 复杂度分析：
+// 复杂度分析.
 // - 时间复杂度: O(V + E)，其中 V 为顶点数，E 为边数。
 // - 空间复杂度: O(V)，用于存储递归栈和节点状态。
 package algorithm
 
-// Graph 定义了一个基于邻接表的有向图
+// Graph 定义了一个基于邻接表的有向.
 type Graph struct {
-	nodes int     // 顶点总数
-	adj   [][]int // 邻接表
+	nodes int     // 顶点总.
+	adj   [][]int // 邻接.
 }
 
-// NewGraph 创建一个新的有向图实例
+// NewGraph 创建一个新的有向图实.
 func NewGraph(nodes int) *Graph {
 	return &Graph{
 		nodes: nodes,
@@ -23,23 +23,23 @@ func NewGraph(nodes int) *Graph {
 	}
 }
 
-// AddEdge 向图中添加一条从 u 到 v 的有向边
+// AddEdge 向图中添加一条从 u 到 v 的有向.
 func (g *Graph) AddEdge(u, v int) {
 	g.adj[u] = append(g.adj[u], v)
 }
 
-// TarjanSCC 封装了计算强连通分量的状态
+// TarjanSCC 封装了计算强连通分量的状态。
 type TarjanSCC struct {
 	graph   *Graph
-	index   int     // 当前 DFS 遍历的次序计数
-	stack   []int   // 用于存储当前遍历路径的栈
-	onStack []bool  // 快速判断节点是否在栈中
-	indices []int   // 节点的发现次序
-	lowlink []int   // 节点通过回边能到达的最小次序
-	sccs    [][]int // 最终识别出的强连通分量列表
+	index   int     // 当前 DFS 遍历的次序计数。
+	stack   []int   // 用于存储当前遍历路径的栈。
+	onStack []bool  // 快速判断节点是否在栈中。
+	indices []int   // 节点的发现次序。
+	lowlink []int   // 节点通过回边能到达的最小次序。
+	sccs    [][]int // 最终识别出的强连通分量列表。
 }
 
-// NewTarjanSCC 初始化 Tarjan 算法执行器
+// NewTarjanSCC 初始化 Tarjan 算法执行器。
 func NewTarjanSCC(g *Graph) *TarjanSCC {
 	return &TarjanSCC{
 		graph:   g,
@@ -50,7 +50,7 @@ func NewTarjanSCC(g *Graph) *TarjanSCC {
 	}
 }
 
-// Run 执行算法并返回所有的强连通分量
+// Run 执行算法并返回所有的强连通分量。
 func (t *TarjanSCC) Run() [][]int {
 	for i := range t.indices {
 		t.indices[i] = -1
@@ -64,7 +64,7 @@ func (t *TarjanSCC) Run() [][]int {
 	return t.sccs
 }
 
-// strongConnect 是 Tarjan 算法的核心递归 DFS 函数
+// strongConnect 是 Tarjan 算法的核心递归 DFS 函数。
 func (t *TarjanSCC) strongConnect(v int) {
 	t.index++
 	t.indices[v] = t.index
@@ -72,19 +72,19 @@ func (t *TarjanSCC) strongConnect(v int) {
 	t.stack = append(t.stack, v)
 	t.onStack[v] = true
 
-	// 遍历当前节点的所有邻居
+	// 遍历当前节点的所有邻居。
 	for _, w := range t.graph.adj[v] {
 		if t.indices[w] == -1 {
-			// 邻居未被访问，递归访问
+			// 邻居未被访问，递归访问。
 			t.strongConnect(w)
 			t.lowlink[v] = min(t.lowlink[v], t.lowlink[w])
 		} else if t.onStack[w] {
-			// 邻居在栈中，说明构成环
+			// 邻居在栈中，说明构成环。
 			t.lowlink[v] = min(t.lowlink[v], t.indices[w])
 		}
 	}
 
-	// 如果 lowlink 等于发现次序，说明 v 是一个强连通分量的根节点
+	// 如果 lowlink 等于发现次序，说明 v 是一个强连通分量的根节点。
 	if t.lowlink[v] == t.indices[v] {
 		var scc []int
 		for {

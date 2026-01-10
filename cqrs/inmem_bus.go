@@ -16,15 +16,15 @@ type InMemCommandBus struct {
 	mu       sync.RWMutex
 }
 
-// NewInMemCommandBus 创建一个新的 InMemCommandBus
+// NewInMemCommandBus 创建一个新的 InMemCommandBus 实例。
 func NewInMemCommandBus() *InMemCommandBus {
 	return &InMemCommandBus{
 		handlers: make(map[string]func(context.Context, Command) error),
 	}
 }
 
-// Register 注册命令处理器
-// handler 必须实现 CommandHandler[C] 接口
+// Register 注册命令处理器。
+// handler 必须实现 CommandHandler[C] 接口。
 func (b *InMemCommandBus) Register(cmdName string, handler any) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -36,13 +36,13 @@ func (b *InMemCommandBus) Register(cmdName string, handler any) {
 		panic(fmt.Sprintf("handler for command %s does not have a Handle method", cmdName))
 	}
 
-	// 检查 Handle 方法签名: func(ctx context.Context, cmd C) error
+	// 检查 Handle 方法签名: func(ctx context.Context, cmd C) error。
 	methodType := method.Type()
 	if methodType.NumIn() != 2 || methodType.NumOut() != 1 {
 		panic(fmt.Sprintf("handler for command %s has invalid signature, expected 2 args and 1 return", cmdName))
 	}
 
-	// 生成包装函数闭包
+	// 生成包装函数闭包。
 	wrapper := func(ctx context.Context, cmd Command) error {
 		args := []reflect.Value{
 			reflect.ValueOf(ctx),
@@ -54,6 +54,7 @@ func (b *InMemCommandBus) Register(cmdName string, handler any) {
 		if !results[0].IsNil() {
 			return results[0].Interface().(error)
 		}
+
 		return nil
 	}
 
@@ -72,6 +73,7 @@ func (b *InMemCommandBus) Dispatch(ctx context.Context, cmd Command) error {
 
 	if !ok {
 		slog.ErrorContext(ctx, "no command handler registered", "command", cmdName)
+
 		return fmt.Errorf("no handler registered for command: %s", cmdName)
 	}
 
@@ -93,15 +95,15 @@ type InMemQueryBus struct {
 	mu       sync.RWMutex
 }
 
-// NewInMemQueryBus 创建一个新的 InMemQueryBus
+// NewInMemQueryBus 创建一个新的 InMemQueryBus 实例。
 func NewInMemQueryBus() *InMemQueryBus {
 	return &InMemQueryBus{
 		handlers: make(map[string]func(context.Context, Query) (any, error)),
 	}
 }
 
-// Register 注册查询处理器
-// handler 必须实现 QueryHandler[Q, R] 接口
+// Register 注册查询处理器。
+// handler 必须实现 QueryHandler[Q, R] 接口。
 func (b *InMemQueryBus) Register(queryName string, handler any) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -113,7 +115,7 @@ func (b *InMemQueryBus) Register(queryName string, handler any) {
 		panic(fmt.Sprintf("handler for query %s does not have a Handle method", queryName))
 	}
 
-	// 检查 Handle 方法签名: func(ctx context.Context, query Q) (R, error)
+	// 检查 Handle 方法签名: func(ctx context.Context, query Q) (R, error)。
 	methodType := method.Type()
 	if methodType.NumIn() != 2 || methodType.NumOut() != 2 {
 		panic(fmt.Sprintf("handler for query %s has invalid signature, expected 2 args and 2 returns", queryName))
@@ -133,6 +135,7 @@ func (b *InMemQueryBus) Register(queryName string, handler any) {
 		if len(results) > 0 {
 			res = results[0].Interface()
 		}
+
 		if len(results) > 1 && !results[1].IsNil() {
 			err = results[1].Interface().(error)
 		}

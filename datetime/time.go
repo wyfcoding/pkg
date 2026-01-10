@@ -62,17 +62,17 @@ var (
 func IsHoliday(t time.Time) bool {
 	dateStr := t.Format("2006-01-02")
 
-	// 1. 检查是否为显式配置的节假日
+	// 1. 检查是否为显式配置的节假.
 	if customHolidays[dateStr] {
 		return true
 	}
 
-	// 2. 检查是否为显式配置的补班工作日
+	// 2. 检查是否为显式配置的补班工作.
 	if customWorkdays[dateStr] {
 		return false
 	}
 
-	// 3. 默认周末判定
+	// 3. 默认周末判.
 	weekday := t.Weekday()
 	return weekday == time.Saturday || weekday == time.Sunday
 }

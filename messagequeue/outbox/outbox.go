@@ -15,53 +15,57 @@ import (
 
 var defaultManager *Manager
 
-// Default 返回全局默认管理器实例
+// Default 返回全局默认管理器实例。
 func Default() *Manager {
 	return defaultManager
 }
 
-// SetDefault 设置全局默认管理器实例
-func SetDefault(m *Manager) {
-	defaultManager = m
+// SetDefault 设置全局默认管理器实例。
+func SetDefault(manager *Manager) {
+	defaultManager = manager
 }
 
-// MessageStatus 消息状态
+// MessageStatus 消息状态。
 type MessageStatus int8
 
 const (
-	StatusPending MessageStatus = iota // 待发送
-	StatusSent                         // 已发送
-	StatusFailed                       // 发送失败（超过最大重试次数）
+	// StatusPending 待发送状态。
+	StatusPending MessageStatus = iota
+	// StatusSent 已发送状态。
+	StatusSent
+	// StatusFailed 发送失败（超过最大重试次数）。
+	StatusFailed
 )
 
-// Message 离群消息实体模型
+// Message 离群消息实体模型。
 type Message struct {
 	gorm.Model
-	Topic      string        `gorm:"column:topic;type:varchar(255);not null;index" json:"topic"` // 消息主题
-	Key        string        `gorm:"column:key;type:varchar(255);index" json:"key"`              // 消息键
-	Payload    []byte        `gorm:"column:payload;type:blob;not null" json:"payload"`           // 消息体
-	Metadata   string        `gorm:"column:metadata;type:text" json:"metadata"`                  // 存储 Trace 上下文 (JSON)
-	Status     MessageStatus `gorm:"column:status;type:tinyint;default:0;index" json:"status"`   // 状态
-	RetryCount int           `gorm:"column:retry_count;type:int;default:0" json:"retry_count"`   // 已重试次数
-	MaxRetries int           `gorm:"column:max_retries;type:int;default:5" json:"max_retries"`   // 最大重试次数
-	NextRetry  time.Time     `gorm:"column:next_retry;type:datetime;index" json:"next_retry"`    // 下次重试时间
-	LastError  string        `gorm:"column:last_error;type:text" json:"last_error"`              // 最后一次错误信息
+	Topic      string        `gorm:"column:topic;type:varchar(255);not null;index" json:"topic"` // 消息主题。
+	Key        string        `gorm:"column:key;type:varchar(255);index" json:"key"`              // 消息键。
+	Payload    []byte        `gorm:"column:payload;type:blob;not null" json:"payload"`           // 消息体。
+	Metadata   string        `gorm:"column:metadata;type:text" json:"metadata"`                  // 存储 Trace 上下文 (JSON)。
+	Status     MessageStatus `gorm:"column:status;type:tinyint;default:0;index" json:"status"`   // 状态。
+	RetryCount int           `gorm:"column:retry_count;type:int;default:0" json:"retry_count"`   // 已重试次数。
+	MaxRetries int           `gorm:"column:max_retries;type:int;default:5" json:"max_retries"`   // 最大重试次数。
+	NextRetry  time.Time     `gorm:"column:next_retry;type:datetime;index" json:"next_retry"`    // 下次重试时间。
+	LastError  string        `gorm:"column:last_error;type:text" json:"last_error"`              // 最后一次错误信息。
 }
 
-// TableName 指定表名
+// TableName 指定表名。
 func (Message) TableName() string {
 	return "sys_outbox_messages"
 }
 
-// Pusher 消息推送接口
+// Pusher 消息推送接口。
 type Pusher interface {
+	// Push 执行底层消息发送。
 	Push(ctx context.Context, topic string, key string, payload []byte) error
 }
 
 // Manager 离群消息管理器，负责在业务事务中同步持久化消息记录。
 type Manager struct {
-	db     *gorm.DB     // 用于执行数据库操作的 GORM 实例
-	logger *slog.Logger // 日志记录器
+	db     *gorm.DB     // 用于执行数据库操作的 GORM 实例。
+	logger *slog.Logger // 日志记录器。
 }
 
 // NewManager 创建并返回一个新的 Outbox 管理器实例。
@@ -73,7 +77,6 @@ func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
 }
 
 // PublishInTx 在现有的数据库事务中持久化一条待发送的消息。
-// 流程：序列化 Payload -> 注入 Trace 上下文 -> 写入数据库。
 func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, key string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -82,8 +85,9 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 
 	metadataMap := tracing.InjectContext(ctx)
 	metadataJSON, err := json.Marshal(metadataMap)
+
 	if err != nil {
-		// 元数据注入失败不应中断业务事务，仅记录警告
+		// 元数据注入失败不应中断业务事务，仅记录警告。
 		m.logger.WarnContext(ctx, "failed to marshal tracing metadata", "error", err)
 	}
 
@@ -96,9 +100,10 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 		NextRetry: time.Now(),
 	}
 
-	if err := tx.Create(msg).Error; err != nil {
-		m.logger.ErrorContext(ctx, "failed to save outbox message", "topic", topic, "error", err)
-		return err
+	if createErr := tx.Create(msg).Error; createErr != nil {
+		m.logger.ErrorContext(ctx, "failed to save outbox message", "topic", topic, "error", createErr)
+
+		return createErr
 	}
 
 	return nil
@@ -106,37 +111,42 @@ func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic string, ke
 
 // Processor 离群消息处理器，负责扫描 Outbox 表并异步投递消息。
 type Processor struct {
-	mgr           *Manager                                                                  // 关联的管理器
-	pusher        func(ctx context.Context, topic string, key string, payload []byte) error // 真正的底层发送函数 (如 Kafka Producer)
-	batchSize     int                                                                       // 单次处理的消息批次大小
-	interval      time.Duration                                                             // 轮询扫描的时间间隔
-	retentionDays int                                                                       // 已发送成功数据的保留天数（用于自清理）
-	stopChan      chan struct{}                                                             // 优雅停机信号通道
+	mgr           *Manager
+	pusher        func(ctx context.Context, topic string, key string, payload []byte) error
+	batchSize     int
+	interval      time.Duration
+	retentionDays int
+	stopChan      chan struct{}
 }
 
-// NewProcessor 创建处理器
+// NewProcessor 创建处理器。
 func NewProcessor(mgr *Manager, pusher func(ctx context.Context, topic string, key string, payload []byte) error, batchSize int, interval time.Duration) *Processor {
-	if batchSize <= 0 {
-		batchSize = 100
+	size := batchSize
+	if size <= 0 {
+		size = 100
 	}
-	if interval <= 0 {
-		interval = 5 * time.Second
+
+	inter := interval
+	if inter <= 0 {
+		inter = 5 * time.Second
 	}
+
 	return &Processor{
 		mgr:           mgr,
 		pusher:        pusher,
-		batchSize:     batchSize,
-		interval:      interval,
-		retentionDays: 7, // 默认保留 7 天
+		batchSize:     size,
+		interval:      inter,
+		retentionDays: 7, // 默认保留 7 天。
 		stopChan:      make(chan struct{}),
 	}
 }
 
-// Start 启动后台任务
+// Start 启动后台任务。
 func (p *Processor) Start() {
 	p.mgr.logger.Info("outbox processor started")
+
 	ticker := time.NewTicker(p.interval)
-	cleanupTicker := time.NewTicker(24 * time.Hour) // 每天清理一次
+	cleanupTicker := time.NewTicker(24 * time.Hour) // 每天清理一次。
 
 	go func() {
 		for {
@@ -148,50 +158,52 @@ func (p *Processor) Start() {
 			case <-p.stopChan:
 				ticker.Stop()
 				cleanupTicker.Stop()
+
 				return
 			}
 		}
 	}()
 }
 
-// Stop 停止处理器
+// Stop 停止处理器。
 func (p *Processor) Stop() {
 	close(p.stopChan)
 }
 
-// process 执行消息投递 (带集群安全并发控制)
+// process 执行消息投递 (带集群安全并发控制)。
 func (p *Processor) process() {
-	// 核心架构决策：使用事务 + SKIP LOCKED 确保多实例不抢占同一批消息
-	// 这样即便有 100 个节点在扫描，它们也不会抓取重复的 ID。
+	// 核心架构决策：使用事务 + SKIP LOCKED 确保多实例不抢占同一批消息。
 	err := p.mgr.db.Transaction(func(tx *gorm.DB) error {
 		var messages []Message
 
-		// 1. 抓取待处理消息并加锁
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		// 1. 抓取待处理消息并加锁。
+		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where("status = ? AND next_retry <= ? AND retry_count < max_retries", StatusPending, time.Now()).
 			Limit(p.batchSize).
 			Order("id ASC").
 			Find(&messages).Error
-		if err != nil {
-			return err
+		if findErr != nil {
+			return findErr
 		}
 
 		if len(messages) == 0 {
 			return nil
 		}
 
-		// 2. 依次投递
+		// 2. 依次投递。
 		for _, msg := range messages {
 			p.send(tx, msg)
 		}
+
 		return nil
 	})
+
 	if err != nil {
 		p.mgr.logger.Error("outbox batch process failed", "error", err)
 	}
 }
 
-// send 执行单条消息发送并更新状态 (在事务内执行状态更新以保证一致性)
+// send 执行单条消息发送并更新状态 (在事务内执行状态更新以保证一致性)。
 func (p *Processor) send(tx *gorm.DB, msg Message) {
 	ctx := context.Background()
 	if msg.Metadata != "" {
@@ -216,6 +228,7 @@ func (p *Processor) send(tx *gorm.DB, msg Message) {
 	if err == nil {
 		updates["status"] = StatusSent
 	} else {
+		// 指数退避重试。
 		backoff := min(time.Duration(1<<uint(msg.RetryCount))*time.Minute, 24*time.Hour)
 		updates["next_retry"] = time.Now().Add(backoff)
 		updates["last_error"] = err.Error()
@@ -228,14 +241,15 @@ func (p *Processor) send(tx *gorm.DB, msg Message) {
 		}
 	}
 
-	// 更新消息状态 (注意此处使用外部传入的事务 tx)
+	// 更新消息状态。
 	tx.Model(&msg).Updates(updates)
 }
 
-// cleanup 定期清理旧数据，防止表膨胀
+// cleanup 定期清理旧数据，防止表膨胀。
 func (p *Processor) cleanup() {
 	deadline := time.Now().AddDate(0, 0, -p.retentionDays)
 	result := p.mgr.db.Where("status = ? AND updated_at < ?", StatusSent, deadline).Delete(&Message{})
+
 	if result.Error != nil {
 		p.mgr.logger.Error("failed to cleanup old outbox messages", "error", result.Error)
 	} else if result.RowsAffected > 0 {

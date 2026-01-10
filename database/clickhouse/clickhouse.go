@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	// chOps 记录 ClickHouse 各类操作的次数
+	// chOps 记录 ClickHouse 各类操作的次数。
 	chOps = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "clickhouse_ops_total",
@@ -23,7 +23,7 @@ var (
 		},
 		[]string{"database", "status"},
 	)
-	// chDuration 记录 ClickHouse 操作的延迟分布
+	// chDuration 记录 ClickHouse 操作的延迟分布。
 	chDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "clickhouse_duration_seconds",
@@ -139,7 +139,7 @@ func (w *BatchWriter) Write(ctx context.Context, data [][]any) error {
 	start := time.Now()
 	err = batch.Send()
 
-	// 记录批次执行指标
+	// 记录批次执行指标。
 	duration := time.Since(start).Seconds()
 	status := "success"
 	if err != nil {

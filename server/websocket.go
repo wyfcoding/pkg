@@ -12,19 +12,19 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(_ *http.Request) bool { return true }, // 生产环境应严格校验域
+	CheckOrigin: func(_ *http.Request) bool { return true }, // 生产环境应严格校验.
 }
 
-// Client 表示一个 WebSocket 客户端连接
+// Client 表示一个 WebSocket 客户端连.
 type Client struct {
 	conn    *websocket.Conn
 	send    chan []byte
 	manager *WSManager
-	topics  map[string]struct{} // 该客户端订阅的主题
+	topics  map[string]struct{} // 该客户端订阅的主.
 	mu      sync.Mutex
 }
 
-// WSManager 管理所有活跃的 WebSocket 连接
+// WSManager 管理所有活跃的 WebSocket 连.
 type WSManager struct {
 	clients    map[*Client]bool
 	broadcast  chan BroadcastMessage
@@ -71,12 +71,12 @@ func (m *WSManager) Run(ctx context.Context) {
 			m.mu.RLock()
 			for client := range m.clients {
 				client.mu.Lock()
-				// 检查客户端是否订阅了该主题
+				// 检查客户端是否订阅了该主.
 				if _, ok := client.topics[message.Topic]; ok {
 					select {
 					case client.send <- message.Payload:
 					default:
-						// 如果缓冲区满了，主动断开客户端以防止阻塞整个广播
+						// 如果缓冲区满了，主动断开客户端以防止阻塞整个广.
 						m.logger.Warn("client buffer full, dropping", "addr", client.conn.RemoteAddr())
 						go func(c *Client) { m.unregister <- c }(client)
 					}
@@ -88,7 +88,7 @@ func (m *WSManager) Run(ctx context.Context) {
 	}
 }
 
-// Broadcast 对外发布的广播接口 (会自动序列化 payload)
+// Broadcast 对外发布的广播接口 (会自动序列化 payload.
 func (m *WSManager) Broadcast(topic string, payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -98,12 +98,12 @@ func (m *WSManager) Broadcast(topic string, payload any) {
 	m.BroadcastRaw(topic, data)
 }
 
-// BroadcastRaw 广播原始字节数据 (高性能入口，不进行重复序列化)
+// BroadcastRaw 广播原始字节数据 (高性能入口，不进行重复序列化.
 func (m *WSManager) BroadcastRaw(topic string, payload []byte) {
 	m.broadcast <- BroadcastMessage{Topic: topic, Payload: payload}
 }
 
-// ServeHTTP 处理 WebSocket 升级请求
+// ServeHTTP 处理 WebSocket 升级请.
 func (m *WSManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -120,9 +120,9 @@ func (m *WSManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	m.register <- client
 
-	// 启动写协程
+	// 启动写协.
 	go client.writePump()
-	// 启动读协程 (处理订阅/心跳)
+	// 启动读协程 (处理订阅/心跳.
 	go client.readPump()
 }
 
@@ -146,7 +146,7 @@ func (c *Client) readPump() {
 			break
 		}
 
-		// 解析客户端命令 (如: {"op": "subscribe", "topic": "BTC/USDT"})
+		// 解析客户端命令 (如: {"op": "subscribe", "topic": "BTC/USDT"}.
 		var cmd struct {
 			Op    string `json:"op"`
 			Topic string `json:"topic"`
@@ -179,7 +179,7 @@ func (c *Client) writePump() {
 			}
 			if !ok {
 				if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
-					// 仅记录 debug，因为连接可能已经关闭
+					// 仅记录 debug，因为连接可能已经关.
 					c.manager.logger.Debug("failed to write close message", "error", err)
 				}
 				return

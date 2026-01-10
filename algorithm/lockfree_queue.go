@@ -7,7 +7,7 @@ import (
 
 // LockFreeQueue 是一个高性能、无锁、固定大小的 MPMC（多生产者多消费者）环形队列。
 // 它通过原子操作（CAS）来管理读写索引，避免了互斥锁带来的上下文切换开销。
-// 复杂度分析：
+// 复杂度分析.
 // - 入队 (Push): 平均 O(1)，最坏情况取决于 CPU 竞争。
 // - 出队 (Pop): 平均 O(1)，最坏情况取决于 CPU 竞争。
 // - 空间复杂度: O(N)，其中 N 是队列的容量。
@@ -26,8 +26,8 @@ type LockFreeQueue struct {
 // 优化：调整结构体大小为 64 字节，以匹配常见的 CPU 缓存行大小，防止伪共享。
 type slot struct {
 	sequence uint32
-	// Go 编译器会自动在此处插入 4 字节的 padding 以满足 any 的 8 字节对齐要求
-	item any      // 16 bytes
+	// Go 编译器会自动在此处插入 4 字节的 padding 以满足 any 的 8 字节对齐要.
+	item any      // 16 byte.
 	_    [40]byte // Padding: 4 (seq) + 4 (implicit) + 16 (item) + 40 (explicit) = 64 bytes.
 }
 
@@ -35,7 +35,7 @@ type slot struct {
 // 注意：capacity 必须是 2 的幂次方，以便使用位运算优化。
 func NewLockFreeQueue(capacity uint32) *LockFreeQueue {
 	if capacity&(capacity-1) != 0 {
-		// 如果不是 2 的幂，向上取整
+		// 如果不是 2 的幂，向上取.
 		capacity = 1 << uint(32-countLeadingZeros(capacity-1))
 	}
 
@@ -67,12 +67,12 @@ func (q *LockFreeQueue) Push(item any) bool {
 				break
 			}
 		} else if diff < 0 {
-			// 队列已满
+			// 队列已.
 			return false
 		} else {
 			pos = atomic.LoadUint32(&q.tail)
 		}
-		runtime.Gosched() // 让出 CPU，降低忙等压力
+		runtime.Gosched() // 让出 CPU，降低忙等压.
 	}
 
 	s.item = item
@@ -95,7 +95,7 @@ func (q *LockFreeQueue) Pop() (any, bool) {
 				break
 			}
 		} else if diff < 0 {
-			// 队列为空
+			// 队列为.
 			return nil, false
 		} else {
 			pos = atomic.LoadUint32(&q.head)
@@ -109,7 +109,7 @@ func (q *LockFreeQueue) Pop() (any, bool) {
 	return item, true
 }
 
-// countLeadingZeros 计算前导零的数量，辅助计算 2 的幂
+// countLeadingZeros 计算前导零的数量，辅助计算 2 的.
 func countLeadingZeros(x uint32) int {
 	if x == 0 {
 		return 32

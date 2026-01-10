@@ -22,31 +22,31 @@ import (
 
 // Client 封装了具备高级治理能力的 Elasticsearch 客户端，集成了熔断、限流、监控及慢查询审计。
 type Client struct {
-	es            *elasticsearch.Client // 底层 ES 官方客户端实例
-	logger        *logging.Logger       // 日志记录器
-	slowThreshold time.Duration         // 慢查询记录阈值（耗时超过此值将记录警告日志）
-	cb            *breaker.Breaker      // 熔断器，保护搜索服务不受后端故障影响
-	limiter       limiter.Limiter       // 限流器，防止搜索请求过载
+	es            *elasticsearch.Client // 底层 ES 官方客户端实例。
+	logger        *logging.Logger       // 日志记录器。
+	slowThreshold time.Duration         // 慢查询记录阈值（耗时超过此值将记录警告日志）。
+	cb            *breaker.Breaker      // 熔断器，保护搜索服务不受后端故障影响。
+	limiter       limiter.Limiter       // 限流器，防止搜索请求过载。
 
-	// 监控指标组件
-	requestsTotal   *prometheus.CounterVec   // 请求总量计数器
-	requestDuration *prometheus.HistogramVec // 请求耗时分布
+	// 监控指标组。
+	requestsTotal   *prometheus.CounterVec   // 请求总量计数器。
+	requestDuration *prometheus.HistogramVec // 请求耗时分布。
 }
 
 // Config 定义了初始化搜索客户端所需的各项参数。
 type Config struct {
-	Addresses     []string                    // ES 节点集群地址列表
-	Username      string                      // 认证用户名
-	Password      string                      // 认证密码
-	SlowThreshold time.Duration               // 慢查询判定阈值
-	MaxRetries    int                         // 底层最大重试次数
-	ServiceName   string                      // 调用方服务名称（用于熔断隔离标识）
-	BreakerConfig config.CircuitBreakerConfig // 熔断器详细配置
+	Addresses     []string                    // ES 节点集群地址列表。
+	Username      string                      // 认证用户名。
+	Password      string                      // 认证密码。
+	SlowThreshold time.Duration               // 慢查询判定阈值。
+	MaxRetries    int                         // 底层最大重试次数。
+	ServiceName   string                      // 调用方服务名称（用于熔断隔离标识）。
+	BreakerConfig config.CircuitBreakerConfig // 熔断器详细配置。
 }
 
-// NewClient 创建具备全方位治理能力的 ES 客户端
+// NewClient 创建具备全方位治理能力的 ES 客户端。
 func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client, error) {
-	// 1. 深度优化 HTTP Transport
+	// 1. 深度优化 HTTP Transport。
 	tp := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -73,13 +73,13 @@ func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client,
 		return nil, err
 	}
 
-	// 2. 初始化项目标准的熔断器
+	// 2. 初始化项目标准的熔断器。
 	cb := breaker.NewBreaker(breaker.Settings{
 		Name:   "Elasticsearch-" + cfg.ServiceName,
 		Config: cfg.BreakerConfig,
 	}, m)
 
-	// 3. 指标初始化
+	// 3. 指标初始化。
 	reqTotal := m.NewCounterVec(prometheus.CounterOpts{
 		Name: "es_client_requests_total",
 		Help: "Elasticsearch client request count",
@@ -91,7 +91,7 @@ func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client,
 		Buckets: prometheus.DefBuckets,
 	}, []string{"index", "op"})
 
-	// 4. 初始化本地限流器
+	// 4. 初始化本地限流器。
 	l := limiter.NewLocalLimiter(2000, 200)
 
 	return &Client{
@@ -105,7 +105,7 @@ func NewClient(cfg Config, logger *logging.Logger, m *metrics.Metrics) (*Client,
 	}, nil
 }
 
-// Search 执行带全方位治理的搜索
+// Search 执行带全方位治理的搜索。
 func (c *Client) Search(ctx context.Context, index string, query map[string]any, results any) error {
 	allowed, err := c.limiter.Allow(ctx, "es-search")
 	if err != nil {
@@ -118,7 +118,7 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 	operation := "search"
 	start := time.Now()
 
-	// 熔断执行 (使用 pkg/breaker)
+	// 熔断执行 (使用 pkg/breaker)。
 	_, err = c.cb.Execute(func() (any, error) {
 		ctx, span := tracing.StartSpan(ctx, "ES.Search")
 		defer span.End()
@@ -245,7 +245,7 @@ func (c *Client) Delete(ctx context.Context, index string, documentID string) er
 	return err
 }
 
-// Bulk 批量操作接口
+// Bulk 批量操作接口。
 func (c *Client) Bulk(ctx context.Context, body io.Reader) error {
 	res, err := c.es.Bulk(body, c.es.Bulk.WithContext(ctx))
 	if err != nil {

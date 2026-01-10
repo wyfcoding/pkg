@@ -14,9 +14,9 @@ import (
 
 // MinIOClient 实现了 Storage 接口，是对接 MinIO 或 S3 兼容存储系统的具体驱动。
 type MinIOClient struct {
-	client *minio.Client // 高级对象操作客户端
-	core   *minio.Core   // 低级分片接口客户端，用于精确控制分片逻辑
-	bucket string        // 当前驱动绑定的存储桶名称
+	client *minio.Client // 高级对象操作客户端。
+	core   *minio.Core   // 低级分片接口客户端，用于精确控制分片逻辑。
+	bucket string        // 当前驱动绑定的存储桶名称。
 }
 
 // NewMinIOClient 构造一个新的 MinIO 存储驱动。
@@ -82,7 +82,7 @@ func (c *MinIOClient) GetPresignedURL(ctx context.Context, objectName string, ex
 // --- 修复后的分片上传实现 ---
 
 func (c *MinIOClient) InitiateMultipartUpload(ctx context.Context, objectName string, contentType string) (string, error) {
-	// 使用 core.NewMultipartUpload 修复报错
+	// 使用 core.NewMultipartUpload 修复错误。
 	uploadID, err := c.core.NewMultipartUpload(ctx, c.bucket, objectName, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
@@ -93,7 +93,7 @@ func (c *MinIOClient) InitiateMultipartUpload(ctx context.Context, objectName st
 }
 
 func (c *MinIOClient) UploadPart(ctx context.Context, objectName, uploadID string, partNumber int, reader io.Reader, partSize int64) (string, error) {
-	// 使用 core.PutObjectPart 修复报错
+	// 使用 core.PutObjectPart 修复错误。
 	part, err := c.core.PutObjectPart(ctx, c.bucket, objectName, uploadID, partNumber, reader, partSize, minio.PutObjectPartOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload part %d: %w", partNumber, err)
@@ -110,13 +110,13 @@ func (c *MinIOClient) CompleteMultipartUpload(ctx context.Context, objectName, u
 		})
 	}
 
-	// 使用 core.CompleteMultipartUpload 修复报错
+	// 使用 core.CompleteMultipartUpload 修复错误。
 	_, err := c.core.CompleteMultipartUpload(ctx, c.bucket, objectName, uploadID, minioParts, minio.PutObjectOptions{})
 	return err
 }
 
 func (c *MinIOClient) AbortMultipartUpload(ctx context.Context, objectName, uploadID string) error {
-	// 使用 core.AbortMultipartUpload 修复报错
+	// 使用 core.AbortMultipartUpload 修复错误。
 	return c.core.AbortMultipartUpload(ctx, c.bucket, objectName, uploadID)
 }
 

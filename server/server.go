@@ -3,7 +3,7 @@ package server
 import "context"
 
 // Server 接口定义了一个通用的服务器行为契约。
-// 任何实现了 Start 和 Stop 方法的类型都可以被视为一个 Server，
+// 任何实现了 Start 和 Stop 方法的类型都可以被视为一个 Server.
 // 从而实现服务器生命周期的统一管理。
 type Server interface {
 	// Start 方法用于启动服务器。

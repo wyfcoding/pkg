@@ -10,7 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Status 定义请求的幂等状态
+// Status 定义请求的幂等状.
 type Status string
 
 const (
@@ -18,7 +18,7 @@ const (
 	StatusFinished Status = "FINISHED"
 )
 
-// Response 用于存储已完成请求的响应快照
+// Response 用于存储已完成请求的响应快.
 type Response struct {
 	StatusCode int               `json:"status_code"`
 	Header     map[string]string `json:"header"`
@@ -28,10 +28,10 @@ type Response struct {
 // Manager 定义了幂等控制器的核心行为接口。
 type Manager interface {
 	// TryStart 尝试开启幂等保护。
-	// 返回值：
-	// - isFirst: 是否为首次请求
-	// - savedResponse: 如果是已完成的重复请求，返回之前存储的响应快照
-	// - error: 如果请求正在处理中返回 ErrInProgress，或其他底层错误
+	// 返回值.
+	// - isFirst: 是否为首次请.
+	// - savedResponse: 如果是已完成的重复请求，返回之前存储的响应快.
+	// - error: 如果请求正在处理中返回 ErrInProgress，或其他底层错.
 	TryStart(ctx context.Context, key string, ttl time.Duration) (bool, *Response, error)
 
 	// Finish 标记请求处理完成，并持久化响应快照。
@@ -46,8 +46,8 @@ var ErrInProgress = fmt.Errorf("request already in progress")
 
 // redisManager 是幂等管理器的 Redis 实现。
 type redisManager struct {
-	client *redis.Client // Redis 客户端实例
-	prefix string        // 键名全局前缀
+	client *redis.Client // Redis 客户端实.
+	prefix string        // 键名全局前.
 }
 
 // NewRedisManager 初始化并返回一个基于 Redis 的幂等管理器。
@@ -66,7 +66,7 @@ func (m *redisManager) makeKey(key string) string {
 func (m *redisManager) TryStart(ctx context.Context, key string, ttl time.Duration) (bool, *Response, error) {
 	fullKey := m.makeKey(key)
 
-	// Lua 脚本实现 Check-And-Set 原子语义
+	// Lua 脚本实现 Check-And-Set 原子语.
 	script := `
 		local val = redis.call("get", KEYS[1])
 		if not val then

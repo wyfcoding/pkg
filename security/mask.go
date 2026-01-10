@@ -49,7 +49,7 @@ func MaskBankCard(cardNo string) string {
 }
 
 // MaskRealName 针对中文真实姓名进行脱敏处理。
-// 规则：
+// 规则.
 // 1. 2 个字姓名：掩码第 2 位 (张三 -> 张*)。
 // 2. 3 个字及以上：保留第 1 位，后续全部掩码 (欧阳锋 -> 欧**)。
 func MaskRealName(name string) string {

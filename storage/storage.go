@@ -7,7 +7,7 @@ import (
 )
 
 // Storage 定义了对象存储（Object Storage）的标准化接口。
-// 抽象该接口旨在支持多云驱动切换（如 MinIO, AWS S3, 阿里云 OSS 等），
+// 抽象该接口旨在支持多云驱动切换（如 MinIO, AWS S3, 阿里云 OSS 等）.
 // 并为上层业务提供一致的文件上传、下载及分片管理能力。
 type Storage interface {
 	// Upload 执行简单的小文件直传。
@@ -23,7 +23,7 @@ type Storage interface {
 	// Delete 永久删除指定的对象。
 	Delete(ctx context.Context, objectName string) error
 
-	// --- 进阶大文件分片上传 (Multipart Upload) 接口 ---
+	// --- 进阶大文件分片上传 (Multipart Upload) 接口 --.
 
 	// InitiateMultipartUpload 初始化一个分片上传任务，返回唯一的 uploadID。
 	InitiateMultipartUpload(ctx context.Context, objectName string, contentType string) (string, error)
@@ -40,6 +40,6 @@ type Storage interface {
 
 // Part 描述了分片上传中的单个片段元数据。
 type Part struct {
-	PartNumber int    // 分片顺序编号（从 1 开始）
-	ETag       string // 分片的实体标签，由服务端返回用于后续校验
+	PartNumber int    // 分片顺序编号（从 1 开始.
+	ETag       string // 分片的实体标签，由服务端返回用于后续校.
 }

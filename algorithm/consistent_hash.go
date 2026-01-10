@@ -21,10 +21,10 @@ type Hash func(data []byte) uint32
 
 // ConsistentHash 维护了一致性哈希环的状态。
 type ConsistentHash struct {
-	hash     Hash           // 哈希计算函数 (默认 CRC32)
-	replicas int            // 每个物理节点映射的虚拟节点倍数，用于平滑负载
-	keys     []int          // 排序后的哈希环，存储所有虚拟节点的哈希值
-	hashMap  map[int]string // 虚拟节点哈希值到物理节点标识的快速映射
+	hash     Hash           // 哈希计算函数 (默认 CRC32)。
+	replicas int            // 每个物理节点映射的虚拟节点倍数，用于平滑负载。
+	keys     []int          // 排序后的哈希环，存储所有虚拟节点的哈希值。
+	hashMap  map[int]string // 虚拟节点哈希值到物理节点标识的快速映射。
 	mu       sync.RWMutex
 }
 
@@ -47,12 +47,12 @@ func (ch *ConsistentHash) Add(nodes ...string) {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 
-	// 预分配 buffer 以减少循环内的内存分配
+	// 预分配 buffer 以减少循环内的内存分配。
 	buf := make([]byte, 0, 64)
 
 	for _, node := range nodes {
 		for i := 0; i < ch.replicas; i++ {
-			buf = buf[:0] // 重置 buffer
+			buf = buf[:0] // 重置缓冲区。
 			buf = strconv.AppendInt(buf, int64(i), 10)
 			buf = append(buf, node...)
 
@@ -74,7 +74,7 @@ func (ch *ConsistentHash) Get(key string) string {
 		return ""
 	}
 
-	// 优化：使用 unsafe 转换 string 到 []byte 避免内存分配
+	// 优化：使用 unsafe 转换 string 到 []byte 避免内存分配。
 	buf := unsafe.Slice(unsafe.StringData(key), len(key))
 	hash := int(ch.hash(buf))
 
@@ -92,7 +92,7 @@ func (ch *ConsistentHash) Remove(node string) {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 
-	// 1. 计算该节点所有虚拟节点的哈希值，并标记删除
+	// 1. 计算该节点所有虚拟节点的哈希值，并标记删除。
 	toRemove := make(map[int]struct{}, ch.replicas)
 	buf := make([]byte, 0, 64)
 
@@ -106,7 +106,7 @@ func (ch *ConsistentHash) Remove(node string) {
 		delete(ch.hashMap, hash)
 	}
 
-	// 2. 一次遍历重建 keys 切片，避免多次内存移动
+	// 2. 一次遍历重建 keys 切片，避免多次内存移动。
 	newKeys := make([]int, 0, len(ch.keys)-len(toRemove))
 	for _, k := range ch.keys {
 		if _, ok := toRemove[k]; !ok {

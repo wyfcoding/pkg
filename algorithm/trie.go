@@ -24,7 +24,7 @@ func newTrieNode() *TrieNode {
 	return node
 }
 
-// Reset 重置节点以便复用
+// Reset 重置节点以便复用。
 func (n *TrieNode) reset() {
 	for k := range n.children {
 		delete(n.children, k)
@@ -86,35 +86,35 @@ func (t *Trie) Remove(word string) bool {
 	return t.remove(t.root, word, 0)
 }
 
-// remove 递归删除辅助函数
+// remove 递归删除辅助函数。
 func (t *Trie) remove(node *TrieNode, word string, depth int) bool {
 	if depth == len(word) {
 		if !node.isEnd {
-			return false // 单词不存在
+			return false // 单词不存在。
 		}
 		node.isEnd = false
 		node.value = nil
-		// 如果该节点没有子节点，说明可以被移除
+		// 如果该节点没有子节点，说明可以被移除。
 		return len(node.children) == 0
 	}
 
 	ch := rune(word[depth])
 	child, ok := node.children[ch]
 	if !ok {
-		return false // 路径中断，单词不存在
+		return false // 路径中断，单词不存在。
 	}
 
 	shouldDeleteChild := t.remove(child, word, depth+1)
 
 	if shouldDeleteChild {
 		delete(node.children, ch)
-		// 回收子节点到对象池
+		// 回收子节点到对象池。
 		child.reset()
 		trieNodePool.Put(child)
 
-		// 检查当前节点是否也需要被移除：
-		// 1. 不是其他单词的结尾
-		// 2. 没有其他子节点了
+		// 检查当前节点是否也需要被移除。
+		// 1. 不是其他单词的结尾。
+		// 2. 没有其他子节点。
 		return !node.isEnd && len(node.children) == 0
 	}
 

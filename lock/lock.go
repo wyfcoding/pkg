@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	ErrLockFailed   = errors.New("failed to acquire lock") // 获取锁失败（已被占用或网络错误）
-	ErrUnlockFailed = errors.New("failed to release lock") // 释放锁失败（非所有者或已过期）
+	ErrLockFailed   = errors.New("failed to acquire lock") // 获取锁失败（已被占用或网络错误.
+	ErrUnlockFailed = errors.New("failed to release lock") // 释放锁失败（非所有者或已过期.
 )
 
 // DistributedLock 定义分布式锁的增强型行为接口。
@@ -32,7 +32,7 @@ type DistributedLock interface {
 
 // RedisLock 是基于 Redis 实现的分布式锁结构。
 type RedisLock struct {
-	client *redis.Client // Redis 客户端实例
+	client *redis.Client // Redis 客户端实.
 }
 
 // NewRedisLock 构造一个新的 Redis 分布式锁驱动。

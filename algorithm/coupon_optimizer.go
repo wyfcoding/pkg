@@ -39,7 +39,7 @@ func NewCouponOptimizer() *CouponOptimizer {
 // 这种方法可以找到全局最优解，但计算复杂度较高，适用于优惠券数量较少的情况。
 // originalPrice: 原始订单价格（单位：分）。
 // coupons: 可用的优惠券列表。
-// 返回值：
+// 返回值.
 //   - []uint64: 最优组合的优惠券ID列表。
 //   - int64: 使用最优组合后的最终价格（单位：分）。
 //   - int64: 最优组合带来的总优惠金额（单位：分）。
@@ -91,7 +91,7 @@ func (co *CouponOptimizer) OptimalCombination(
 	// mask 的每一位代表一个优惠券是否被选中。
 	n := len(available)
 	for mask := 1; mask < (1 << n); mask++ { // 从1开始，排除空组合。
-		combination := make([]Coupon, 0, n) // 预分配容量
+		combination := make([]Coupon, 0, n) // 预分配容.
 
 		// 根据mask的位来构建当前组合。
 		for i := range n {
@@ -160,7 +160,7 @@ func (co *CouponOptimizer) calculatePriceFast(originalPrice int64, sortedCoupons
 // 它优先选择单个优惠金额最大的优惠券，但会在选择过程中考虑叠加规则。
 // originalPrice: 原始订单价格（单位：分）。
 // coupons: 可用的优惠券列表。
-// 返回值：
+// 返回值.
 //   - []uint64: 选定的优惠券ID列表.
 //   - int64: 使用选定组合后的最终价格（单位：分）。
 //   - int64: 选定组合带来的总优惠金额（单位：分）。
@@ -204,7 +204,7 @@ func (co *CouponOptimizer) GreedyOptimization(
 		return 0
 	})
 
-	// 贪心选择过程：
+	// 贪心选择过程.
 	selected := make([]Coupon, 0) // 存储已选择的优惠券。
 	currentPrice := originalPrice // 当前价格，初始为原始价格。
 
@@ -349,7 +349,7 @@ func (co *CouponOptimizer) calculateSingleDiscount(originalPrice int64, coupon C
 
 // DynamicProgramming 使用动态规划计算最优优惠组合。
 // 升级版：严格处理可叠加与不可叠加逻辑。
-// 核心思路：
+// 核心思路.
 // 1. 将所有不可叠加的券视为独立的分组（每组只能选一张）。
 // 2. 将所有可叠加的券视为一个特殊分组。
 // 3. 求解分组背包问题的变体。
@@ -361,7 +361,7 @@ func (co *CouponOptimizer) DynamicProgramming(
 		return nil, originalPrice, 0
 	}
 
-	// 1. 分类：可叠加 vs 不可叠加
+	// 1. 分类：可叠加 vs 不可叠.
 	var stackable []Coupon
 	var nonStackable []Coupon
 	for _, c := range coupons {
@@ -375,7 +375,7 @@ func (co *CouponOptimizer) DynamicProgramming(
 		}
 	}
 
-	// 2. 情况 A：只用一张不可叠加的券中的最优解
+	// 2. 情况 A：只用一张不可叠加的券中的最优.
 	var bestNonStackID uint64
 	bestNonStackPrice := originalPrice
 	for _, c := range nonStackable {
@@ -386,9 +386,9 @@ func (co *CouponOptimizer) DynamicProgramming(
 		}
 	}
 
-	// 3. 情况 B：使用所有可叠加券的最优组合
-	// 这里使用位运算 DP（如果数量不多）或贪心 + 排序优化
-	// 针对折扣券和满减券的顺序敏感性，先按类型排序
+	// 3. 情况 B：使用所有可叠加券的最优组.
+	// 这里使用位运算 DP（如果数量不多）或贪心 + 排序优.
+	// 针对折扣券和满减券的顺序敏感性，先按类型排.
 	slices.SortFunc(stackable, func(a, b Coupon) int {
 		if a.Type != b.Type {
 			if a.Type < b.Type {
@@ -415,7 +415,7 @@ func (co *CouponOptimizer) DynamicProgramming(
 		}
 	}
 
-	// 4. 最终决策：取 A 和 B 之间的最优者
+	// 4. 最终决策：取 A 和 B 之间的最优.
 	if bestNonStackPrice < stackPrice {
 		return []uint64{bestNonStackID}, bestNonStackPrice, originalPrice - bestNonStackPrice
 	}

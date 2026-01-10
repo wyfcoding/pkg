@@ -1,7 +1,9 @@
+// Package limiter 提供了限流器的通用接口与多种后端实现。
 package limiter
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -15,97 +17,79 @@ type Limiter interface {
 	Allow(ctx context.Context, key string) (bool, error)
 }
 
-// --- Local Limiter (Token Bucket) ---
-
 // LocalLimiter 是基于内存的本地令牌桶限流器。
 type LocalLimiter struct {
 	limiter *rate.Limiter
 }
 
 // NewLocalLimiter 创建本地限流器。
-// r: 每秒填充速率，b: 桶容量。
-func NewLocalLimiter(r rate.Limit, b int) *LocalLimiter {
-	slog.Info("local_limiter initialized", "rate", r, "burst", b)
+func NewLocalLimiter(fillingRate rate.Limit, burst int) *LocalLimiter {
+	slog.Info("local_limiter initialized", "rate", fillingRate, "burst", burst)
+
 	return &LocalLimiter{
-		limiter: rate.NewLimiter(r, b),
+		limiter: rate.NewLimiter(fillingRate, burst),
 	}
 }
 
-func (l *LocalLimiter) Allow(ctx context.Context, key string) (bool, error) {
+// Allow 实现 Limiter 接口。
+func (l *LocalLimiter) Allow(_ context.Context, _ string) (bool, error) {
 	return l.limiter.Allow(), nil
 }
 
-// redisTokenBucketScript 是经过充分优化的 Redis Lua 脚本。
-// 该脚本实现了标准的令牌桶算法，具有以下特点：
-// 1. 原子性：所有计算都在 Redis 服务端完成。
-// 2. 高性能：仅需存储两个 Hash 字段，内存开销极小。
-// 3. 实时性：基于时间戳动态计算令牌增量。
+// redisTokenBucketScript 是经过优化的 Redis Lua 脚本。
 const redisTokenBucketScript = `
-local key = KEYS[1]           -- 限流标识
-local rate = tonumber(ARGV[1]) -- 每秒生成令牌速率
-local burst = tonumber(ARGV[2])-- 桶最大容量
-local now = tonumber(ARGV[3])  -- 当前时间戳 (秒)
-local requested = 1            -- 请求令牌数 (默认为1)
+local key = KEYS[1]
+local rate = tonumber(ARGV[1])
+local burst = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local requested = 1
 
--- 获取当前状态
 local last_tokens = tonumber(redis.call("hget", key, "tokens"))
 local last_refreshed = tonumber(redis.call("hget", key, "last_refreshed"))
 
--- 第一次初始化
 if last_tokens == nil then
     last_tokens = burst
     last_refreshed = now
 end
 
--- 计算自上次刷新以来新生成的令牌
 local delta = math.max(0, now - last_refreshed)
 local new_tokens = math.min(burst, last_tokens + (delta * rate))
 
--- 检查令牌是否足够
 local allowed = false
 if new_tokens >= requested then
     new_tokens = new_tokens - requested
     allowed = true
 end
 
--- 更新 Redis 状态并设置过期时间（防止内存泄漏，过期时间设为桶填满所需时间的2倍）
 redis.call("hset", key, "tokens", new_tokens, "last_refreshed", now)
 redis.call("expire", key, math.ceil(burst / rate) * 2)
 
 return allowed and 1 or 0
 `
 
-// RedisLimiter 是基于 Redis 和 Lua 脚本实现的分布式令牌桶限流器。
 // RedisLimiter 是基于 Redis + Lua 脚本实现的分布式令牌桶限流器。
-// 核心优势：跨节点共享限流状态，原子性更新，防止惊群效应。
 type RedisLimiter struct {
-	client *redis.Client // Redis 客户端实例
-	rate   int           // 每秒产生的令牌数 (QPS)
-	burst  int           // 令牌桶的最大容量
+	client *redis.Client // Redis 客户端实例。
+	rate   int           // 每秒产生的令牌数 (QPS)。
+	burst  int           // 令牌桶的最大容量。
 }
 
 // NewRedisLimiter 创建并初始化一个分布式限流器。
-// 架构设计：默认突发流量容量设为速率的 120%，确保在请求波动时具有一定的弹性。
-func NewRedisLimiter(client *redis.Client, rate int, _ time.Duration) *RedisLimiter {
-	// 默认突发流量容量为速率的 20% 或最小为 1，确保平滑
-	burst := rate + (rate / 5)
-	if burst <= 0 {
-		burst = 1
-	}
-	slog.Info("redis_limiter initialized", "rate", rate, "burst", burst)
-	return &RedisLimiter{
-		client: client,
-		rate:   rate,
-		burst:  burst,
-	}
-}
+func NewRedisLimiter(client *redis.Client, fillingRate int, _ time.Duration) *RedisLimiter {
+	// 默认突发流量容量为速率的 120%。
+	const burstMultiplier = 1.2
+	burstVal := int(float64(fillingRate) * burstMultiplier)
 
-// NewRedisLimiterWithBurst 创建带自定义突发容量的分布式限流器。
-func NewRedisLimiterWithBurst(client *redis.Client, rate int, burst int) *RedisLimiter {
+	if burstVal <= 0 {
+		burstVal = 1
+	}
+
+	slog.Info("redis_limiter initialized", "rate", fillingRate, "burst", burstVal)
+
 	return &RedisLimiter{
 		client: client,
-		rate:   rate,
-		burst:  burst,
+		rate:   fillingRate,
+		burst:  burstVal,
 	}
 }
 
@@ -113,10 +97,10 @@ func NewRedisLimiterWithBurst(client *redis.Client, rate int, burst int) *RedisL
 func (l *RedisLimiter) Allow(ctx context.Context, key string) (bool, error) {
 	now := time.Now().Unix()
 
-	// 执行 Lua 脚本
+	// 执行 Lua 脚本。
 	result, err := l.client.Eval(ctx, redisTokenBucketScript, []string{key}, l.rate, l.burst, now).Int()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("redis eval failed: %w", err)
 	}
 
 	return result == 1, nil

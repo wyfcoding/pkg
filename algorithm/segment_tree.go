@@ -32,17 +32,17 @@ func (st *SegmentTree) Update(idx int, val int64) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	// 定位到叶子节点
+	// 定位到叶子节.
 	pos := idx + st.n
 	st.tree[pos] = val
 
-	// 向上更新父节点
-	// pos/2 是父节点索引
-	// pos^1 是兄弟节点索引 (如果是左孩子(偶数)，^1得到右孩子(奇数)；反之亦然)
+	// 向上更新父节.
+	// pos/2 是父节点索.
+	// pos^1 是兄弟节点索引 (如果是左孩子(偶数)，^1得到右孩子(奇数)；反之亦然.
 	for pos > 1 {
-		// Parent = Left Child + Right Child
-		// st.tree[pos] 是当前更新的节点，st.tree[pos^1] 是它的兄弟
-		// 父节点索引为 pos >> 1
+		// Parent = Left Child + Right Chil.
+		// st.tree[pos] 是当前更新的节点，st.tree[pos^1] 是它的兄.
+		// 父节点索引为 pos >> .
 		st.tree[pos>>1] = st.tree[pos] + st.tree[pos^1]
 		pos >>= 1
 	}
@@ -55,17 +55,17 @@ func (st *SegmentTree) Query(left, right int) int64 {
 	defer st.mu.RUnlock()
 
 	var sum int64
-	// 将区间映射到线段树的叶子节点范围
-	// 注意：迭代式查询通常使用左闭右开区间 [l, r)，
-	// 但本方法参数定义为闭区间 [left, right]，所以 right 需要 +1 后再映射，
+	// 将区间映射到线段树的叶子节点范.
+	// 注意：迭代式查询通常使用左闭右开区间 [l, r).
+	// 但本方法参数定义为闭区间 [left, right]，所以 right 需要 +1 后再映射.
 	// 或者在循环条件中处理。
-	// 这里我们采用标准的 [l, r) 转换：
+	// 这里我们采用标准的 [l, r) 转换.
 	l := left + st.n
-	r := right + st.n + 1 // 转换为右开区间
+	r := right + st.n + 1 // 转换为右开区.
 
 	for l < r {
-		// 如果 l 是右孩子（奇数），它不能覆盖父节点的整个左半部分，
-		// 所以直接加上它自己，然后 l 向右移动一位（即 l++），
+		// 如果 l 是右孩子（奇数），它不能覆盖父节点的整个左半部分.
+		// 所以直接加上它自己，然后 l 向右移动一位（即 l++）.
 		// 这样父节点在下一轮循环计算时就会处理 l 的右兄弟（即父节点的下一个节点的左孩子）。
 		if l&1 == 1 {
 			sum += st.tree[l]
@@ -79,7 +79,7 @@ func (st *SegmentTree) Query(left, right int) int64 {
 			sum += st.tree[r]
 		}
 
-		// 上升到父节点层级
+		// 上升到父节点层.
 		l >>= 1
 		r >>= 1
 	}

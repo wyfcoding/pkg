@@ -5,14 +5,14 @@ import (
 	"math"
 )
 
-// Matrix 定义基础矩阵结构
+// Matrix 定义基础矩阵结构。
 type Matrix struct {
 	Rows int
 	Cols int
-	Data []float64 // 行优先存储
+	Data []float64 // 行优先存储。
 }
 
-// NewMatrix 创建一个 r x c 的零矩阵
+// NewMatrix 创建一个 r x c 的零矩阵。
 func NewMatrix(r, c int) *Matrix {
 	return &Matrix{
 		Rows: r,
@@ -21,7 +21,7 @@ func NewMatrix(r, c int) *Matrix {
 	}
 }
 
-// NewMatrixFromData 从二维切片创建矩阵
+// NewMatrixFromData 从二维切片创建矩阵。
 func NewMatrixFromData(data [][]float64) (*Matrix, error) {
 	r := len(data)
 	if r == 0 {
@@ -40,17 +40,17 @@ func NewMatrixFromData(data [][]float64) (*Matrix, error) {
 	return m, nil
 }
 
-// Get 获取元素 (i, j)
+// Get 获取元素 (i, j)。
 func (m *Matrix) Get(i, j int) float64 {
 	return m.Data[i*m.Cols+j]
 }
 
-// Set 设置元素 (i, j)
+// Set 设置元素 (i, j)。
 func (m *Matrix) Set(i, j int, v float64) {
 	m.Data[i*m.Cols+j] = v
 }
 
-// Transpose 矩阵转置
+// Transpose 矩阵转置。
 func (m *Matrix) Transpose() *Matrix {
 	res := NewMatrix(m.Cols, m.Rows)
 	for i := 0; i < m.Rows; i++ {
@@ -61,7 +61,7 @@ func (m *Matrix) Transpose() *Matrix {
 	return res
 }
 
-// MultiplyVector 矩阵向量乘法: y = A * x
+// MultiplyVector 矩阵向量乘法: y = A * x。
 func (m *Matrix) MultiplyVector(x []float64) ([]float64, error) {
 	if len(x) != m.Cols {
 		return nil, errors.New("dimension mismatch")
@@ -78,17 +78,17 @@ func (m *Matrix) MultiplyVector(x []float64) ([]float64, error) {
 	return y, nil
 }
 
-// Multiply 矩阵乘法: C = A * B
+// Multiply 矩阵乘法: C = A * B。
 func (m *Matrix) Multiply(b *Matrix) (*Matrix, error) {
 	if m.Cols != b.Rows {
 		return nil, errors.New("matrix dimension mismatch for multiplication")
 	}
 	res := NewMatrix(m.Rows, b.Cols)
 
-	// Cache-friendly optimization (ikj loop order)
-	// i: row of A
-	// k: col of A / row of B
-	// j: col of B
+	// Cache-friendly optimization (ikj loop order)。
+	// i: row of A。
+	// k: col of A / row of B。
+	// j: col of B。
 	for i := 0; i < m.Rows; i++ {
 		rowOffsetA := i * m.Cols
 		rowOffsetC := i * res.Cols
@@ -98,7 +98,7 @@ func (m *Matrix) Multiply(b *Matrix) (*Matrix, error) {
 			rowOffsetB := k * b.Cols
 
 			for j := 0; j < b.Cols; j++ {
-				// C[i][j] += A[i][k] * B[k][j]
+				// C[i][j] += A[i][k] * B[k][j]。
 				res.Data[rowOffsetC+j] += valA * b.Data[rowOffsetB+j]
 			}
 		}
@@ -106,7 +106,7 @@ func (m *Matrix) Multiply(b *Matrix) (*Matrix, error) {
 	return res, nil
 }
 
-// Cholesky 分解: A = L * L^T
+// Cholesky 分解: A = L * L^T。
 // 返回下三角矩阵 L。A 必须是对称正定矩阵。
 // 使用 Cholesky–Banachiewicz 算法。
 func (m *Matrix) Cholesky() (*Matrix, error) {
@@ -124,14 +124,14 @@ func (m *Matrix) Cholesky() (*Matrix, error) {
 			}
 
 			if i == j {
-				// 对角线元素
+				// 对角线元素。
 				val := m.Get(i, i) - sum
 				if val <= 0 {
 					return nil, errors.New("matrix is not positive definite")
 				}
 				l.Set(i, j, math.Sqrt(val))
 			} else {
-				// 非对角线元素
+				// 非对角线元素。
 				l.Set(i, j, (m.Get(i, j)-sum)/l.Get(j, j))
 			}
 		}

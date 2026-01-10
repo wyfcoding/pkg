@@ -4,21 +4,21 @@ import (
 	"math"
 )
 
-// MCMFEdge 费用流边
+// MCMFEdge 费用流边。
 type MCMFEdge struct {
 	To, Cap, Flow, Cost, Rev int
 }
 
-// MCMF 最小费用最大流算法
-// 优化：复用内存 buffer，减少 GC 压力
+// MCMF 最小费用最大流算法。
+// 优化：复用内存 buffer，减少 GC 压力。
 type MCMF struct {
 	nodes   int
 	adj     [][]MCMFEdge
 	dist    []int
 	pNode   []int
 	pEdge   []int
-	inQueue []bool // 复用 buffer
-	queue   []int  // 复用 buffer
+	inQueue []bool // 复用 buffer。
+	queue   []int  // 复用 buffer。
 }
 
 func NewMCMF(n int) *MCMF {
@@ -38,17 +38,17 @@ func (m *MCMF) AddEdge(u, v, capacity, cost int) {
 	m.adj[v] = append(m.adj[v], MCMFEdge{u, 0, 0, -cost, len(m.adj[u]) - 1})
 }
 
-// spfa 寻找最短路径
+// spfa 寻找最短路径。
 func (m *MCMF) spfa(s, t int) bool {
-	// 重置 dist
+	// 重置 dist。
 	for i := range m.dist {
 		m.dist[i] = math.MaxInt32
 	}
-	// 重置 inQueue (O(N))
+	// 重置 inQueue (O(N))。
 	for i := range m.inQueue {
 		m.inQueue[i] = false
 	}
-	// 重置 queue
+	// 重置 queue。
 	m.queue = m.queue[:0]
 
 	m.dist[s] = 0
@@ -75,8 +75,8 @@ func (m *MCMF) spfa(s, t int) bool {
 	return m.dist[t] != math.MaxInt32
 }
 
-// Solve 计算最小费用最大流
-// 返回: (最大流, 最小费用)
+// Solve 计算最小费用最大流。
+// 返回: (最大流, 最小费用)。
 func (m *MCMF) Solve(s, t int) (int, int) {
 	maxFlow, minCost := 0, 0
 	for m.spfa(s, t) {

@@ -1,3 +1,4 @@
+// Package algorithm 提供了高性能算法实现。
 package algorithm
 
 import (
@@ -12,7 +13,7 @@ type Location struct {
 	ID     uint64
 	Lat    float64
 	Lon    float64
-	Demand float64 // 该位置的载重需求量
+	Demand float64 // 该位置的载重需求量。
 }
 
 // Route 代表优化后的路线。
@@ -30,9 +31,9 @@ func NewRouteOptimizer() *RouteOptimizer {
 }
 
 // OptimizeRoute 优化从起点开始访问所有地点的路线。
-// 使用简单的最近邻算法解决 TSP 问题。
 func (ro *RouteOptimizer) OptimizeRoute(start Location, destinations []Location) Route {
-	if len(destinations) == 0 {
+	destLen := len(destinations)
+	if destLen == 0 {
 		return Route{
 			Locations: []Location{start},
 			Distance:  0,
@@ -40,36 +41,22 @@ func (ro *RouteOptimizer) OptimizeRoute(start Location, destinations []Location)
 	}
 
 	visited := make(map[uint64]bool)
-	route := []Location{start}
+	route := make([]Location, 0, destLen+1)
+	route = append(route, start)
 	totalDistance := 0.0
 	current := start
 
-	for len(route) < len(destinations)+1 {
-		nearestDist := math.MaxFloat64
-		var nearestLoc Location
-		found := false
-
-		for _, dest := range destinations {
-			if visited[dest.ID] {
-				continue
-			}
-
-			dist := HaversineDistance(current.Lat, current.Lon, dest.Lat, dest.Lon)
-			if dist < nearestDist {
-				nearestDist = dist
-				nearestLoc = dest
-				found = true
-			}
-		}
-
-		if found {
-			visited[nearestLoc.ID] = true
-			route = append(route, nearestLoc)
-			totalDistance += nearestDist
-			current = nearestLoc
-		} else {
+	for len(route) < destLen+1 {
+		nearestIdx, nearestDist := ro.findNearest(current, destinations, visited)
+		if nearestIdx == -1 {
 			break
 		}
+
+		nearestLoc := destinations[nearestIdx]
+		visited[nearestLoc.ID] = true
+		route = append(route, nearestLoc)
+		totalDistance += nearestDist
+		current = nearestLoc
 	}
 
 	return Route{
@@ -78,159 +65,204 @@ func (ro *RouteOptimizer) OptimizeRoute(start Location, destinations []Location)
 	}
 }
 
+func (ro *RouteOptimizer) findNearest(current Location, destinations []Location, visited map[uint64]bool) (int, float64) {
+	minDist := math.MaxFloat64
+	bestIdx := -1
+
+	for idx, dest := range destinations {
+		if visited[dest.ID] {
+			continue
+		}
+
+		dist := HaversineDistance(current.Lat, current.Lon, dest.Lat, dest.Lon)
+		if dist < minDist {
+			minDist = dist
+			bestIdx = idx
+		}
+	}
+
+	return bestIdx, minDist
+}
+
+type saving struct {
+	i, j int
+	val  float64
+}
+
 // ClarkeWrightVRP 使用 Savings 算法优化带载重限制的多车路线 (CVRP)。
 func (ro *RouteOptimizer) ClarkeWrightVRP(start Location, destinations []Location, capacity float64) []Route {
-	if len(destinations) == 0 {
+	destLen := len(destinations)
+	if destLen == 0 {
 		return nil
 	}
 
-	// 1. 初始化：每辆车只服务一个目的地 (start -> dest -> start)
-	type saving struct {
-		i, j int
-		val  float64
-	}
-	n := len(destinations)
-	routes := make([][]int, n)
-	for i := range n {
-		routes[i] = []int{i}
+	// 1. 初始化路线。
+	routes := make([][]int, destLen)
+	for idx := range destLen {
+		routes[idx] = []int{idx}
 	}
 
-	// 2. 计算 Savings：S(i,j) = d(0,i) + d(0,j) - d(i,j)
-	distToStart := make([]float64, n)
-	for i := range n {
-		distToStart[i] = HaversineDistance(start.Lat, start.Lon, destinations[i].Lat, destinations[i].Lon)
-	}
+	// 2. 计算 Savings 并并行加速。
+	savings := ro.parallelCalculateSavings(start, destinations)
 
-	// 并行计算 Savings
-	numWorkers := runtime.GOMAXPROCS(0)
-	if n < 100 {
-		numWorkers = 1
-	}
-
-	type savingChunk []saving
-	chunks := make([]savingChunk, numWorkers)
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
-
-	for w := 0; w < numWorkers; w++ {
-		go func(workerID int) {
-			defer wg.Done()
-			var localSavings []saving
-			// 简单的分片策略：workerID, workerID+numWorkers, ...
-			for i := workerID; i < n; i += numWorkers {
-				for j := i + 1; j < n; j++ {
-					dIj := HaversineDistance(destinations[i].Lat, destinations[i].Lon, destinations[j].Lat, destinations[j].Lon)
-					s := distToStart[i] + distToStart[j] - dIj
-					if s > 0 {
-						localSavings = append(localSavings, saving{i, j, s})
-					}
-				}
-			}
-			chunks[workerID] = localSavings
-		}(w)
-	}
-	wg.Wait()
-
-	// 合并结果
-	totalSavingsCount := 0
-	for _, chunk := range chunks {
-		totalSavingsCount += len(chunk)
-	}
-	savings := make([]saving, 0, totalSavingsCount)
-	for _, chunk := range chunks {
-		savings = append(savings, chunk...)
-	}
-	// 按节省值降序排列
+	// 3. 按 Savings 降序排列。
 	slices.SortFunc(savings, func(a, b saving) int {
 		if a.val > b.val {
 			return -1
-		}
-		if a.val < b.val {
+		} else if a.val < b.val {
 			return 1
 		}
+
 		return 0
 	})
 
-	// 3. 合并路径逻辑
-	findRouteInfo := func(nodeIdx int) (int, int) {
-		for rIdx, r := range routes {
-			for pIdx, node := range r {
-				if node == nodeIdx {
-					pos := -1 // 默认在中间
-					if pIdx == 0 {
-						pos = 0 // 头部
-					} else if pIdx == len(r)-1 {
-						pos = 1 // 尾部
+	// 4. 合并路线。
+	finalRoutes := ro.processMerging(destinations, routes, savings, capacity)
+
+	return ro.buildFinalRoutes(start, destinations, finalRoutes)
+}
+
+func (ro *RouteOptimizer) parallelCalculateSavings(start Location, destinations []Location) []saving {
+	destLen := len(destinations)
+	distToStart := make([]float64, destLen)
+
+	for idx := range destLen {
+		distToStart[idx] = HaversineDistance(start.Lat, start.Lon, destinations[idx].Lat, destinations[idx].Lon)
+	}
+
+	numWorkers := runtime.GOMAXPROCS(0)
+	if destLen < 100 {
+		numWorkers = 1
+	}
+
+	chunks := make([][]saving, numWorkers)
+	var waitGrp sync.WaitGroup
+	waitGrp.Add(numWorkers)
+
+	for workerID := 0; workerID < numWorkers; workerID++ {
+		go func(id int) {
+			defer waitGrp.Done()
+			var localSavings []saving
+			for idxI := id; idxI < destLen; idxI += numWorkers {
+				for idxJ := idxI + 1; idxJ < destLen; idxJ++ {
+					distIJ := HaversineDistance(destinations[idxI].Lat, destinations[idxI].Lon, destinations[idxJ].Lat, destinations[idxJ].Lon)
+					val := distToStart[idxI] + distToStart[idxJ] - distIJ
+					if val > 0 {
+						localSavings = append(localSavings, saving{i: idxI, j: idxJ, val: val})
 					}
-					return rIdx, pos
 				}
 			}
-		}
-		return -1, -1
+			chunks[id] = localSavings
+		}(workerID)
+	}
+	waitGrp.Wait()
+
+	var totalSavings []saving
+	for _, chunk := range chunks {
+		totalSavings = append(totalSavings, chunk...)
 	}
 
-	getRouteDemand := func(r []int) float64 {
-		sum := 0.0
-		for _, idx := range r {
-			sum += destinations[idx].Demand
-		}
-		return sum
-	}
+	return totalSavings
+}
 
-	for _, s := range savings {
-		r1Idx, pos1 := findRouteInfo(s.i)
-		r2Idx, pos2 := findRouteInfo(s.j)
+func (ro *RouteOptimizer) processMerging(destinations []Location, currentRoutes [][]int, savings []saving, capacity float64) [][]int {
+	routes := currentRoutes
+
+	for _, sav := range savings {
+		r1Idx, pos1 := ro.findRouteInfo(routes, sav.i)
+		r2Idx, pos2 := ro.findRouteInfo(routes, sav.j)
 
 		if r1Idx == -1 || r2Idx == -1 || r1Idx == r2Idx {
 			continue
 		}
 
-		// 只有当两个节点分别位于各自路径的端点时才能合并
-		if pos1 != -1 && pos2 != -1 {
-			if getRouteDemand(routes[r1Idx])+getRouteDemand(routes[r2Idx]) <= capacity {
-				// 执行合并逻辑
-				var newRoute []int
-				if pos1 == 1 && pos2 == 0 { // 路径1尾部连路径2头部
-					newRoute = append(routes[r1Idx], routes[r2Idx]...)
-				} else if pos1 == 0 && pos2 == 1 { // 路径2尾部连路径1头部
-					newRoute = append(routes[r2Idx], routes[r1Idx]...)
-				} else if pos1 == 0 && pos2 == 0 { // 翻转路径1，头部连头部
-					for i := len(routes[r1Idx]) - 1; i >= 0; i-- {
-						newRoute = append(newRoute, routes[r1Idx][i])
-					}
-					newRoute = append(newRoute, routes[r2Idx]...)
-				} else if pos1 == 1 && pos2 == 1 { // 路径1尾部连路径2尾部（翻转路径2）
-					newRoute = append([]int{}, routes[r1Idx]...)
-					for i := len(routes[r2Idx]) - 1; i >= 0; i-- {
-						newRoute = append(newRoute, routes[r2Idx][i])
-					}
-				}
+		if pos1 == -1 || pos2 == -1 {
+			continue
+		}
 
-				if newRoute != nil {
-					routes[r1Idx] = newRoute
-					// 移除已合并的路径2
-					routes = append(routes[:r2Idx], routes[r2Idx+1:]...)
-				}
+		if ro.getRouteDemand(destinations, routes[r1Idx])+ro.getRouteDemand(destinations, routes[r2Idx]) <= capacity {
+			newRoute := ro.mergeTwoRoutes(routes[r1Idx], routes[r2Idx], pos1, pos2)
+			if newRoute != nil {
+				routes[r1Idx] = newRoute
+				routes = append(routes[:r2Idx], routes[r2Idx+1:]...)
 			}
 		}
 	}
 
-	// 4. 构建最终 Route 对象
-	finalRoutes := make([]Route, len(routes))
-	for i, r := range routes {
-		locs := []Location{start}
+	return routes
+}
+
+func (ro *RouteOptimizer) findRouteInfo(routes [][]int, nodeIdx int) (int, int) {
+	for rIdx, route := range routes {
+		for pIdx, node := range route {
+			if node == nodeIdx {
+				pos := -1 // 默认在中间。
+				if pIdx == 0 {
+					pos = 0 // 头部。
+				} else if pIdx == len(route)-1 {
+					pos = 1 // 尾部。
+				}
+
+				return rIdx, pos
+			}
+		}
+	}
+
+	return -1, -1
+}
+
+func (ro *RouteOptimizer) getRouteDemand(destinations []Location, route []int) float64 {
+	totalDemand := 0.0
+	for _, idx := range route {
+		totalDemand += destinations[idx].Demand
+	}
+
+	return totalDemand
+}
+
+func (ro *RouteOptimizer) mergeTwoRoutes(route1, route2 []int, pos1, pos2 int) []int {
+	var merged []int
+
+	if pos1 == 1 && pos2 == 0 { // 1尾连2头。
+		merged = append(route1, route2...)
+	} else if pos1 == 0 && pos2 == 1 { // 2尾连1头。
+		merged = append(route2, route1...)
+	} else if pos1 == 0 && pos2 == 0 { // 1头连2头（翻转1）。
+		merged = make([]int, 0, len(route1)+len(route2))
+		for idx := len(route1) - 1; idx >= 0; idx-- {
+			merged = append(merged, route1[idx])
+		}
+		merged = append(merged, route2...)
+	} else if pos1 == 1 && pos2 == 1 { // 1尾连2尾（翻转2）。
+		merged = make([]int, 0, len(route1)+len(route2))
+		merged = append(merged, route1...)
+		for idx := len(route2) - 1; idx >= 0; idx-- {
+			merged = append(merged, route2[idx])
+		}
+	}
+
+	return merged
+}
+
+func (ro *RouteOptimizer) buildFinalRoutes(start Location, destinations []Location, routes [][]int) []Route {
+	final := make([]Route, len(routes))
+
+	for idx, routeNodes := range routes {
+		locs := make([]Location, 0, len(routeNodes)+2)
+		locs = append(locs, start)
 		dist := 0.0
 		curr := start
-		for _, nodeIdx := range r {
+
+		for _, nodeIdx := range routeNodes {
 			dest := destinations[nodeIdx]
 			locs = append(locs, dest)
 			dist += HaversineDistance(curr.Lat, curr.Lon, dest.Lat, dest.Lon)
 			curr = dest
 		}
-		// 回到原点
+
 		dist += HaversineDistance(curr.Lat, curr.Lon, start.Lat, start.Lon)
-		finalRoutes[i] = Route{Locations: locs, Distance: dist}
+		final[idx] = Route{Locations: locs, Distance: dist}
 	}
 
-	return finalRoutes
+	return final
 }

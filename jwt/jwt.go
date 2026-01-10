@@ -11,17 +11,17 @@ import (
 )
 
 var (
-	ErrTokenMalformed   = errors.New("token format is invalid")    // 令牌格式错误
-	ErrTokenExpired     = errors.New("token has expired")          // 令牌已过期
-	ErrTokenNotValidYet = errors.New("token is not active yet")    // 令牌尚未生效
-	ErrTokenInvalid     = errors.New("token signature is invalid") // 令牌签名无效或校验不通过
+	ErrTokenMalformed   = errors.New("token format is invalid")    // 令牌格式错误。
+	ErrTokenExpired     = errors.New("token has expired")          // 令牌已过期。
+	ErrTokenNotValidYet = errors.New("token is not active yet")    // 令牌尚未生效。
+	ErrTokenInvalid     = errors.New("token signature is invalid") // 令牌签名无效或校验不通过。
 )
 
 // MyCustomClaims 定义了 JWT 的 Payload 部分，包含用户信息与权限角色。
 type MyCustomClaims struct {
-	UserID   uint64   `json:"user_id"`  // 用户唯一标识
-	Username string   `json:"username"` // 用户登录名
-	Roles    []string `json:"roles"`    // 用户所属的角色列表（用于 RBAC）
+	UserID   uint64   `json:"user_id"`  // 用户唯一标识。
+	Username string   `json:"username"` // 用户登录名。
+	Roles    []string `json:"roles"`    // 用户所属的角色列表（用于 RBAC）。
 	jwt.RegisteredClaims
 }
 

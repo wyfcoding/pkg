@@ -1,10 +1,12 @@
-// Package retry 提供了工业级的指数退避重试机制，支持随机抖动（Jitter）以防止大规模重试引发的惊群效应。
+// Package retry 提供了工业级的指数退避重试机制。
 package retry
 
 import (
 	"context"
-	"log/slog"
-	"math/rand/v2"
+	"crypto/rand"
+	"encoding/binary"
+	"fmt"
+	randv2 "math/rand/v2"
 	"time"
 )
 
@@ -13,19 +15,14 @@ type Func func() error
 
 // Config 封装了重试策略的详细控制参数。
 type Config struct {
-	MaxRetries     int           // 最大重试次数（不含首次尝试）
-	InitialBackoff time.Duration // 首次重试前的初始等待时间
-	MaxBackoff     time.Duration // 重试等待时间的上限（封顶值）
-	Multiplier     float64       // 等待时间随重试次数增长的乘数（指数因子）
-	Jitter         float64       // 随机抖动因子 (0.0-1.0)，用于分散重试压力
+	InitialBackoff time.Duration // 首次重试前的初始等待时间。
+	MaxBackoff     time.Duration // 重试等待时间的上限（封顶值）。
+	Multiplier     float64       // 等待时间随重试次数增长的乘数（指数因子）。
+	Jitter         float64       // 随机抖动因子 (0.0-1.0)。
+	MaxRetries     int           // 最大重试次数（不含首次尝试）。
 }
 
-// ... (DefaultRetryConfig 保持不变) ...
-
-// Retry 根据配置的策略执行函数 fn，并在发生错误时进行自动重试。
-// DefaultRetryConfig 返回一个默认的、通用的重试配置。
-// 默认配置为：最大重试3次，初始等待100毫秒，最长等待2秒，时间倍率为2.0，抖动为10%。
-// 这个配置适用于大多数常规的、对延迟不极端敏感的场景。
+// DefaultRetryConfig 返回一个通用的默认重试配置。
 func DefaultRetryConfig() Config {
 	return Config{
 		MaxRetries:     3,
@@ -36,40 +33,49 @@ func DefaultRetryConfig() Config {
 	}
 }
 
-// 核心逻辑：执行 -> 失败 -> 计算退避时间 -> 等待（支持上下文取消）-> 重试。
+// Retry 根据配置的策略执行函数 fn，并在发生错误时进行自动重试。
 func Retry(ctx context.Context, fn Func, cfg Config) error {
-	var err error
+	var lastErr error
 	backoff := cfg.InitialBackoff
 
-	for i := 0; i <= cfg.MaxRetries; i++ {
-		if err = fn(); err == nil {
-			return nil // 执行成功，立即返回
+	var seed [8]byte
+	if _, readErr := rand.Read(seed[:]); readErr != nil {
+		// 极低概率失败，退化为时间戳。
+		binary.LittleEndian.PutUint64(seed[:], uint64(time.Now().UnixNano()))
+	}
+
+	randomSrc := randv2.New(randv2.NewPCG(binary.LittleEndian.Uint64(seed[:]), 0))
+
+	for retryIdx := 0; retryIdx <= cfg.MaxRetries; retryIdx++ {
+		lastErr = fn()
+		if lastErr == nil {
+			return nil // 执行成功，立即返回。
 		}
 
-		if i == cfg.MaxRetries {
-			slog.WarnContext(ctx, "maximum retries reached", "retries", i, "error", err)
+		if retryIdx == cfg.MaxRetries {
 			break
 		}
 
-		slog.WarnContext(ctx, "retry attempt failed", "attempt", i+1, "next_backoff", backoff, "error", err)
-
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("retry cancelled: %w", ctx.Err())
 		case <-time.After(backoff):
 		}
 
-		// 计算下一次指数退避时间
+		// 计算下一次指数退避时间。
 		nextBackoff := float64(backoff) * cfg.Multiplier
 
-		// 注入随机抖动，防止惊群效应
+		// 注入随机抖动，防止惊群效应。
 		if cfg.Jitter > 0 {
-			jitterValue := (rand.Float64()*2 - 1) * cfg.Jitter * nextBackoff
+			jitterValue := (randomSrc.Float64()*2 - 1) * cfg.Jitter * nextBackoff
 			nextBackoff += jitterValue
 		}
 
-		backoff = min(time.Duration(nextBackoff), cfg.MaxBackoff)
+		backoff = time.Duration(nextBackoff)
+		if backoff > cfg.MaxBackoff {
+			backoff = cfg.MaxBackoff
+		}
 	}
 
-	return err
+	return fmt.Errorf("maximum retries (%d) reached: %w", cfg.MaxRetries, lastErr)
 }

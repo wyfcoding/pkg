@@ -24,7 +24,7 @@ func fnv32(key string) uint32 {
 type shard[K comparable, V any] struct {
 	sync.RWMutex
 	items map[K]V
-	_     [32]byte // 填充至 approx 64 bytes
+	_     [32]byte // 填充至 approx 64 byte.
 }
 
 // HashFunc 定义了将键 K 映射为 uint32 的函数。
@@ -32,8 +32,8 @@ type HashFunc[K comparable] func(key K) uint32
 
 // ConcurrentMap 是一个分片式的并发map。
 type ConcurrentMap[K comparable, V any] struct {
-	shards []shard[K, V] // 优化：使用 slice of structs 减少指针跳转
-	mask   uint64        // 掩码，用于快速计算索引 (shardCount - 1)
+	shards []shard[K, V] // 优化：使用 slice of structs 减少指针跳.
+	mask   uint64        // 掩码，用于快速计算索引 (shardCount - 1.
 	hash   HashFunc[K]
 }
 
@@ -44,7 +44,7 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 		shardCount = 32
 	}
 
-	// 向上取整到最近的 2 的幂
+	// 向上取整到最近的 2 的.
 	if (shardCount & (shardCount - 1)) != 0 {
 		shardCount = 1 << (64 - bits.LeadingZeros64(uint64(shardCount-1)))
 	}
@@ -69,7 +69,7 @@ func (m *ConcurrentMap[K, V]) getShard(key K) *shard[K, V] {
 	return &m.shards[uint64(h)&m.mask]
 }
 
-// Set 设置键值对
+// Set 设置键值.
 func (m *ConcurrentMap[K, V]) Set(key K, value V) {
 	s := m.getShard(key)
 	s.Lock()
@@ -77,7 +77,7 @@ func (m *ConcurrentMap[K, V]) Set(key K, value V) {
 	s.items[key] = value
 }
 
-// Get 获取值
+// Get 获取.
 func (m *ConcurrentMap[K, V]) Get(key K) (V, bool) {
 	s := m.getShard(key)
 	s.RLock()
@@ -86,7 +86,7 @@ func (m *ConcurrentMap[K, V]) Get(key K) (V, bool) {
 	return v, ok
 }
 
-// Remove 删除键
+// Remove 删除.
 func (m *ConcurrentMap[K, V]) Remove(key K) {
 	s := m.getShard(key)
 	s.Lock()
@@ -94,7 +94,7 @@ func (m *ConcurrentMap[K, V]) Remove(key K) {
 	delete(s.items, key)
 }
 
-// --- 针对字符串键优化的具体实现 ---
+// --- 针对字符串键优化的具体实现 --.
 
 // ConcurrentStringMap 是一个针对字符串键优化的并发安全map。
 type ConcurrentStringMap[V any] struct {

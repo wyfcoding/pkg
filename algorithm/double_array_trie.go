@@ -12,10 +12,10 @@ import (
 type DoubleArrayTrie struct {
 	base  []int
 	check []int
-	mu    sync.RWMutex // 仅保护读取，构建通常是离线的
+	mu    sync.RWMutex // 仅保护读取，构建通常是离线的。
 }
 
-// NewDoubleArrayTrie 创建一个新的空 DAT
+// NewDoubleArrayTrie 创建一个新的空 DAT。
 func NewDoubleArrayTrie() *DoubleArrayTrie {
 	return &DoubleArrayTrie{
 		base:  make([]int, 0),
@@ -33,38 +33,38 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 		return nil
 	}
 
-	// 1. 排序 Keys，这对构建效率至关重要
+	// 1. 排序 Keys，这对构建效率至关重要。
 	slices.Sort(keys)
 
-	// 2. 构建临时的标准 Trie
+	// 2. 构建临时的标准 Trie。
 	root := newDATNode()
 	for _, key := range keys {
 		root.insert(key)
 	}
 
-	// 3. 将 Trie 转换为双数组结构
-	// 初始大小估算：节点数 * 4
+	// 3. 将 Trie 转换为双数组结构。
+	// 初始大小估算。
 	allocSize := 1024 * 1024
 	dat.base = make([]int, allocSize)
 	dat.check = make([]int, allocSize)
 
-	// 初始化 root 的 base
+	// 初始化 root 的 base。
 	dat.base[0] = 1
-	dat.check[0] = 0 // root 的 check 通常设为 0
+	dat.check[0] = 0 // root 的 check 通常设为 0。
 
-	// 使用 BFS 遍历 Trie 并填充数组
-	// queue 存储 (datTrieNode, datIndex)
+	// 使用 BFS 遍历 Trie 并填充数组。
+	// queue 存储 (datTrieNode, datIndex)。
 	type nodeState struct {
 		node     *datTrieNode
 		datIndex int
 	}
 	queue := []*nodeState{{node: root, datIndex: 0}}
 
-	// 记录已使用的 check 位置，用于寻找空闲位置
+	// 记录已使用的 check 位置，用于寻找空闲位。
 	used := make([]bool, allocSize)
 	used[0] = true
 
-	// 优化：记录第一个空闲的 check 位置
+	// 优化：记录第一个空闲的 check 位置。
 	firstFree := 1
 	for firstFree < len(dat.check) && dat.check[firstFree] != 0 {
 		firstFree++
@@ -79,10 +79,10 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 			continue
 		}
 
-		// 寻找合适的 Base 值
-		// 使得对于所有子节点 c，check[base + c.code] == 0 (表示空闲)
-		// 优化：利用 firstFree 快速定位可能的 base
-		// base + children[0].code >= firstFree  =>  base >= firstFree - children[0].code
+		// 寻找合适的 Base 偏移量。
+		// 使得对于所有子节点 c，check[base + c.code] == 0 (表示空闲)。
+		// 优化：利用 firstFree 快速定位可能的 base。
+		// base + children[0].code >= firstFree  =>  base >= firstFree - children[0].code。
 		minBase := 1
 		if val := firstFree - int(children[0].code); val > 1 {
 			minBase = val
@@ -93,14 +93,14 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 			valid := true
 			for _, child := range children {
 				idx := base + int(child.code)
-				// 自动扩容
+				// 自动扩容。
 				if idx >= len(dat.check) {
 					newSize := len(dat.check) * 2
 					for newSize <= idx {
 						newSize *= 2
 					}
 					dat.resize(newSize)
-					// 扩容后 used 也要扩容
+					// 扩容后 used 也要扩容。
 					newUsed := make([]bool, newSize)
 					copy(newUsed, used)
 					used = newUsed
@@ -118,23 +118,23 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 			base++
 		}
 
-		// 确定了 Base，写入 DAT
+		// 确定了 Base，写入 DAT。
 		dat.base[curr.datIndex] = base
 		used[curr.datIndex] = true
 
 		for _, child := range children {
 			childIdx := base + int(child.code)
 			dat.check[childIdx] = curr.datIndex
-			// 标记被占用
-			// 如果占用了 firstFree，则需要更新 firstFree
+			// 标记被占用。
+			// 如果占用了 firstFree，则需要更新 firstFree。
 			if childIdx == firstFree {
 				for firstFree < len(dat.check) && dat.check[firstFree] != 0 {
 					firstFree++
 				}
 			}
 
-			// 如果是叶子节点（单词结尾），通常用 base 存储负值来标记
-			// 这里我们简单地用一个独立的方式标记，或者假设所有节点都是有效路径
+			// 如果是叶子节点（单词结尾），通常用 base 存储负值来标记。
+			// 这里我们简单地用一个独立的方式标记，或者假设所有节点都是有效路径。
 			// 为了支持 ExactMatch，我们需要标记结束。
 			// 常见做法：把 Base 设为负数表示结尾。
 			// 但因为 Base 还要用于子节点索引，所以如果一个节点既是结尾又有子节点，这种方法会有歧义。
@@ -145,10 +145,10 @@ func (dat *DoubleArrayTrie) Build(keys []string) error {
 		}
 	}
 
-	// 压缩数组（去掉末尾未使用的部分）
+	// 压缩数组（去掉末尾未使用的部分）。
 	dat.shrink()
 
-	// 4. 释放临时 Trie
+	// 4. 释放临时 Trie。
 	releaseTrieNodes(root)
 
 	return nil
@@ -183,7 +183,7 @@ func (dat *DoubleArrayTrie) ExactMatch(key string) bool {
 		p = next
 	}
 
-	// 最终检查结束符转移
+	// 最终检查结束符转换。
 	base := dat.base[p]
 	next := base + 0
 	return next < len(dat.check) && dat.check[next] == p
@@ -200,17 +200,17 @@ func (dat *DoubleArrayTrie) CommonPrefixSearch(key string) []string {
 	}
 
 	var results []string
-	p := 0 // root
+	p := 0 // root 节点。
 
 	for i, ch := range key {
-		// 1. 检查是否存在以当前节点结尾的完整词 (code=0)
+		// 1. 检查是否存在以当前节点结尾的完整词 (code=0)。
 		base := dat.base[p]
 		endIdx := base + 0
 		if endIdx < len(dat.check) && dat.check[endIdx] == p {
 			results = append(results, key[:i])
 		}
 
-		// 2. 继续向下跳转
+		// 2. 继续向下跳转。
 		code := int(ch)
 		next := base + code
 		if next >= len(dat.check) || dat.check[next] != p {
@@ -219,7 +219,7 @@ func (dat *DoubleArrayTrie) CommonPrefixSearch(key string) []string {
 		p = next
 	}
 
-	// 最终检查：key 自身是否也是一个完整词
+	// 最终检查：key 自身是否也是一个完整词。
 	base := dat.base[p]
 	endIdx := base + 0
 	if endIdx < len(dat.check) && dat.check[endIdx] == p {
@@ -229,7 +229,7 @@ func (dat *DoubleArrayTrie) CommonPrefixSearch(key string) []string {
 	return results
 }
 
-// ... (existing helper methods stay same)
+// ... (existing helper methods stay same)。
 func (dat *DoubleArrayTrie) resize(newSize int) {
 	newBase := make([]int, newSize)
 	newCheck := make([]int, newSize)
@@ -239,7 +239,7 @@ func (dat *DoubleArrayTrie) resize(newSize int) {
 	dat.check = newCheck
 }
 
-// shrink 压缩数组到实际大小
+// shrink 压缩数组到实际大小。
 func (dat *DoubleArrayTrie) shrink() {
 	lastValid := 0
 	for i := len(dat.check) - 1; i >= 0; i-- {
@@ -282,14 +282,14 @@ func (n *datTrieNode) insert(key string) {
 	node := n
 	for _, ch := range key {
 		if ch == 0 {
-			continue // rune(0) is reserved
+			continue // rune(0) is reserved。
 		}
 		if node.children[ch] == nil {
 			node.children[ch] = newDATNode()
 		}
 		node = node.children[ch]
 	}
-	// 插入结束符节点，用 0 表示
+	// 插入结束符节点，用 0 表示。
 	if node.children[0] == nil {
 		node.children[0] = newDATNode()
 	}

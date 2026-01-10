@@ -13,7 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Client 是 redis.Client 的别名，方便业务层直接使用而无需导入原生包
+// Client 是 redis.Client 的别名，方便业务层直接使用而无需导入原生.
 type Client = redis.Client
 
 var (
@@ -97,7 +97,7 @@ func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (*redis.Client, 
 		WriteTimeout: cfg.WriteTimeout,
 	})
 
-	// Add metrics hook
+	// Add metrics hoo.
 	client.AddHook(&metricsHook{addr: cfg.Addr})
 
 	// 创建一个带超时机制的上下文，用于Ping操作。
