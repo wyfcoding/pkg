@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	algomath "github.com/wyfcoding/pkg/algorithm/math"
+	"github.com/wyfcoding/pkg/utils"
 	"github.com/wyfcoding/pkg/xerrors"
 )
 
@@ -91,5 +92,5 @@ func (bf *BloomFilter) getHashes(data []byte) (h1, h2 uint32) {
 		h *= algomath.FnvPrime64
 	}
 
-	return uint32((h >> 32) & 0xFFFFFFFF), uint32(h & 0xFFFFFFFF)
+	return utils.Uint64ToUint32(h >> 32), utils.Uint64ToUint32(h)
 }
