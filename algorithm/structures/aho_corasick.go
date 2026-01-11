@@ -14,7 +14,8 @@ const (
 type ACNode struct {
 	children   map[rune]*ACNode
 	fail       *ACNode
-	patternIdx []int
+	endFail    *ACNode // 指向最近的一个代表模式串终点的 fail 节点
+	patternIdx int     // 如果当前节点是终点，记录模式串索引，否则为 -1
 }
 
 // AhoCorasick AC自动机.
@@ -30,7 +31,8 @@ func NewAhoCorasick() *AhoCorasick {
 		root: &ACNode{
 			children:   make(map[rune]*ACNode),
 			fail:       nil,
-			patternIdx: nil,
+			endFail:    nil,
+			patternIdx: -1,
 		},
 		patterns: make([]string, 0),
 		mu:       sync.RWMutex{},
@@ -52,14 +54,15 @@ func (ac *AhoCorasick) AddPatterns(patterns ...string) {
 				curr.children[r] = &ACNode{
 					children:   make(map[rune]*ACNode),
 					fail:       nil,
-					patternIdx: nil,
+					endFail:    nil,
+					patternIdx: -1,
 				}
 			}
 
 			curr = curr.children[r]
 		}
 
-		curr.patternIdx = append(curr.patternIdx, idx)
+		curr.patternIdx = idx
 	}
 }
 
@@ -96,8 +99,11 @@ func (ac *AhoCorasick) Build() {
 				v.fail = ac.root
 			}
 
-			if len(v.fail.patternIdx) > 0 {
-				v.patternIdx = append(v.patternIdx, v.fail.patternIdx...)
+			// 优化：计算 endFail 链，避免 slice 拷贝
+			if v.fail.patternIdx != -1 {
+				v.endFail = v.fail
+			} else {
+				v.endFail = v.fail.endFail
 			}
 
 			queue = append(queue, v)
@@ -131,11 +137,16 @@ func (ac *AhoCorasick) Match(text string) map[string][]int {
 			curr = curr.fail
 		}
 
-		if len(curr.patternIdx) > 0 {
-			for _, idx := range curr.patternIdx {
-				p := ac.patterns[idx]
-				results[p] = append(results[p], i-len(p)+1)
-			}
+		// 检查当前节点及 endFail 链上的所有匹配
+		temp := curr
+		if temp.patternIdx == -1 {
+			temp = temp.endFail
+		}
+
+		for temp != nil {
+			p := ac.patterns[temp.patternIdx]
+			results[p] = append(results[p], i-len(p)+1)
+			temp = temp.endFail
 		}
 	}
 
@@ -168,7 +179,7 @@ func (ac *AhoCorasick) Contains(text string) bool {
 			curr = curr.fail
 		}
 
-		if len(curr.patternIdx) > 0 {
+		if curr.patternIdx != -1 || curr.endFail != nil {
 			return true
 		}
 	}

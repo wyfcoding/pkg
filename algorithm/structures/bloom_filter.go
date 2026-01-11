@@ -4,7 +4,7 @@ package structures
 import (
 	"log/slog"
 	"math"
-	"sync"
+	"sync/atomic"
 
 	algomath "github.com/wyfcoding/pkg/algorithm/math"
 	"github.com/wyfcoding/pkg/xerrors"
@@ -18,16 +18,15 @@ const (
 
 // BloomFilter 封装了高空间利用率的概率型数据结构.
 type BloomFilter struct {
-	bits   []uint64
-	size   uint
-	hashes uint
-	mu     sync.RWMutex
+	bits []uint64
+	size uint
+	hash uint
 }
 
 // NewBloomFilter 根据预估容量与允许的误报率，科学计算并初始化布隆过滤器.
 func NewBloomFilter(expectedElements uint, falsePositiveRate float64) (*BloomFilter, error) {
 	if expectedElements == 0 {
-		return nil, xerrors.ErrCapacityTooSmall // 使用中心化错误
+		return nil, xerrors.ErrCapacityTooSmall
 	}
 
 	if falsePositiveRate <= 0 || falsePositiveRate >= 1 {
@@ -45,34 +44,39 @@ func NewBloomFilter(expectedElements uint, falsePositiveRate float64) (*BloomFil
 		"hashes_count", k)
 
 	return &BloomFilter{
-		bits:   make([]uint64, (m+bitsPerWord-1)/bitsPerWord),
-		size:   m,
-		hashes: k,
-		mu:     sync.RWMutex{},
+		bits: make([]uint64, (m+bitsPerWord-1)/bitsPerWord),
+		size: m,
+		hash: k,
 	}, nil
 }
 
 // Add 向布隆过滤器中插入新的数据.
+// 优化：使用原子操作实现无锁化 Add。
 func (bf *BloomFilter) Add(data []byte) {
-	bf.mu.Lock()
-	defer bf.mu.Unlock()
-
 	h1, h2 := bf.getHashes(data)
-	for i := range bf.hashes {
-		idx := (h1 + i*h2) % bf.size
-		bf.bits[idx>>wordShift] |= (1 << (idx & wordMask))
+	for i := range bf.hash {
+		// 双哈希模拟 k 个哈希函数。
+		idx := (uint64(h1) + uint64(i)*uint64(h2)) % uint64(bf.size)
+		wordIdx := idx >> wordShift
+		bitMask := uint64(1) << (idx & wordMask)
+
+		// 原子 OR 操作，确保并发安全且无锁。
+		for {
+			old := atomic.LoadUint64(&bf.bits[wordIdx])
+			if old&bitMask != 0 || atomic.CompareAndSwapUint64(&bf.bits[wordIdx], old, old|bitMask) {
+				break
+			}
+		}
 	}
 }
 
 // Contains 执行成员存在性检查.
+// 优化：无锁读取。
 func (bf *BloomFilter) Contains(data []byte) bool {
-	bf.mu.RLock()
-	defer bf.mu.RUnlock()
-
 	h1, h2 := bf.getHashes(data)
-	for i := range bf.hashes {
-		idx := (h1 + i*h2) % bf.size
-		if bf.bits[idx>>wordShift]&(1<<(idx&wordMask)) == 0 {
+	for i := range bf.hash {
+		idx := (uint64(h1) + uint64(i)*uint64(h2)) % uint64(bf.size)
+		if (atomic.LoadUint64(&bf.bits[idx>>wordShift]) & (1 << (idx & wordMask))) == 0 {
 			return false
 		}
 	}
@@ -80,12 +84,12 @@ func (bf *BloomFilter) Contains(data []byte) bool {
 	return true
 }
 
-func (bf *BloomFilter) getHashes(data []byte) (h1, h2 uint) {
+func (bf *BloomFilter) getHashes(data []byte) (h1, h2 uint32) {
 	var h uint64 = algomath.FnvOffset64
 	for _, b := range data {
 		h ^= uint64(b)
 		h *= algomath.FnvPrime64
 	}
 
-	return uint(h >> 32), uint(h)
+	return uint32((h >> 32) & 0xFFFFFFFF), uint32(h & 0xFFFFFFFF)
 }

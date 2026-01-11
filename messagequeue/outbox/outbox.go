@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/wyfcoding/pkg/tracing"
@@ -172,11 +173,11 @@ func (p *Processor) Stop() {
 
 // process 执行消息投递 (带集群安全并发控制)。
 func (p *Processor) process() {
+	var messages []*Message
+
+	// 1. 抓取待处理消息 (短事务，仅用于锁定和标记)。
 	// 核心架构决策：使用事务 + SKIP LOCKED 确保多实例不抢占同一批消息。
 	err := p.mgr.db.Transaction(func(tx *gorm.DB) error {
-		var messages []*Message
-
-		// 1. 抓取待处理消息并加锁。
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where("status = ? AND next_retry <= ? AND retry_count < max_retries", StatusPending, time.Now()).
 			Limit(p.batchSize).
@@ -190,20 +191,39 @@ func (p *Processor) process() {
 			return nil
 		}
 
-		// 2. 依次投递。
-		for _, msg := range messages {
-			p.send(tx, msg)
+		// 预先更新 NextRetry，防止本批次发送时间过长导致被其他实例重复抓取。
+		ids := make([]uint, len(messages))
+		for i, m := range messages {
+			ids[i] = m.ID
 		}
-
-		return nil
+		// 锁定 1 分钟，给异步发送预留足够时间。
+		return tx.Model(&Message{}).Where("id IN ?", ids).Update("next_retry", time.Now().Add(time.Minute)).Error
 	})
+
 	if err != nil {
-		p.mgr.logger.Error("outbox batch process failed", "error", err)
+		p.mgr.logger.Error("outbox batch fetch failed", "error", err)
+
+		return
 	}
+
+	if len(messages) == 0 {
+		return
+	}
+
+	// 2. 锁外并发投递。
+	var wg sync.WaitGroup
+	for _, msg := range messages {
+		wg.Add(1)
+		go func(m *Message) {
+			defer wg.Done()
+			p.send(m)
+		}(msg)
+	}
+	wg.Wait()
 }
 
-// send 执行单条消息发送并更新状态 (在事务内执行状态更新以保证一致性)。
-func (p *Processor) send(tx *gorm.DB, msg *Message) {
+// send 执行单条消息发送并更新状态。
+func (p *Processor) send(msg *Message) {
 	ctx := context.Background()
 	if msg.Metadata != "" {
 		var carrier map[string]string
@@ -243,8 +263,10 @@ func (p *Processor) send(tx *gorm.DB, msg *Message) {
 		}
 	}
 
-	// 更新消息状态。
-	tx.Model(&msg).Updates(updates)
+	// 更新消息状态 (独立事务)。
+	if updateErr := p.mgr.db.Model(&msg).Updates(updates).Error; updateErr != nil {
+		p.mgr.logger.ErrorContext(ctx, "failed to update outbox message status", "id", msg.ID, "error", updateErr)
+	}
 }
 
 // cleanup 定期清理旧数据，防止表膨胀。

@@ -2,6 +2,7 @@ package structures
 
 import (
 	"cmp"
+	"math/bits"
 	"sync"
 	"time"
 
@@ -10,12 +11,6 @@ import (
 
 const (
 	maxLevel = 32 // 跳表的最大层数。
-	// probability = 0.25 // 晋升概率 (P = 1/4)。
-
-	// 优化常数：对应 probability = 0.25 = 1/(2^probShift)。
-	// 使用位运算代替浮点数比较，显著提升性能。
-	probShift = 2                    // 每次消耗的随机比特位 (log2(1/P))。
-	probMask  = (1 << probShift) - 1 // 掩码 (11b = 3)。
 )
 
 // SkipListNode 跳表节点。
@@ -26,7 +21,6 @@ type SkipListNode[K cmp.Ordered, V any] struct {
 }
 
 // SkipList 高性能泛型跳表实现。
-// 优化：使用原子操作的 Xorshift 随机数生成器，去除了随机数生成的全局锁。
 type SkipList[K cmp.Ordered, V any] struct {
 	header    *SkipListNode[K, V]
 	mu        sync.RWMutex
@@ -43,39 +37,29 @@ func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
 		},
 		level: 1,
 	}
-	// G115 Fix: Safe cast
-	ts := time.Now().UnixNano()
-	sl.randState = utils.Int64ToUint64(ts)
+	sl.randState = utils.Int64ToUint64(time.Now().UnixNano())
 	return sl
 }
 
-// fastRand 使用 Xorshift 算法生成伪随机数，无锁且高效。
+// fastRand 使用 Xorshift 算法生成伪随机数。
 func (sl *SkipList[K, V]) fastRand() uint32 {
-	// 这里采用 splitmix64 的变体或简单的 xorshift。
 	state := sl.randState
 	state ^= state << 13
 	state ^= state >> 7
 	state ^= state << 17
 	sl.randState = state
 
-	// 安全：随机状态截断用于哈希，是设计意图。
-	// 安全：随机状态截断用于哈希，是设计意图。
-	// G115 fix: Masking
 	return utils.Uint64ToUint32(state & 0xFFFFFFFF)
 }
 
-// randomLevel 随机生成节点的层数，使用位运算优化。
-// 利用概率 P=0.25 (1/4)，即每 2 bits 为 00 时增加一层。
+// randomLevel 随机生成节点的层数。
+// 优化：使用位运算加速层数生成。概率 P=0.25 (1/4)。
+// 每 2 位一组，连续为 00 的组数即为晋升层数。
 func (sl *SkipList[K, V]) randomLevel() int {
-	lvl := 1
-	// 生成随机数。
+	// 优化：利用位运算产生 P=1/4 的分布
 	r := sl.fastRand()
-	// 只要低 probShift 位是 0 (概率 probability)，就增加层数。
-	for (r&probMask) == 0 && lvl < maxLevel {
-		lvl++
-		r >>= probShift
-	}
-
+	r &= (r >> 1)
+	lvl := min(1+bits.TrailingZeros32(r)/2, maxLevel)
 	return lvl
 }
 
