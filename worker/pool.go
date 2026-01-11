@@ -12,6 +12,7 @@ import (
 
 var (
 	ErrPoolClosed = errors.New("worker pool is closed")
+	ErrPoolFull   = errors.New("worker pool is full")
 )
 
 // Task 是 worker 执行的任务函数。
@@ -59,6 +60,13 @@ func WithQueueSize(size int) Option {
 	}
 }
 
+// WithPanicHandler 设置 Panic 处理回调。
+func WithPanicHandler(handler func(any)) Option {
+	return func(o *poolOptions) {
+		o.PanicHandler = handler
+	}
+}
+
 // NewPool 创建一个新的 worker 池。
 func NewPool(opts ...Option) *Pool {
 	options := &poolOptions{
@@ -101,16 +109,28 @@ func (p *Pool) runWorker() {
 			if !ok {
 				return
 			}
-			// 执行任务，context 目前使用 Background，也可以从 Task 传入
-			task(context.Background())
+			p.executeTask(task)
 		case <-p.quit:
 			return
 		}
 	}
 }
 
-// Submit 提交一个任务。如果池已满且 blocking 为 true，则阻塞；否则返回错误（需扩展 error）。
-// 当前实现为阻塞提交，直到队列有空位。
+func (p *Pool) executeTask(task Task) {
+	defer func() {
+		if r := recover(); r != nil {
+			if p.options.PanicHandler != nil {
+				p.options.PanicHandler(r)
+			} else {
+				p.options.Logger.Error("Worker task panic recovered", "panic", r)
+			}
+		}
+	}()
+	// 执行任务，context 目前使用 Background，也可以从 Task 传入
+	task(context.Background())
+}
+
+// Submit 提交一个任务。如果池已满，则阻塞直到有空位或池被关闭。
 func (p *Pool) Submit(task Task) error {
 	if atomic.LoadInt32(&p.closed) == 1 {
 		return ErrPoolClosed
@@ -121,6 +141,20 @@ func (p *Pool) Submit(task Task) error {
 		return nil
 	case <-p.quit:
 		return ErrPoolClosed
+	}
+}
+
+// TrySubmit 尝试提交一个任务。如果池已满，立即返回 ErrPoolFull。
+func (p *Pool) TrySubmit(task Task) error {
+	if atomic.LoadInt32(&p.closed) == 1 {
+		return ErrPoolClosed
+	}
+
+	select {
+	case p.tasks <- task:
+		return nil
+	default:
+		return ErrPoolFull
 	}
 }
 

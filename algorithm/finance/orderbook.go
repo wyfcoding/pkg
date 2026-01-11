@@ -28,11 +28,15 @@ func NewOrderBook() *OrderBook {
 	}
 }
 
-// AddOrder 添加订单。
+// AddOrder 添加订单（线程安全）。
 func (ob *OrderBook) AddOrder(order *types.Order) {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
+	ob.addOrder(order)
+}
 
+// addOrder 添加订单（内部无锁）。
+func (ob *OrderBook) addOrder(order *types.Order) {
 	var node *structures.RBNode
 	if order.Side == types.SideBuy {
 		node = ob.bids.Insert(order)
@@ -43,11 +47,15 @@ func (ob *OrderBook) AddOrder(order *types.Order) {
 	ob.orders[order.OrderID] = node
 }
 
-// RemoveOrder 移除订单。
+// RemoveOrder 移除订单（线程安全）。
 func (ob *OrderBook) RemoveOrder(orderID string) {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
+	ob.removeOrder(orderID)
+}
 
+// removeOrder 移除订单（内部无锁）。
+func (ob *OrderBook) removeOrder(orderID string) {
 	node, ok := ob.orders[orderID]
 	if !ok {
 		return
@@ -62,35 +70,51 @@ func (ob *OrderBook) RemoveOrder(orderID string) {
 	}
 }
 
-// GetBestBid 获取最优买价。
+// GetBestBid 获取最优买价（线程安全）。
 func (ob *OrderBook) GetBestBid() *types.Order {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
+	return ob.getBestBid()
+}
 
+// getBestBid 获取最优买价（内部无锁）。
+func (ob *OrderBook) getBestBid() *types.Order {
 	return ob.bids.GetBest()
 }
 
-// GetBestAsk 获取最优卖价。
+// GetBestAsk 获取最优卖价（线程安全）。
 func (ob *OrderBook) GetBestAsk() *types.Order {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
+	return ob.getBestAsk()
+}
 
+// getBestAsk 获取最优卖价（内部无锁）。
+func (ob *OrderBook) getBestAsk() *types.Order {
 	return ob.asks.GetBest()
 }
 
-// GetBids 获取买单列表。
+// GetBids 获取买单列表（线程安全）。
 func (ob *OrderBook) GetBids(depth int) []*types.OrderBookLevel {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
+	return ob.getBids(depth)
+}
 
+// getBids 获取买单列表（内部无锁）。
+func (ob *OrderBook) getBids(depth int) []*types.OrderBookLevel {
 	return ob.getLevels(ob.bids, depth)
 }
 
-// GetAsks 获取卖单列表。
+// GetAsks 获取卖单列表（线程安全）。
 func (ob *OrderBook) GetAsks(depth int) []*types.OrderBookLevel {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
+	return ob.getAsks(depth)
+}
 
+// getAsks 获取卖单列表（内部无锁）。
+func (ob *OrderBook) getAsks(depth int) []*types.OrderBookLevel {
 	return ob.getLevels(ob.asks, depth)
 }
 
@@ -237,12 +261,12 @@ func (me *MatchingEngine) Match(order *types.Order) []*types.Trade {
 
 func (me *MatchingEngine) wouldMatch(order *types.Order) bool {
 	if order.Side == types.SideBuy {
-		bestAsk := me.orderBook.GetBestAsk()
+		bestAsk := me.orderBook.getBestAsk()
 
 		return bestAsk != nil && bestAsk.Price.LessThanOrEqual(order.Price)
 	}
 
-	bestBid := me.orderBook.GetBestBid()
+	bestBid := me.orderBook.getBestBid()
 
 	return bestBid != nil && bestBid.Price.GreaterThanOrEqual(order.Price)
 }
@@ -281,10 +305,10 @@ func (me *MatchingEngine) handleFinishedOrder(o *types.Order) {
 		o.HiddenQty = o.HiddenQty.Sub(refreshQty)
 		o.Timestamp = time.Now().UnixNano()
 
-		me.orderBook.RemoveOrder(o.OrderID)
-		me.orderBook.AddOrder(o)
+		me.orderBook.removeOrder(o.OrderID)
+		me.orderBook.addOrder(o)
 	} else {
-		me.orderBook.RemoveOrder(o.OrderID)
+		me.orderBook.removeOrder(o.OrderID)
 	}
 }
 
@@ -294,7 +318,7 @@ func (me *MatchingEngine) enqueueRemaining(o *types.Order) {
 		o.Quantity = o.DisplayQty
 	}
 
-	me.orderBook.AddOrder(o)
+	me.orderBook.addOrder(o)
 }
 
 // GetTrades 获取所有交易记录。
@@ -313,7 +337,7 @@ func (me *MatchingEngine) GetBids(depth int) []*types.OrderBookLevel {
 	me.mu.RLock()
 	defer me.mu.RUnlock()
 
-	return me.orderBook.GetBids(depth)
+	return me.orderBook.getBids(depth)
 }
 
 // GetAsks 获取卖单列表。
@@ -321,7 +345,7 @@ func (me *MatchingEngine) GetAsks(depth int) []*types.OrderBookLevel {
 	me.mu.RLock()
 	defer me.mu.RUnlock()
 
-	return me.orderBook.GetAsks(depth)
+	return me.orderBook.getAsks(depth)
 }
 
 func generateTradeID() string {
