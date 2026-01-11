@@ -131,12 +131,15 @@ func (tw *TimingWheel) AddTask(delay time.Duration, task TimerTask) error {
 // tickTock 时间轮推进一格。
 func (tw *TimingWheel) tickTock() {
 	tw.mu.Lock()
-	defer tw.mu.Unlock()
 
 	// 获取当前槽位的链表头引用。
 	head := tw.slots[tw.current]
 	var prev *timerEntry
 	curr := head
+
+	// 收集到期任务的链表，以便在锁外执行。
+	var expiredHead *timerEntry
+	var expiredTail *timerEntry
 
 	// 遍历链表。
 	for curr != nil {
@@ -148,22 +151,22 @@ func (tw *TimingWheel) tickTock() {
 			prev = curr
 			curr = next
 		} else {
-			// 到期了，执行任务。
-			go curr.task()
-
-			// 从链表中移除 curr。
+			// 到期了，从槽位链表中移除 curr。
 			if prev == nil {
-				// curr 是头节点，更新槽位头指针。
 				tw.slots[tw.current] = next
 			} else {
-				// curr 是中间或尾节点，跳过 curr。
 				prev.next = next
 			}
 
-			// 重置并放回池中。
-			curr.task = nil
+			// 将 curr 添加到过期任务链表。
 			curr.next = nil
-			tw.pool.Put(curr)
+			if expiredHead == nil {
+				expiredHead = curr
+				expiredTail = curr
+			} else {
+				expiredTail.next = curr
+				expiredTail = curr
+			}
 
 			// 继续处理下一个。
 			curr = next
@@ -172,4 +175,23 @@ func (tw *TimingWheel) tickTock() {
 
 	// 指针前进。
 	tw.current = (tw.current + 1) % tw.wheelSize
+	tw.mu.Unlock() // 尽早释放锁
+
+	// 在锁外执行任务并回收节点。
+	curr = expiredHead
+	for curr != nil {
+		next := curr.next
+
+		// 执行任务 (异步，避免阻塞时间轮推进)。
+		if curr.task != nil {
+			go curr.task()
+		}
+
+		// 重置并放回池中。
+		curr.task = nil
+		curr.next = nil
+		tw.pool.Put(curr)
+
+		curr = next
+	}
 }

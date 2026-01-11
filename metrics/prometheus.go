@@ -87,6 +87,14 @@ func (m *Metrics) NewHistogramVec(opts *prometheus.HistogramOpts, labelNames []s
 	return histogramVec
 }
 
+// NewGaugeFunc 创建并注册一个新的函数式仪表盘指标。
+func (m *Metrics) NewGaugeFunc(opts *prometheus.GaugeOpts, function func() float64) prometheus.GaugeFunc {
+	gaugeFunc := prometheus.NewGaugeFunc(*opts, function)
+	m.registry.MustRegister(gaugeFunc)
+
+	return gaugeFunc
+}
+
 // Handler 返回用于暴露指标的 HTTP 处理器。
 func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})

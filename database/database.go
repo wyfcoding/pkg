@@ -10,6 +10,7 @@ import (
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/xerrors"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -97,7 +98,50 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 		logger:  logger,
 	}
 
+	// 注册连接池指标
+	db.registerMetrics(m)
+
 	return db, nil
+}
+
+func (db *DB) registerMetrics(m *metrics.Metrics) {
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		return
+	}
+
+	m.NewGaugeFunc(&prometheus.GaugeOpts{
+		Name:        "db_max_open_connections",
+		Help:        "Maximum number of open connections to the database.",
+		ConstLabels: prometheus.Labels{"driver": db.cfg.Driver},
+	}, func() float64 { return float64(sqlDB.Stats().MaxOpenConnections) })
+
+	m.NewGaugeFunc(&prometheus.GaugeOpts{
+		Name:        "db_open_connections",
+		Help:        "The number of established connections both in use and idle.",
+		ConstLabels: prometheus.Labels{"driver": db.cfg.Driver},
+	}, func() float64 { return float64(sqlDB.Stats().OpenConnections) })
+
+	m.NewGaugeFunc(&prometheus.GaugeOpts{
+		Name:        "db_in_use_connections",
+		Help:        "The number of connections currently in use.",
+		ConstLabels: prometheus.Labels{"driver": db.cfg.Driver},
+	}, func() float64 { return float64(sqlDB.Stats().InUse) })
+
+	m.NewGaugeFunc(&prometheus.GaugeOpts{
+		Name:        "db_idle_connections",
+		Help:        "The number of idle connections.",
+		ConstLabels: prometheus.Labels{"driver": db.cfg.Driver},
+	}, func() float64 { return float64(sqlDB.Stats().Idle) })
+}
+
+// Ping 检查数据库连接是否存活.
+func (db *DB) Ping() error {
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Ping()
 }
 
 // Transaction 封装了带熔断保护的事务逻辑.

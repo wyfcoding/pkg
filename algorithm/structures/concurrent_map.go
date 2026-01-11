@@ -81,16 +81,16 @@ func (m *ConcurrentMap[K, V]) getShard(key K) *shard[K, V] {
 func (m *ConcurrentMap[K, V]) Set(key K, value V) {
 	s := m.getShard(key)
 	s.Lock()
-	defer s.Unlock()
 	s.items[key] = value
+	s.Unlock()
 }
 
 // Get 获取.
 func (m *ConcurrentMap[K, V]) Get(key K) (V, bool) {
 	s := m.getShard(key)
 	s.RLock()
-	defer s.RUnlock()
 	v, ok := s.items[key]
+	s.RUnlock()
 	return v, ok
 }
 
@@ -98,8 +98,55 @@ func (m *ConcurrentMap[K, V]) Get(key K) (V, bool) {
 func (m *ConcurrentMap[K, V]) Remove(key K) {
 	s := m.getShard(key)
 	s.Lock()
-	defer s.Unlock()
 	delete(s.items, key)
+	s.Unlock()
+}
+
+// UpsertCallback 定义了 Upsert 的行为。
+type UpsertCallback[V any] func(exist bool, valueInMap V, newValue V) V
+
+// Upsert 原子性地执行更新或插入。
+// exist: 键是否存在。
+// valueInMap: 如果存在，当前 map 中的值。
+// newValue: 用户传入的待更新/插入的值。
+// 返回值将作为最终存入 map 的值。
+func (m *ConcurrentMap[K, V]) Upsert(key K, value V, cb UpsertCallback[V]) V {
+	s := m.getShard(key)
+	s.Lock()
+	defer s.Unlock()
+
+	oldVal, ok := s.items[key]
+	res := cb(ok, oldVal, value)
+	s.items[key] = res
+	return res
+}
+
+// Compute 原子性地对指定键进行计算并更新。
+func (m *ConcurrentMap[K, V]) Compute(key K, cb func(exist bool, value V) (V, bool)) (V, bool) {
+	s := m.getShard(key)
+	s.Lock()
+	defer s.Unlock()
+
+	oldVal, ok := s.items[key]
+	newVal, deleteMe := cb(ok, oldVal)
+	if deleteMe {
+		delete(s.items, key)
+		return newVal, false
+	}
+	s.items[key] = newVal
+	return newVal, true
+}
+
+// Count 获取总数.
+func (m *ConcurrentMap[K, V]) Count() int {
+	count := 0
+	for i := range m.shards {
+		shard := &m.shards[i]
+		shard.RLock()
+		count += len(shard.items)
+		shard.RUnlock()
+	}
+	return count
 }
 
 // --- 针对字符串键优化的具体实现 --.

@@ -191,30 +191,48 @@ func GenID() uint64 {
 
 // GenOrderNo 生成订单号，格式为 "O" + 唯一ID.
 func GenOrderNo() string {
-	return "O" + strconv.FormatUint(GenID(), 10)
+	id := GenID()
+	b := make([]byte, 0, 21)
+	b = append(b, 'O')
+	return string(strconv.AppendUint(b, id, 10))
 }
 
 // GenPaymentNo 生成支付单号.
 func GenPaymentNo() string {
-	return "P" + strconv.FormatUint(GenID(), 10)
+	id := GenID()
+	b := make([]byte, 0, 21)
+	b = append(b, 'P')
+	return string(strconv.AppendUint(b, id, 10))
 }
 
 // GenRefundNo 生成退款单号.
 func GenRefundNo() string {
-	return "R" + strconv.FormatUint(GenID(), 10)
+	id := GenID()
+	b := make([]byte, 0, 21)
+	b = append(b, 'R')
+	return string(strconv.AppendUint(b, id, 10))
 }
 
 // GenSPUNo 生成 SPU 编号.
 func GenSPUNo() string {
-	return "SPU" + strconv.FormatUint(GenID(), 10)
+	id := GenID()
+	b := make([]byte, 0, 23)
+	b = append(b, "SPU"...)
+	return string(strconv.AppendUint(b, id, 10))
 }
 
 // GenSKUNo 生成 SKU 编号.
 func GenSKUNo() string {
-	return "SKU" + strconv.FormatUint(GenID(), 10)
+	id := GenID()
+	b := make([]byte, 0, 23)
+	b = append(b, "SKU"...)
+	return string(strconv.AppendUint(b, id, 10))
 }
 
 // GenCouponCode 生成优惠券码.
 func GenCouponCode() string {
-	return "C" + strconv.FormatUint(GenID(), 10)
+	id := GenID()
+	b := make([]byte, 0, 21)
+	b = append(b, 'C')
+	return string(strconv.AppendUint(b, id, 10))
 }
