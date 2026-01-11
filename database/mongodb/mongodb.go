@@ -53,13 +53,15 @@ func NewMongoClient(conf *Config) (*mongo.Client, func(), error) {
 
 	// 配置指标监控。
 	monitor := &event.CommandMonitor{
-		Succeeded: func(_ context.Context, evt *event.CommandSucceededEvent) {
+		Succeeded: func(ctx context.Context, evt *event.CommandSucceededEvent) {
 			mongoOps.WithLabelValues(evt.CommandName, "success").Inc()
 			mongoDuration.WithLabelValues(evt.CommandName).Observe(evt.Duration.Seconds())
+			slog.DebugContext(ctx, "mongodb command succeeded", "command", evt.CommandName, "duration", evt.Duration)
 		},
-		Failed: func(_ context.Context, evt *event.CommandFailedEvent) {
+		Failed: func(ctx context.Context, evt *event.CommandFailedEvent) {
 			mongoOps.WithLabelValues(evt.CommandName, "failed").Inc()
 			mongoDuration.WithLabelValues(evt.CommandName).Observe(evt.Duration.Seconds())
+			slog.ErrorContext(ctx, "mongodb command failed", "command", evt.CommandName, "duration", evt.Duration, "failure", evt.Failure)
 		},
 	}
 

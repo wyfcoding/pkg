@@ -3,7 +3,6 @@ package middleware
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -38,8 +37,8 @@ func RateLimitWithLimiter(l limiter.Limiter) gin.HandlerFunc {
 }
 
 // NewDistributedRateLimitMiddleware 创建 Redis 分布式限流中间件.
-func NewDistributedRateLimitMiddleware(client *redis.Client, rateLimit, _ int) gin.HandlerFunc {
-	l := limiter.NewRedisLimiter(client, rateLimit, time.Second)
+func NewDistributedRateLimitMiddleware(client *redis.Client, rateLimit, burst int) gin.HandlerFunc {
+	l := limiter.NewRedisLimiter(client, rateLimit, burst)
 
 	return RateLimitWithLimiter(l)
 }

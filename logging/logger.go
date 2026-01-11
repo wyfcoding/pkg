@@ -93,8 +93,9 @@ func NewFromConfig(cfg *Config) *Logger {
 		logLevel = slog.LevelInfo
 	}
 
-	replaceAttr := func(_ []string, attr slog.Attr) slog.Attr {
-		if attr.Key == slog.TimeKey {
+	replaceAttr := func(groups []string, attr slog.Attr) slog.Attr {
+		// 仅当位于根路径（groups 为空）且键为时间键时进行重命名。
+		if len(groups) == 0 && attr.Key == slog.TimeKey {
 			attr.Key = "timestamp"
 		}
 
@@ -271,6 +272,7 @@ func GetLogger() *Logger {
 type GormLogger struct {
 	loggerInstance *slog.Logger
 	SlowThreshold  time.Duration
+	level          logger.LogLevel
 }
 
 // NewGormLogger 创建一个新的 GormLogger 实例.
@@ -278,31 +280,44 @@ func NewGormLogger(loggerObj *Logger, slowThreshold time.Duration) *GormLogger {
 	return &GormLogger{
 		loggerInstance: loggerObj.Logger,
 		SlowThreshold:  slowThreshold,
+		level:          logger.Info,
 	}
 }
 
 // LogMode 实现了 gorm logger.Interface 的 LogMode 方法.
-func (l *GormLogger) LogMode(_ logger.LogLevel) logger.Interface {
-	return l
+func (l *GormLogger) LogMode(level logger.LogLevel) logger.Interface {
+	newLogger := *l
+	newLogger.level = level
+
+	return &newLogger
 }
 
 // Info 实现了 gorm logger.Interface 的 Info 方法.
 func (l *GormLogger) Info(ctx context.Context, msg string, data ...any) {
-	l.loggerInstance.InfoContext(ctx, fmt.Sprintf(msg, data...))
+	if l.level >= logger.Info {
+		l.loggerInstance.InfoContext(ctx, fmt.Sprintf(msg, data...))
+	}
 }
 
 // Warn 实现了 gorm logger.Interface 的 Warn 方法.
 func (l *GormLogger) Warn(ctx context.Context, msg string, data ...any) {
-	l.loggerInstance.WarnContext(ctx, fmt.Sprintf(msg, data...))
+	if l.level >= logger.Warn {
+		l.loggerInstance.WarnContext(ctx, fmt.Sprintf(msg, data...))
+	}
 }
 
 // Error 实现了 gorm logger.Interface 的 Error 方法.
 func (l *GormLogger) Error(ctx context.Context, msg string, data ...any) {
-	l.loggerInstance.ErrorContext(ctx, fmt.Sprintf(msg, data...))
+	if l.level >= logger.Error {
+		l.loggerInstance.ErrorContext(ctx, fmt.Sprintf(msg, data...))
+	}
 }
 
 // Trace 实现了 gorm logger.Interface 的 Trace 方法.
 func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if l.level <= logger.Silent {
+		return
+	}
 	elapsed := time.Since(begin)
 	sql, rows := fc()
 
@@ -322,13 +337,13 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (stri
 	}
 
 	switch {
-	case err != nil && !errors.Is(err, logger.ErrRecordNotFound):
+	case err != nil && !errors.Is(err, logger.ErrRecordNotFound) && l.level >= logger.Error:
 		fields = append(fields, slog.Any("error", err))
 		l.loggerInstance.ErrorContext(ctx, "gorm trace error", fields...)
-	case l.SlowThreshold != 0 && elapsed > l.SlowThreshold:
+	case l.SlowThreshold != 0 && elapsed > l.SlowThreshold && l.level >= logger.Warn:
 		fields = append(fields, slog.String("type", "slow_query"))
 		l.loggerInstance.WarnContext(ctx, "gorm trace slow query", fields...)
-	default:
+	case l.level >= logger.Info:
 		l.loggerInstance.DebugContext(ctx, "gorm trace", fields...)
 	}
 }

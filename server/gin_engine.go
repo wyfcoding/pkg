@@ -1,8 +1,6 @@
 package server
 
 import (
-	"log/slog" // 导入结构化日志库。
-
 	"github.com/wyfcoding/pkg/middleware" // 导入项目内定义的中间件。
 
 	"github.com/gin-gonic/gin" // 导入Gin Web框架。
@@ -11,7 +9,7 @@ import (
 // NewDefaultGinEngine 创建一个新的 Gin 引擎实例，并预置工业级标准中间件。
 // 默认包含：Recovery (异常恢复)、RequestLogger (结构化访问日志)。
 // 同时支持在初始化时注入额外的业务自定义中间件。
-func NewDefaultGinEngine(_ *slog.Logger, middlewares ...gin.HandlerFunc) *gin.Engine {
+func NewDefaultGinEngine(middlewares ...gin.HandlerFunc) *gin.Engine {
 	// 创建一个不带任何默认配置的干净引擎，以便精准控制中间件。
 	engine := gin.New()
 

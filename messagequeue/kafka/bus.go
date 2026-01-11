@@ -27,9 +27,12 @@ func NewEventBus(producer *Producer, defaultTopic string) *EventBus {
 		producer: producer,
 	}
 
-	// 默认映射逻辑：使用指定主题。
-	bus.topicMapper = func(_ eventsourcing.DomainEvent) string {
-		return defaultTopic
+	// 默认映射逻辑：优先使用指定的 defaultTopic，若未指定则动态使用事件类型作为主题。
+	bus.topicMapper = func(event eventsourcing.DomainEvent) string {
+		if defaultTopic != "" {
+			return defaultTopic
+		}
+		return event.EventType()
 	}
 
 	return bus

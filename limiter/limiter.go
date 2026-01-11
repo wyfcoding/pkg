@@ -36,8 +36,19 @@ func NewLocalLimiter(fillingRate rate.Limit, burst int) *LocalLimiter {
 }
 
 // Allow 实现 Limiter 接口。
-func (l *LocalLimiter) Allow(_ context.Context, _ string) (bool, error) {
-	return l.limiter.Allow(), nil
+func (l *LocalLimiter) Allow(ctx context.Context, key string) (bool, error) {
+	// 检查 Context 是否已取消，体现对链路状态的尊重。
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	allowed := l.limiter.Allow()
+	if !allowed {
+		// 记录具体哪个 key 触发了本地限流，这对于排查热点请求非常有意义。
+		slog.WarnContext(ctx, "local rate limit triggered", "key", key)
+	}
+
+	return allowed, nil
 }
 
 // RedisLimiter 是基于 Redis + Lua 脚本实现的分布式令牌桶限流器。
@@ -49,22 +60,24 @@ type RedisLimiter struct {
 }
 
 // NewRedisLimiter 创建并初始化一个分布式限流器。
-func NewRedisLimiter(client redis.UniversalClient, fillingRate int, _ time.Duration) *RedisLimiter {
-	// 默认突发流量容量为速率的 120%。
-	const burstMultiplier = 1.2
-	burstVal := int(float64(fillingRate) * burstMultiplier)
-
-	if burstVal <= 0 {
-		burstVal = 1
+func NewRedisLimiter(client redis.UniversalClient, rate, burst int) *RedisLimiter {
+	if burst <= 0 {
+		// 默认突发流量容量为速率的 120%。
+		const burstMultiplier = 1.2
+		burst = int(float64(rate) * burstMultiplier)
 	}
 
-	slog.Info("redis_limiter initialized", "rate", fillingRate, "burst", burstVal)
+	if burst <= 0 {
+		burst = 1
+	}
+
+	slog.Info("redis_limiter initialized", "rate", rate, "burst", burst)
 
 	return &RedisLimiter{
 		client: client,
 		script: redis.NewScript(redisTokenBucketScript),
-		rate:   fillingRate,
-		burst:  burstVal,
+		rate:   rate,
+		burst:  burst,
 	}
 }
 

@@ -37,7 +37,11 @@ func GenerateAdminToken(adminID uint64, username, email, secret, issuer string, 
 
 // ParseAdminToken 解析并验证管理员 JWT 字符串。
 func ParseAdminToken(tokenString, secretKey string) (*AdminClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(_ *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (any, error) {
+		// 验证签名方法是否符合预期（防止算法回退攻击）。
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
 		return []byte(secretKey), nil
 	})
 	if err != nil {

@@ -21,8 +21,6 @@ import (
 )
 
 const (
-	defaultRateLimit   = 1000
-	defaultRateBurst   = 100
 	defaultMetricsPath = "/metrics"
 )
 
@@ -123,7 +121,7 @@ func (b *Builder) Build() *App {
 
 	metricsInstance := b.initMetrics(&cfg)
 
-	b.setupMiddleware(&cfg, metricsInstance, loggerInstance)
+	b.setupMiddleware(&cfg, metricsInstance)
 
 	serviceInstance, cleanup := b.assembleService(metricsInstance, loggerInstance)
 	b.appOpts = append(b.appOpts, WithCleanup(cleanup))
@@ -227,22 +225,7 @@ func (b *Builder) initMetrics(cfg *config.Config) *metrics.Metrics {
 	return metricsInstance
 }
 
-func (b *Builder) setupMiddleware(cfg *config.Config, m *metrics.Metrics, logger *logging.Logger) {
-	if cfg.RateLimit.Enabled {
-		rate := cfg.RateLimit.Rate
-		if rate <= 0 {
-			rate = defaultRateLimit
-		}
-
-		burst := cfg.RateLimit.Burst
-		if burst <= 0 {
-			burst = defaultRateBurst
-		}
-
-		logger.Logger.Info("rate limit middleware enabled", "rate", rate, "burst", burst)
-		b.ginMiddleware = append(b.ginMiddleware, middleware.NewLocalRateLimitMiddleware(rate, burst))
-	}
-
+func (b *Builder) setupMiddleware(cfg *config.Config, m *metrics.Metrics) {
 	if cfg.CircuitBreaker.Enabled {
 		b.ginMiddleware = append(b.ginMiddleware, middleware.HTTPCircuitBreaker(cfg.CircuitBreaker, m))
 	}
@@ -282,7 +265,7 @@ func (b *Builder) registerServers(cfg *config.Config, svc any, m *metrics.Metric
 
 	if b.registerGin != nil {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.HTTP.Addr, cfg.Server.HTTP.Port)
-		engine := server.NewDefaultGinEngine(logger.Logger, b.ginMiddleware...)
+		engine := server.NewDefaultGinEngine(b.ginMiddleware...)
 
 		b.registerAdminRoutes(engine, cfg, m)
 

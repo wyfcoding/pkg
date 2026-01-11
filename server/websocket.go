@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,7 +15,39 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(_ *http.Request) bool { return true }, // 生产环境应严格校验.
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+
+		// 解析 Origin 头部.
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+
+		// 生产环境真实逻辑：同源检查.
+		// 校验 Origin 的 Host 是否与请求的 Host 匹配.
+		// 注意：r.Host 可能包含端口，需要处理.
+		requestHost := r.Host
+		originHost := u.Host
+
+		if h, _, err := net.SplitHostPort(requestHost); err == nil {
+			requestHost = h
+		}
+		if h, _, err := net.SplitHostPort(originHost); err == nil {
+			originHost = h
+		}
+
+		// 允许同源请求.
+		if strings.EqualFold(requestHost, originHost) {
+			return true
+		}
+
+		// 特殊处理：如果是本地开发环境，允许 localhost 访问.
+		return originHost == "localhost" || originHost == "127.0.0.1"
+	},
 }
 
 // Client 表示一个 WebSocket 客户端连.

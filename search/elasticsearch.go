@@ -65,6 +65,7 @@ type Config struct {
 	BreakerConfig config.CircuitBreakerConfig
 	SlowThreshold time.Duration
 	MaxRetries    int
+	Limiter       limiter.Limiter // 可选：注入自定义限流器（如分布式限流器）。
 }
 
 // NewClient 创建具备全方位治理能力的 ES 客户端.
@@ -116,7 +117,10 @@ func NewClient(cfg *Config, logger *logging.Logger, metricsInstance *metrics.Met
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"index", "op"})
 
-	l := limiter.NewLocalLimiter(esDefaultRate, esDefaultBurst)
+	l := cfg.Limiter
+	if l == nil {
+		l = limiter.NewLocalLimiter(esDefaultRate, esDefaultBurst)
+	}
 
 	return &Client{
 		es:              esClient,
