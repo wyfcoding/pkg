@@ -58,6 +58,8 @@ type TraceHandler struct {
 
 // Handle 实现日志条目的最终处理.
 // slog.Handler 接口要求 record 按值传递。
+//
+//nolint:gocritic
 func (h *TraceHandler) Handle(ctx context.Context, record slog.Record) error {
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
