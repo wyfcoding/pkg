@@ -4,6 +4,7 @@ package jwt
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,18 +23,19 @@ var (
 	ErrTokenExpired = ErrExpiredToken
 	// ErrTokenMalformed 令牌格式错误。
 	ErrTokenMalformed = errors.New("token malformed")
+
+	tokenCache sync.Map // 用于缓存解析后的 *MyCustomClaims
 )
 
-// MyCustomClaims 定义了 JWT 的 Payload 部分，包含用户信息与权限角色。
-// 优化：字段按大小排序以减少内存对齐填充。
+// MyCustomClaims 定义了 JWT 的 Payload 部分.
 type MyCustomClaims struct {
-	jwt.RegisteredClaims          // 嵌入结构体放在最前
-	Username             string   `json:"username"`
-	Roles                []string `json:"roles"`
-	UserID               uint64   `json:"user_id"`
+	jwt.RegisteredClaims
+	Username string   `json:"username"`
+	Roles    []string `json:"roles"`
+	UserID   uint64   `json:"user_id"`
 }
 
-// GenerateToken 是系统中标准且唯一的 JWT 生成入口。
+// GenerateToken 是系统中标准且唯一的 JWT 生成入口.
 func GenerateToken(userID uint64, username string, roles []string, secret, issuer string, expireDuration time.Duration) (string, error) {
 	claims := MyCustomClaims{
 		UserID:   userID,
@@ -52,8 +54,20 @@ func GenerateToken(userID uint64, username string, roles []string, secret, issue
 	return token.SignedString([]byte(secret))
 }
 
-// ParseToken 解析并验证 JWT 字符串，返回自定义 Claims。
+// ParseToken 解析并验证 JWT 字符串，带本地高性能缓存。
 func ParseToken(tokenString, secret string) (*MyCustomClaims, error) {
+	// 1. 尝试从本地缓存读取
+	if val, ok := tokenCache.Load(tokenString); ok {
+		claims := val.(*MyCustomClaims)
+		// 仍然需要检查过期时间
+		if time.Now().Before(claims.ExpiresAt.Time) {
+			return claims, nil
+		}
+		// 已过期，从缓存中移除
+		tokenCache.Delete(tokenString)
+	}
+
+	// 2. 缓存未命中或已过期，执行完整解析与验签
 	token, err := jwt.ParseWithClaims(tokenString, &MyCustomClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("%w: %v", ErrUnexpectedSigningMethod, token.Header["alg"])
@@ -61,6 +75,7 @@ func ParseToken(tokenString, secret string) (*MyCustomClaims, error) {
 
 		return []byte(secret), nil
 	})
+
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired
@@ -73,6 +88,9 @@ func ParseToken(tokenString, secret string) (*MyCustomClaims, error) {
 	}
 
 	if claims, ok := token.Claims.(*MyCustomClaims); ok && token.Valid {
+		// 3. 验证成功，存入缓存
+		tokenCache.Store(tokenString, claims)
+
 		return claims, nil
 	}
 
