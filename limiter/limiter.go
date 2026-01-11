@@ -43,6 +43,7 @@ func (l *LocalLimiter) Allow(_ context.Context, _ string) (bool, error) {
 // RedisLimiter 是基于 Redis + Lua 脚本实现的分布式令牌桶限流器。
 type RedisLimiter struct {
 	client redis.UniversalClient // Redis 客户端实例。
+	script *redis.Script         // Lua 脚本执行器 (自动处理 EVALSHA)。
 	rate   int                   // 每秒产生的令牌数 (QPS)。
 	burst  int                   // 令牌桶的最大容量。
 }
@@ -61,6 +62,7 @@ func NewRedisLimiter(client redis.UniversalClient, fillingRate int, _ time.Durat
 
 	return &RedisLimiter{
 		client: client,
+		script: redis.NewScript(redisTokenBucketScript),
 		rate:   fillingRate,
 		burst:  burstVal,
 	}
@@ -70,10 +72,10 @@ func NewRedisLimiter(client redis.UniversalClient, fillingRate int, _ time.Durat
 func (l *RedisLimiter) Allow(ctx context.Context, key string) (bool, error) {
 	now := time.Now().Unix()
 
-	// 执行 Lua 脚本。
-	result, err := l.client.Eval(ctx, redisTokenBucketScript, []string{key}, l.rate, l.burst, now).Int()
+	// 执行 Lua 脚本 (尝试 EVALSHA，失败则 EVAL)。
+	result, err := l.script.Run(ctx, l.client, []string{key}, l.rate, l.burst, now).Int()
 	if err != nil {
-		return false, fmt.Errorf("redis eval failed: %w", err)
+		return false, fmt.Errorf("redis script run failed: %w", err)
 	}
 
 	return result == 1, nil

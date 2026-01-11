@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -179,12 +180,14 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 			return nil, err
 		}
 
-		// 异步回写 (不阻塞 singleflight 释放)
-		go func() {
+		// 异步回写 (使用独立 Context 防止被取消)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		go func(ctx context.Context) {
+			defer cancel()
 			if err := c.Set(ctx, key, data, expiration); err != nil {
 				c.logger.Error("cache backfill failed", "key", key, "error", err)
 			}
-		}()
+		}(bgCtx)
 
 		return data, nil
 	})
@@ -193,7 +196,26 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 		return err
 	}
 
-	// 将结果反序列化到传入的 value 指针
+	// 优化：尝试反射赋值，避免 JSON 序列化开销
+	// 仅当 v 类型与 value 指向的类型兼容时有效 (通常是 DB 回源路径)
+	if v != nil {
+		targetVal := reflect.ValueOf(value)
+		if targetVal.Kind() == reflect.Ptr && !targetVal.IsNil() {
+			srcVal := reflect.ValueOf(v)
+			// 自动解引用指针
+			if srcVal.Kind() == reflect.Ptr {
+				srcVal = srcVal.Elem()
+			}
+
+			// 检查类型兼容性
+			if srcVal.IsValid() && srcVal.Type().AssignableTo(targetVal.Elem().Type()) {
+				targetVal.Elem().Set(srcVal)
+				return nil
+			}
+		}
+	}
+
+	// 降级：如果类型不匹配或反射失败，使用 JSON 反序列化
 	// 注意：由于 singleflight 返回的是 any，我们需要处理类型转换
 	b, err := json.Marshal(v)
 	if err != nil {
