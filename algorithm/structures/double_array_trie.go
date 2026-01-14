@@ -96,7 +96,7 @@ func (dat *DoubleArrayTrie) buildFromTrie(root *datTrieNode, used []bool) {
 	}
 }
 
-func (dat *DoubleArrayTrie) findBase(children []childNode, firstFree int, _ []bool) int {
+func (dat *DoubleArrayTrie) findBase(children []childNode, firstFree int, used []bool) int {
 	minBase := 1
 	if val := firstFree - int(children[0].code); val > 1 {
 		minBase = val

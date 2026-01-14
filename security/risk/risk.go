@@ -3,6 +3,7 @@ package risk
 
 import (
 	"context"
+	"log/slog"
 )
 
 // Level 定义了风控判定的处理等级。
@@ -32,9 +33,25 @@ type Evaluator interface {
 
 // BaseEvaluator 提供默认的兜底风控实现，遵循 Fail-Open (故障放行) 策略。
 // 用于在风控系统不可用或未配置规则时，保证业务连续性。
-type BaseEvaluator struct{}
+type BaseEvaluator struct {
+	logger *slog.Logger
+}
+
+// NewBaseEvaluator 创建一个新的基础评估器。
+func NewBaseEvaluator(logger *slog.Logger) *BaseEvaluator {
+	return &BaseEvaluator{
+		logger: logger,
+	}
+}
 
 // Assess 执行基础的放行逻辑.
-func (e *BaseEvaluator) Assess(_ context.Context, _ string, _ map[string]any) (*Assessment, error) {
+func (e *BaseEvaluator) Assess(ctx context.Context, action string, data map[string]any) (*Assessment, error) {
+	if e.logger != nil {
+		e.logger.DebugContext(ctx, "risk assessment (fail-open)",
+			"module", "risk.base",
+			"action", action,
+			"data_len", len(data),
+		)
+	}
 	return &Assessment{Level: Pass, Code: "DEFAULT_PASS", Reason: "default_base_evaluator", Score: 0}, nil
 }

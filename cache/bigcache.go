@@ -49,7 +49,10 @@ func NewBigCache(ttl time.Duration, maxMB int, logger *logging.Logger) (*BigCach
 }
 
 // Get 获取缓存，反序列化至传入的指针。
-func (c *BigCache) Get(_ context.Context, key string, value any) error {
+func (c *BigCache) Get(ctx context.Context, key string, value any) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	data, err := c.cache.Get(key)
 	if err != nil {
 		if errors.Is(err, bigcache.ErrEntryNotFound) {
@@ -63,7 +66,10 @@ func (c *BigCache) Get(_ context.Context, key string, value any) error {
 }
 
 // Set 设置缓存，支持指定过期时间。
-func (c *BigCache) Set(_ context.Context, key string, value any, _ time.Duration) error {
+func (c *BigCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -73,7 +79,10 @@ func (c *BigCache) Set(_ context.Context, key string, value any, _ time.Duration
 }
 
 // Delete 删除指定的缓存条目。
-func (c *BigCache) Delete(_ context.Context, keys ...string) error {
+func (c *BigCache) Delete(ctx context.Context, keys ...string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	for _, key := range keys {
 		if err := c.cache.Delete(key); err != nil && !errors.Is(err, bigcache.ErrEntryNotFound) {
 			return err
@@ -84,7 +93,10 @@ func (c *BigCache) Delete(_ context.Context, keys ...string) error {
 }
 
 // Exists 判断指定键是否存在于缓存中。
-func (c *BigCache) Exists(_ context.Context, key string) (bool, error) {
+func (c *BigCache) Exists(ctx context.Context, key string) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
 	_, err := c.cache.Get(key)
 	if err == nil {
 		return true, nil

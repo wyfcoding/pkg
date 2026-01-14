@@ -9,8 +9,8 @@ import (
 
 // DynamicRiskEngine 是基于可编程规则引擎实现的高级风控器。
 // 支持在不重启服务的情况下，通过修改规则表达式动态调整风控策略。
-type DynamicRiskEngine struct { // 动态引擎内部结构，已优化对齐。
-	re     *ruleengine.Engine // 底层规则执行引.
+type DynamicRiskEngine struct {
+	re     *ruleengine.Engine // 底层规则执行引擎.
 	logger *slog.Logger       // 日志记录.
 }
 
@@ -63,10 +63,22 @@ func (e *DynamicRiskEngine) initDefaultRules() error {
 
 // Assess 执行规则评估。
 // 判定策略：若命中多个规则，严格遵循优先级 Reject > Review > Pass。
-func (e *DynamicRiskEngine) Assess(ctx context.Context, _ string, data map[string]any) (*Assessment, error) {
-	hits, err := e.re.ExecuteAll(ctx, data)
-	if err != nil {
-		return nil, err
+func (e *DynamicRiskEngine) Assess(ctx context.Context, ruleID string, data map[string]any) (*Assessment, error) {
+	var hits []ruleengine.Result
+	if ruleID != "" {
+		res, err := e.re.Execute(ctx, ruleID, data)
+		if err != nil {
+			return nil, err
+		}
+		if res.Passed {
+			hits = append(hits, res)
+		}
+	} else {
+		var err error
+		hits, err = e.re.ExecuteAll(ctx, data)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	finalAssessment := &Assessment{Level: Pass, Code: "OK", Score: 0}
@@ -76,7 +88,7 @@ func (e *DynamicRiskEngine) Assess(ctx context.Context, _ string, data map[strin
 		if !ok {
 			continue
 		}
-		// 一票否决逻辑：一旦命中 Reject，立即返.
+		// 一票否决逻辑：一旦命中 Reject，立即返回。
 		if levelStr == Reject {
 			code, _ := hit.Metadata["code"].(string)
 			return &Assessment{
@@ -85,7 +97,7 @@ func (e *DynamicRiskEngine) Assess(ctx context.Context, _ string, data map[strin
 				Reason: "rule hit: " + hit.RuleID,
 			}, nil
 		}
-		// 升级判定逻辑：如果当前是 Pass，可以升级为 Revie.
+		// 升级判定逻辑：如果当前是 Pass，可以升级为 Review。
 		if levelStr == Review {
 			finalAssessment.Level = Review
 			finalAssessment.Code, _ = hit.Metadata["code"].(string)

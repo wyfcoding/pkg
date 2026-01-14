@@ -46,8 +46,7 @@ type EventStore interface {
 type SnapshotStrategy interface {
 	// ShouldSnapshot 判断是否应该创建快照。
 	// aggregate: 聚合根。
-	// eventsLen: 本次新增事件数量。
-	ShouldSnapshot(aggregate Aggregate, eventsLen int) bool
+	ShouldSnapshot(aggregate Aggregate) bool
 }
 
 // DefaultSnapshotStrategy 默认快照策略（基于版本间隔）。
@@ -61,7 +60,7 @@ func NewDefaultSnapshotStrategy(interval int64) *DefaultSnapshotStrategy {
 }
 
 // ShouldSnapshot 实现了 SnapshotStrategy 接口。
-func (s *DefaultSnapshotStrategy) ShouldSnapshot(aggregate Aggregate, _ int) bool {
+func (s *DefaultSnapshotStrategy) ShouldSnapshot(aggregate Aggregate) bool {
 	// 简单的策略：如果当前版本是间隔的倍数，则触发快照。
 	// 注意：这只是一个近似策略，实际可能需要更复杂的判断逻辑。
 	return aggregate.Version()%s.Interval == 0

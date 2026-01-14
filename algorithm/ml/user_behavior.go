@@ -14,7 +14,7 @@ type UserBehavior struct {
 // Analyze 分析
 // Analyze 基于用户行为序列进行异常评分。
 // 返回 0-1 之间的风险分数，分数越高表示越可疑。
-func (ub *UserBehavior) Analyze(_ uint64, actions []string) float64 {
+func (ub *UserBehavior) Analyze(actions []string) float64 {
 	if len(actions) == 0 {
 		return 0.0
 	}

@@ -69,7 +69,10 @@ func (e *Engine) AddRule(rule Rule) error {
 }
 
 // Execute 针对给定的事实数据评估单条已注册的规则。
-func (e *Engine) Execute(_ context.Context, ruleID string, facts map[string]any) (Result, error) {
+func (e *Engine) Execute(ctx context.Context, ruleID string, facts map[string]any) (Result, error) {
+	if ctx.Err() != nil {
+		return Result{}, ctx.Err()
+	}
 	e.mu.RLock()
 	program, exists := e.programs[ruleID]
 	rule, ruleExists := e.rules[ruleID]
@@ -97,7 +100,10 @@ func (e *Engine) Execute(_ context.Context, ruleID string, facts map[string]any)
 }
 
 // ExecuteAll 针对给定的事实数据（Facts）并行或顺序评估所有已注册规则。
-func (e *Engine) ExecuteAll(_ context.Context, facts map[string]any) ([]Result, error) {
+func (e *Engine) ExecuteAll(ctx context.Context, facts map[string]any) ([]Result, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
