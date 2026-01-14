@@ -13,7 +13,7 @@ import (
 	"github.com/bwmarrin/snowflake"
 	"github.com/sony/sonyflake"
 	"github.com/wyfcoding/pkg/config"
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 var (
@@ -101,7 +101,7 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 			// G115 fix: Explicitly mask to correct size before casting
 			mid := cfg.MachineID & 0xFFFF
 			// G115 fix
-			return utils.Int64ToUint16(mid), nil
+			return cast.Int64ToUint16(mid), nil
 		},
 	}
 
@@ -125,7 +125,7 @@ func (g *SonyflakeGenerator) Generate() int64 {
 			// G115 fix: Mask before cast
 			maskedID := id & 0x7FFFFFFFFFFFFFFF
 			// G115 fix
-			return utils.Uint64ToInt64(maskedID)
+			return cast.Uint64ToInt64(maskedID)
 		}
 
 		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)
@@ -186,7 +186,7 @@ func GenID() uint64 {
 
 	generatedID := defaultGenerator.Generate()
 	// G115 fix: Safe cast
-	return utils.Int64ToUint64(generatedID & 0x7FFFFFFFFFFFFFFF)
+	return cast.Int64ToUint64(generatedID & 0x7FFFFFFFFFFFFFFF)
 }
 
 // GenOrderNo 生成订单号，格式为 "O" + 唯一ID.

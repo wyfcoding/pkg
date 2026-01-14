@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	algomath "github.com/wyfcoding/pkg/algorithm/math"
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 var wordRegex = regexp.MustCompile(`\w+`)
@@ -45,7 +45,7 @@ func (s *SimHash) Calculate(text string) uint64 {
 
 		for i := range s.hashBits {
 			// 安全：i 范围 [0, 63]，位移量安全。
-			if (h & (uint64(1) << utils.IntToUint32(i&0x3F))) != 0 {
+			if (h & (uint64(1) << cast.IntToUint32(i&0x3F))) != 0 {
 				weights[i]++
 			} else {
 				weights[i]--
@@ -57,7 +57,7 @@ func (s *SimHash) Calculate(text string) uint64 {
 	for i := range s.hashBits {
 		if weights[i] > 0 {
 			// 安全：i 范围 [0, 63]，位移量安全。
-			result |= (1 << utils.IntToUint32(i&0x3F))
+			result |= (1 << cast.IntToUint32(i&0x3F))
 		}
 	}
 

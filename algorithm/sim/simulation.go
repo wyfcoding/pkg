@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/wyfcoding/pkg/algorithm/finance"
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 	"github.com/wyfcoding/pkg/xerrors"
 
 	crypto_rand "crypto/rand"
@@ -41,7 +41,7 @@ func cryptoNormFloat64() float64 {
 	if _, err := crypto_rand.Read(b[:]); err != nil {
 		ts := time.Now().UnixNano()
 		// G115 Fix: use unsafe cast via utils to bypass overflow warning.
-		val := utils.Int64ToUint64(ts)
+		val := cast.Int64ToUint64(ts)
 		binary.LittleEndian.PutUint64(b[:8], val)
 		binary.LittleEndian.PutUint64(b[8:], val)
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 // RandomString 生成指定长度的随机字符串.
@@ -19,7 +19,7 @@ func RandomString(length int) string {
 		for i := range result {
 			ts := time.Now().UnixNano()
 			// G115 Fix: use utils for unsafe cast to bypass linter.
-			idx := utils.Uint64ToInt(utils.Int64ToUint64(ts) % utils.IntToUint64(len(charset)))
+			idx := cast.Uint64ToInt(cast.Int64ToUint64(ts) % cast.IntToUint64(len(charset)))
 			result[i] = charset[idx]
 		}
 		return string(result)

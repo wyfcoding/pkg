@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/wyfcoding/pkg/tracing"
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -250,7 +250,7 @@ func (p *Processor) send(msg *Message) {
 		// 指数退避重试。
 		// 安全：RetryCount 为正整数，位掩码限制最大重试次数。
 		// G115 Fix: Masking
-		retryCount := utils.IntToUint(msg.RetryCount & 0x3F)
+		retryCount := cast.IntToUint(msg.RetryCount & 0x3F)
 		backoff := min(time.Duration(1<<retryCount)*time.Minute, 24*time.Hour)
 		updates["next_retry"] = time.Now().Add(backoff)
 		updates["last_error"] = err.Error()

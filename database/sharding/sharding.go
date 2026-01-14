@@ -9,7 +9,7 @@ import (
 	"github.com/wyfcoding/pkg/database"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 	"gorm.io/gorm"
 )
 
@@ -70,7 +70,7 @@ func (m *Manager) GetDB(key uint64) *gorm.DB {
 
 	// 安全转换：shardCount 始终为正且在初始化时受限于配置数量。
 	// G115 Fix: Safe cast
-	shardIndex := utils.Uint64ToIntSafe(key % utils.IntToUint64(m.shardCount))
+	shardIndex := cast.Uint64ToIntSafe(key % cast.IntToUint64(m.shardCount))
 
 	return m.shards[shardIndex].RawDB()
 }

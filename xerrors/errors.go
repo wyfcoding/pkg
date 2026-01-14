@@ -165,7 +165,6 @@ func Wrap(err error, errType ErrorType, msg string) *Error {
 		return e
 	}
 
-	// 显式范围检查以消除 G115.
 	t := uint64(errType)
 	var errCode uint32
 	if t <= 0xFFFFFFFF {

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 	"github.com/wyfcoding/pkg/xerrors"
 )
 
@@ -69,7 +69,7 @@ func (nn *NeuralNetwork) initializeWeights(layerIdx, rows, cols int) {
 					ts = -ts
 				}
 				// G115 Fix: use unsafe cast via utils to bypass overflow warning.
-				val := utils.Int64ToUint64(ts)
+				val := cast.Int64ToUint64(ts)
 				binary.LittleEndian.PutUint64(b[:], val)
 			}
 			rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)

@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"sync/atomic"
 
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 // LockFreeQueue 是一个高性能、无锁、固定大小的 MPMC（多生产者多消费者）环形队列。
@@ -39,7 +39,7 @@ func NewLockFreeQueue(capacity uint32) *LockFreeQueue {
 		// 如果不是 2 的幂，向上取.
 		// G115 fix: Mask shift count safely
 		// G115 fix: Mask shift count safely
-		shift := utils.IntToUint(32 - countLeadingZeros(capacity-1)&0x1F)
+		shift := cast.IntToUint(32 - countLeadingZeros(capacity-1)&0x1F)
 		capacity = 1 << shift
 	}
 

@@ -6,7 +6,7 @@ import (
 	"math/bits"
 	"sync"
 
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 var bitsetPool = sync.Pool{
@@ -45,8 +45,8 @@ func (rb *RoaringBitmap) Release() {
 func (rb *RoaringBitmap) Add(x uint32) {
 	// 安全：位图索引拆分，截断是设计意图。
 	// G115 fix: Safe splitting
-	high := utils.Uint32ToUint16(x >> 16)
-	low := utils.Uint32ToUint16(x)
+	high := cast.Uint32ToUint16(x >> 16)
+	low := cast.Uint32ToUint16(x)
 
 	container, ok := rb.chunks[high]
 	if !ok {
@@ -74,8 +74,8 @@ func (rb *RoaringBitmap) Add(x uint32) {
 func (rb *RoaringBitmap) Contains(x uint32) bool {
 	// 安全：位图索引拆分，截断是设计意图。
 	// G115 fix: Direct safe casting
-	high := utils.Uint32ToUint16(x >> 16)
-	low := utils.Uint32ToUint16(x)
+	high := cast.Uint32ToUint16(x >> 16)
+	low := cast.Uint32ToUint16(x)
 
 	container, ok := rb.chunks[high]
 	if !ok {
@@ -161,7 +161,7 @@ func (rb *RoaringBitmap) ToList() []uint32 {
 			temp := word
 			for temp != 0 {
 				bit := bits.TrailingZeros64(temp)
-				res = append(res, hBase|utils.IntToUint32(i)<<6|utils.IntToUint32(bit)) // G115 fix: cast to uint32 before shifting is safer
+				res = append(res, hBase|cast.IntToUint32(i)<<6|cast.IntToUint32(bit)) // G115 fix: cast to uint32 before shifting is safer
 				temp &= temp - 1                                                        // 清除最低位的 1。
 			}
 		}

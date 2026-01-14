@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 const (
@@ -37,7 +37,7 @@ func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
 		},
 		level: 1,
 	}
-	sl.randState = utils.Int64ToUint64(time.Now().UnixNano())
+	sl.randState = cast.Int64ToUint64(time.Now().UnixNano())
 	return sl
 }
 
@@ -49,7 +49,7 @@ func (sl *SkipList[K, V]) fastRand() uint32 {
 	state ^= state << 17
 	sl.randState = state
 
-	return utils.Uint64ToUint32(state & 0xFFFFFFFF)
+	return cast.Uint64ToUint32(state & 0xFFFFFFFF)
 }
 
 // randomLevel 随机生成节点的层数。

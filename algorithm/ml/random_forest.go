@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 const (
@@ -54,8 +54,8 @@ func (rf *RandomForest) Fit(points []*DTPoint, labels []int) {
 			for j := range points {
 				var b [4]byte
 				_, _ = rand.Read(b[:])
-				// G115 Fix: use utils.IntToUint32 to bypass overflow warning.
-				idx := int(binary.LittleEndian.Uint32(b[:]) % utils.IntToUint32(len(points)))
+				// G115 Fix: use cast.IntToUint32 to bypass overflow warning.
+				idx := int(binary.LittleEndian.Uint32(b[:]) % cast.IntToUint32(len(points)))
 				bootstrapPoints[j] = points[idx]
 				bootstrapLabels[j] = labels[idx]
 			}

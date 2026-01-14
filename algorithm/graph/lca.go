@@ -2,7 +2,7 @@
 package graph
 
 import (
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 // TreeLCA 实现了基于倍增（Binary Lifting）算法的最近公共祖先查询。
@@ -25,7 +25,7 @@ func NewTreeLCA(root int, adj [][]int) *TreeLCA {
 	// 安全：logN 不会超过 log2(n) + 1，对于合理的图大小远小于 uint32 范围。
 	// 安全：logN 不会超过 log2(n) + 1
 	// G115 Fix: Masking
-	for (1 << utils.IntToUint32(logN&0x1F)) < n {
+	for (1 << cast.IntToUint32(logN&0x1F)) < n {
 		logN++
 	}
 
@@ -89,7 +89,7 @@ func (lca *TreeLCA) GetLCA(u, v int) int {
 		// 安全：i 范围 [0, logN)，位移量安全。
 		// 安全：i 范围 [0, logN)，位移量安全。
 		// G115 Fix: Masking
-		shift := utils.IntToUint32(i & 0x1F)
+		shift := cast.IntToUint32(i & 0x1F)
 		if (diff & (1 << shift)) != 0 {
 			u = lca.up[u*lca.logN+i]
 		}

@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 
-	"github.com/wyfcoding/pkg/utils"
+	"github.com/wyfcoding/pkg/cast"
 )
 
 // ReservoirSampler 蓄水池采样.
@@ -32,8 +32,8 @@ func (s *ReservoirSampler[T]) Observe(item T) {
 	} else {
 		var b [8]byte
 		_, _ = rand.Read(b[:])
-		// G115 Fix: use utils.IntToUint64 to bypass overflow warning.
-		j := utils.Uint64ToIntSafe(binary.LittleEndian.Uint64(b[:]) % utils.IntToUint64(s.count))
+		// G115 Fix: use cast.IntToUint64 to bypass overflow warning.
+		j := cast.Uint64ToIntSafe(binary.LittleEndian.Uint64(b[:]) % cast.IntToUint64(s.count))
 		if j < s.k {
 			s.samples[j] = item
 		}
