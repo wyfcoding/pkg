@@ -21,18 +21,37 @@ import (
 
 // ClientFactory 是一个生产级的 gRPC 客户端工厂，集成了治理能力（限流、熔断、重试、监控、追踪）。
 type ClientFactory struct {
-	logger  *logging.Logger             // 日志记录器。
-	metrics *metrics.Metrics            // 性能指标采集组件。
-	cfg     config.CircuitBreakerConfig // 全局默认熔断配置。
+	logger     *logging.Logger             // 日志记录器。
+	metrics    *metrics.Metrics            // 性能指标采集组件。
+	cfg        config.CircuitBreakerConfig // 全局默认熔断配置。
+	retryCount int                         // 最大重试次数。
+	rateLimit  rate.Limit                  // 每秒请求限制。
+	rateBurst  int                         // 突发请求限制。
 }
 
 // NewClientFactory 初始化 gRPC 客户端工厂。
 func NewClientFactory(logger *logging.Logger, m *metrics.Metrics, cfg config.CircuitBreakerConfig) *ClientFactory {
 	return &ClientFactory{
-		logger:  logger,
-		metrics: m,
-		cfg:     cfg,
+		logger:     logger,
+		metrics:    m,
+		cfg:        cfg,
+		retryCount: 3,
+		rateLimit:  rate.Limit(5000),
+		rateBurst:  500,
 	}
+}
+
+// WithRetry 设置最大重试次数.
+func (f *ClientFactory) WithRetry(count int) *ClientFactory {
+	f.retryCount = count
+	return f
+}
+
+// WithRateLimit 设置限流参数.
+func (f *ClientFactory) WithRateLimit(limit int, burst int) *ClientFactory {
+	f.rateLimit = rate.Limit(limit)
+	f.rateBurst = burst
+	return f
 }
 
 // NewClient 创建并返回一个新的 gRPC 客户端连接（ClientConn）。
@@ -46,7 +65,7 @@ func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc
 		Config: f.cfg,
 	}, f.metrics)
 
-	limiter := rate.NewLimiter(rate.Limit(5000), 500)
+	limiter := rate.NewLimiter(f.rateLimit, f.rateBurst)
 
 	defaultOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -59,7 +78,7 @@ func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc
 			f.metricsInterceptor(target),
 			f.circuitBreakerInterceptor(cb),
 			f.rateLimitInterceptor(limiter),
-			f.retryInterceptor(3),
+			f.retryInterceptor(f.retryCount),
 		),
 	}
 

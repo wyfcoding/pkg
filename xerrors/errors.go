@@ -152,37 +152,9 @@ func Unauthenticated(msg string) *Error {
 	return New(ErrUnauthenticated, httpUnauthorized, msg, "", nil)
 }
 
-// Wrap 包装现有错误并捕获堆栈.
-func Wrap(err error, errType ErrorType, msg string) *Error {
-	if err == nil {
-		return nil
-	}
-
-	if e, ok := FromError(err); ok {
-		e.Cause = err
-		e.Message = msg
-
-		return e
-	}
-
-	t := uint64(errType)
-	var errCode uint32
-	if t <= 0xFFFFFFFF {
-		errCode = uint32(t)
-	} else {
-		errCode = 0
-	}
-	return New(errType, int(errCode), msg, "", err)
-}
-
-// WrapInternal 快速包装内部服务器错误.
-func WrapInternal(err error, msg string) *Error {
-	return Wrap(err, ErrInternal, msg)
-}
-
-// HTTPStatus 实现了 response.HTTPStatusProvider 接口.
-func (e *Error) HTTPStatus() int {
-	switch e.Type {
+// GetHTTPStatus 根据错误类型获取默认的 HTTP 状态码.
+func GetHTTPStatus(t ErrorType) int {
+	switch t {
 	case ErrInvalidArg:
 		return http.StatusBadRequest
 	case ErrUnauthenticated:
@@ -202,6 +174,33 @@ func (e *Error) HTTPStatus() int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// Wrap 包装现有错误并捕获堆栈.
+func Wrap(err error, errType ErrorType, msg string) *Error {
+	if err == nil {
+		return nil
+	}
+
+	if e, ok := FromError(err); ok {
+		e.Cause = err
+		e.Message = msg
+
+		return e
+	}
+
+	code := GetHTTPStatus(errType)
+	return New(errType, code, msg, "", err)
+}
+
+// WrapInternal 快速包装内部服务器错误.
+func WrapInternal(err error, msg string) *Error {
+	return Wrap(err, ErrInternal, msg)
+}
+
+// HTTPStatus 实现了 response.HTTPStatusProvider 接口.
+func (e *Error) HTTPStatus() int {
+	return GetHTTPStatus(e.Type)
 }
 
 // GRPCCode 执行错误类型到 gRPC 标准状态码的映射.

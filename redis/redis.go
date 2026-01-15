@@ -95,13 +95,11 @@ func (h *metricsHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.
 // NewClient 使用提供的配置创建一个新的 Redis UniversalClient (自动适配 Cluster/Sentinel/Standalone).
 func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (redis.UniversalClient, func(), error) {
 	// 将配置转换为 UniversalOptions
-	// 注意: config.RedisConfig 需要支持更多字段 (如 Addrs []string) 来完全支持集群.
-	// 这里假设 cfg.Addr 可能包含逗号分隔的地址, 或者我们暂时只支持单节点但使用通用接口.
-	// 更好的做法是让 config.RedisConfig 本身支持集群配置.
-	// 这里做最小改动以支持 UniversalClient 接口.
+	addrs := cfg.Addrs
 
 	opts := &redis.UniversalOptions{
-		Addrs:        []string{cfg.Addr}, // TODO: Support multiple addrs in config
+		Addrs:        addrs,
+		MasterName:   cfg.MasterName,
 		Password:     cfg.Password,
 		DB:           cfg.DB,
 		PoolSize:     cfg.PoolSize,
@@ -112,7 +110,7 @@ func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (redis.Universal
 
 	client := redis.NewUniversalClient(opts)
 
-	client.AddHook(&metricsHook{addr: cfg.Addr})
+	client.AddHook(&metricsHook{addr: fmt.Sprintf("%v", addrs)})
 
 	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
 	defer cancel()
@@ -121,7 +119,7 @@ func NewClient(cfg *config.RedisConfig, logger *logging.Logger) (redis.Universal
 		return nil, nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	logger.Info("Successfully connected to Redis", "addr", cfg.Addr)
+	logger.Info("Successfully connected to Redis", "addrs", addrs)
 
 	cleanup := func() {
 		if err := client.Close(); err != nil {

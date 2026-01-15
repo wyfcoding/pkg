@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
+	"github.com/wyfcoding/pkg/cast"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	redis_pkg "github.com/wyfcoding/pkg/redis"
-	"github.com/wyfcoding/pkg/cast"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -97,7 +97,6 @@ func NewRedisCache(cfg config.RedisConfig, cbCfg config.CircuitBreakerConfig, lo
 		hits:     hits,
 		misses:   misses,
 		duration: duration,
-		prefix:   cfg.Addr, // 默认用地址做前缀标识
 	}, nil
 }
 
