@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wyfcoding/pkg/tracing"
 	"github.com/wyfcoding/pkg/cast"
+	"github.com/wyfcoding/pkg/tracing"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

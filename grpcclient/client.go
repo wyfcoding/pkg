@@ -48,7 +48,7 @@ func (f *ClientFactory) WithRetry(count int) *ClientFactory {
 }
 
 // WithRateLimit 设置限流参数.
-func (f *ClientFactory) WithRateLimit(limit int, burst int) *ClientFactory {
+func (f *ClientFactory) WithRateLimit(limit, burst int) *ClientFactory {
 	f.rateLimit = rate.Limit(limit)
 	f.rateBurst = burst
 	return f

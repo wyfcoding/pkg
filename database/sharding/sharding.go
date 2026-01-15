@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/wyfcoding/pkg/cast"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/database"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
-	"github.com/wyfcoding/pkg/cast"
 	"gorm.io/gorm"
 )
 

@@ -151,9 +151,10 @@ type MinioConfig struct {
 
 // TracingConfig 分布式链路追踪（OpenTelemetry/Jaeger）配置.
 type TracingConfig struct {
-	ServiceName  string `mapstructure:"service_name"  toml:"service_name"`
-	OTLPEndpoint string `mapstructure:"otlp_endpoint" toml:"otlp_endpoint"`
-	Enabled      bool   `mapstructure:"enabled"       toml:"enabled"`
+	ServiceName  string  `mapstructure:"service_name"  toml:"service_name"`
+	OTLPEndpoint string  `mapstructure:"otlp_endpoint" toml:"otlp_endpoint"`
+	SamplerRatio float64 `mapstructure:"sampler_ratio" toml:"sampler_ratio"`
+	Enabled      bool    `mapstructure:"enabled"       toml:"enabled"`
 }
 
 // MetricsConfig 普罗米修斯监控指标暴露配置.

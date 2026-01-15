@@ -14,7 +14,7 @@ import (
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
-	redis_pkg "github.com/wyfcoding/pkg/redis"
+	pkgredis "github.com/wyfcoding/pkg/redis"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
@@ -61,7 +61,7 @@ type RedisCache struct {
 
 // NewRedisCache 初始化并返回一个具备熔断和监控能力的 Redis 缓存实例。
 func NewRedisCache(cfg config.RedisConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*RedisCache, error) {
-	client, cleanup, err := redis_pkg.NewClient(&cfg, logger)
+	client, cleanup, err := pkgredis.NewClient(&cfg, logger)
 	if err != nil {
 		return nil, err
 	}

@@ -162,7 +162,7 @@ func (rb *RoaringBitmap) ToList() []uint32 {
 			for temp != 0 {
 				bit := bits.TrailingZeros64(temp)
 				res = append(res, hBase|cast.IntToUint32(i)<<6|cast.IntToUint32(bit)) // G115 fix: cast to uint32 before shifting is safer
-				temp &= temp - 1                                                        // 清除最低位的 1。
+				temp &= temp - 1                                                      // 清除最低位的 1。
 			}
 		}
 	}
