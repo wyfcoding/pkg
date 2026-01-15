@@ -81,6 +81,11 @@ func NewResult[T any](total int64, req *Request, items []T) *Result[T] {
 	}
 }
 
+// Wrap 将切片包装为分页结果.
+func Wrap[T any](items []T, total int64, req *Request) *Result[T] {
+	return NewResult(total, req, items)
+}
+
 // --- Cursor (游标分页支持，用于深度分页优化，避免 OFFSET 性能问题) ---
 
 // CursorRequest 定义了基于游标的分页请求结构.

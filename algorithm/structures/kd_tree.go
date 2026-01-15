@@ -2,7 +2,6 @@ package structures
 
 import (
 	"math"
-	"sync"
 
 	"github.com/wyfcoding/pkg/xerrors"
 )
@@ -21,32 +20,8 @@ type KDNode struct {
 	Axis  int
 }
 
-var kdNodePool = sync.Pool{
-	New: func() any {
-		return &KDNode{
-			Point: KDPoint{
-				Vector: nil,
-				ID:     0,
-			},
-			Left:  nil,
-			Right: nil,
-			Axis:  0,
-		}
-	},
-}
-
 func acquireKDNode(p KDPoint, axis int) *KDNode {
-	node, ok := kdNodePool.Get().(*KDNode)
-	if !ok {
-		return &KDNode{Point: p, Axis: axis, Left: nil, Right: nil}
-	}
-
-	node.Point = p
-	node.Axis = axis
-	node.Left = nil
-	node.Right = nil
-
-	return node
+	return &KDNode{Point: p, Axis: axis}
 }
 
 // KDTree K-D 树结构.

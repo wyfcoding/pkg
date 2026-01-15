@@ -2,6 +2,7 @@
 package response
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,15 @@ func Success(c *gin.Context, data any) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"msg":  "success",
+		"data": data,
+	})
+}
+
+// SuccessWithMsg 发送一个带自定义消息的成功响应.
+func SuccessWithMsg(c *gin.Context, msg string, data any) {
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"msg":  msg,
 		"data": data,
 	})
 }
@@ -68,6 +78,15 @@ func Error(c *gin.Context, err error) {
 		// 2. 处理 gRPC 返回的远程调用错误，映射为标准 HTTP 状态码。
 		statusCode = grpcCodeToHTTP(st.Code())
 		msg = st.Message()
+	}
+
+	// 自动记录 5xx 错误日志
+	if statusCode >= 500 {
+		slog.ErrorContext(c.Request.Context(), "internal_server_error",
+			"error", err,
+			"path", c.Request.URL.Path,
+			"method", c.Request.Method,
+		)
 	}
 
 	c.JSON(statusCode, gin.H{

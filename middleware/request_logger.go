@@ -1,4 +1,4 @@
-// Package middleware 提供了 Gin 与 gRPC 的通用中间件实现。
+// Package middleware 提供了通用的 Gin 中间件。
 package middleware
 
 import (

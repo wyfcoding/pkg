@@ -1,5 +1,5 @@
-// Package text 提供文本处理与随机字符串生成工具.
-package text
+// Package utils 提供文本处理与随机字符串生成工具.
+package utils
 
 import (
 	"crypto/rand"

@@ -13,18 +13,48 @@ import (
 
 // OrderBook 订单簿核心结构，管理买卖双边挂单。
 type OrderBook struct {
-	orders map[string]*structures.RBNode // 订单索引映射。
-	bids   *structures.RBTree            // 买单红黑树（价格从高到低）。
-	asks   *structures.RBTree            // 卖单红黑树（价格从低到高）。
+	orders map[string]*structures.RBNode[*types.Order] // 订单索引映射。
+	bids   *structures.RBTree[*types.Order]            // 买单红黑树（价格从高到低）。
+	asks   *structures.RBTree[*types.Order]            // 卖单红黑树（价格从低到高）。
 	mu     sync.RWMutex
 }
 
 // NewOrderBook 创建订单簿。
 func NewOrderBook() *OrderBook {
+	// 买单：价格高的优先。
+	bidCompare := func(a, b *types.Order) int {
+		priceCmp := b.Price.Cmp(a.Price) // 反向比较实现 MaxTree
+		if priceCmp == 0 {
+			if a.Timestamp < b.Timestamp {
+				return -1
+			}
+			if a.Timestamp > b.Timestamp {
+				return 1
+			}
+			return 0
+		}
+		return priceCmp
+	}
+
+	// 卖单：价格低的优先。
+	askCompare := func(a, b *types.Order) int {
+		priceCmp := a.Price.Cmp(b.Price)
+		if priceCmp == 0 {
+			if a.Timestamp < b.Timestamp {
+				return -1
+			}
+			if a.Timestamp > b.Timestamp {
+				return 1
+			}
+			return 0
+		}
+		return priceCmp
+	}
+
 	return &OrderBook{
-		bids:   structures.NewRBTree(true),  // 买单：价格高的优先。
-		asks:   structures.NewRBTree(false), // 卖单：价格低的优先。
-		orders: make(map[string]*structures.RBNode),
+		bids:   structures.NewRBTree(bidCompare),
+		asks:   structures.NewRBTree(askCompare),
+		orders: make(map[string]*structures.RBNode[*types.Order]),
 	}
 }
 
@@ -37,7 +67,7 @@ func (ob *OrderBook) AddOrder(order *types.Order) {
 
 // addOrder 添加订单（内部无锁）。
 func (ob *OrderBook) addOrder(order *types.Order) {
-	var node *structures.RBNode
+	var node *structures.RBNode[*types.Order]
 	if order.Side == types.SideBuy {
 		node = ob.bids.Insert(order)
 	} else {
@@ -63,7 +93,7 @@ func (ob *OrderBook) removeOrder(orderID string) {
 
 	delete(ob.orders, orderID)
 
-	if node.Order.Side == types.SideBuy {
+	if node.Value.Side == types.SideBuy {
 		ob.bids.DeleteNode(node)
 	} else {
 		ob.asks.DeleteNode(node)
@@ -74,35 +104,28 @@ func (ob *OrderBook) removeOrder(orderID string) {
 func (ob *OrderBook) GetBestBid() *types.Order {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	return ob.getBestBid()
-}
-
-// getBestBid 获取最优买价（内部无锁）。
-func (ob *OrderBook) getBestBid() *types.Order {
-	return ob.bids.GetBest()
+	node := ob.bids.Min()
+	if node == nil {
+		return nil
+	}
+	return node.Value
 }
 
 // GetBestAsk 获取最优卖价（线程安全）。
 func (ob *OrderBook) GetBestAsk() *types.Order {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	return ob.getBestAsk()
-}
-
-// getBestAsk 获取最优卖价（内部无锁）。
-func (ob *OrderBook) getBestAsk() *types.Order {
-	return ob.asks.GetBest()
+	node := ob.asks.Min()
+	if node == nil {
+		return nil
+	}
+	return node.Value
 }
 
 // GetBids 获取买单列表（线程安全）。
 func (ob *OrderBook) GetBids(depth int) []*types.OrderBookLevel {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	return ob.getBids(depth)
-}
-
-// getBids 获取买单列表（内部无锁）。
-func (ob *OrderBook) getBids(depth int) []*types.OrderBookLevel {
 	return ob.getLevels(ob.bids, depth)
 }
 
@@ -110,27 +133,18 @@ func (ob *OrderBook) getBids(depth int) []*types.OrderBookLevel {
 func (ob *OrderBook) GetAsks(depth int) []*types.OrderBookLevel {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	return ob.getAsks(depth)
-}
-
-// getAsks 获取卖单列表（内部无锁）。
-func (ob *OrderBook) getAsks(depth int) []*types.OrderBookLevel {
 	return ob.getLevels(ob.asks, depth)
 }
 
-func (ob *OrderBook) getLevels(tree *structures.RBTree, depth int) []*types.OrderBookLevel {
+func (ob *OrderBook) getLevels(tree *structures.RBTree[*types.Order], depth int) []*types.OrderBookLevel {
 	levels := make([]*types.OrderBookLevel, 0)
-	if tree.Root == nil {
-		return levels
-	}
-
 	it := tree.NewIterator()
 
 	var currentLevel *types.OrderBookLevel
 
 	for {
-		order := it.Next()
-		if order == nil {
+		order, ok := it.Next()
+		if !ok {
 			break
 		}
 
@@ -161,51 +175,6 @@ type MatchingEngine struct {
 	mu        sync.RWMutex
 }
 
-var (
-	orderPool = sync.Pool{
-		New: func() any {
-			return &types.Order{}
-		},
-	}
-	tradePool = sync.Pool{
-		New: func() any {
-			return &types.Trade{}
-		},
-	}
-)
-
-// AcquireOrder 从对象池获取 Order。
-func AcquireOrder() *types.Order {
-	val, ok := orderPool.Get().(*types.Order)
-	if !ok {
-		return &types.Order{}
-	}
-
-	return val
-}
-
-// ReleaseOrder 将 Order 放回对象池。
-func ReleaseOrder(o *types.Order) {
-	*o = types.Order{} // 重置对象。
-	orderPool.Put(o)
-}
-
-// AcquireTrade 从对象池获取 Trade。
-func AcquireTrade() *types.Trade {
-	val, ok := tradePool.Get().(*types.Trade)
-	if !ok {
-		return &types.Trade{}
-	}
-
-	return val
-}
-
-// ReleaseTrade 将 Trade 放回对象池。
-func ReleaseTrade(t *types.Trade) {
-	*t = types.Trade{} // 重置对象。
-	tradePool.Put(t)
-}
-
 // NewMatchingEngine 创建撮合引擎。
 func NewMatchingEngine() *MatchingEngine {
 	return &MatchingEngine{
@@ -225,7 +194,7 @@ func (me *MatchingEngine) Match(order *types.Order) []*types.Trade {
 		return trades
 	}
 
-	var sideTree *structures.RBTree
+	var sideTree *structures.RBTree[*types.Order]
 	if order.Side == types.SideBuy {
 		sideTree = me.orderBook.asks
 	} else {
@@ -233,8 +202,12 @@ func (me *MatchingEngine) Match(order *types.Order) []*types.Trade {
 	}
 
 	for order.Quantity.GreaterThan(decimal.Zero) {
-		bestCounter := sideTree.GetBest()
-		if bestCounter == nil || !me.canMatch(order, bestCounter) {
+		bestCounterNode := sideTree.Min()
+		if bestCounterNode == nil {
+			break
+		}
+		bestCounter := bestCounterNode.Value
+		if !me.canMatch(order, bestCounter) {
 			break
 		}
 
@@ -261,13 +234,11 @@ func (me *MatchingEngine) Match(order *types.Order) []*types.Trade {
 
 func (me *MatchingEngine) wouldMatch(order *types.Order) bool {
 	if order.Side == types.SideBuy {
-		bestAsk := me.orderBook.getBestAsk()
-
+		bestAsk := me.orderBook.GetBestAsk()
 		return bestAsk != nil && bestAsk.Price.LessThanOrEqual(order.Price)
 	}
 
-	bestBid := me.orderBook.getBestBid()
-
+	bestBid := me.orderBook.GetBestBid()
 	return bestBid != nil && bestBid.Price.GreaterThanOrEqual(order.Price)
 }
 
@@ -280,12 +251,13 @@ func (me *MatchingEngine) canMatch(order, counter *types.Order) bool {
 }
 
 func (me *MatchingEngine) executeTrade(taker, maker *types.Order, qty decimal.Decimal) *types.Trade {
-	t := AcquireTrade()
-	t.TradeID = generateTradeID()
-	t.Symbol = taker.Symbol
-	t.Quantity = qty
-	t.Price = maker.Price
-	t.Timestamp = time.Now().UnixNano()
+	t := &types.Trade{
+		TradeID:   generateTradeID(),
+		Symbol:    taker.Symbol,
+		Quantity:  qty,
+		Price:     maker.Price,
+		Timestamp: time.Now().UnixNano(),
+	}
 
 	if taker.Side == types.SideBuy {
 		t.BuyOrderID, t.BuyUserID = taker.OrderID, taker.UserID
@@ -330,22 +302,6 @@ func (me *MatchingEngine) GetTrades() []*types.Trade {
 	copy(result, me.trades)
 
 	return result
-}
-
-// GetBids 获取买单列表。
-func (me *MatchingEngine) GetBids(depth int) []*types.OrderBookLevel {
-	me.mu.RLock()
-	defer me.mu.RUnlock()
-
-	return me.orderBook.getBids(depth)
-}
-
-// GetAsks 获取卖单列表。
-func (me *MatchingEngine) GetAsks(depth int) []*types.OrderBookLevel {
-	me.mu.RLock()
-	defer me.mu.RUnlock()
-
-	return me.orderBook.getAsks(depth)
 }
 
 func generateTradeID() string {

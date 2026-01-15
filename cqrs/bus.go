@@ -31,16 +31,12 @@ type QueryHandler[Q Query, R any] interface {
 type CommandBus interface {
 	// Dispatch 分发命令到对应的处理器。
 	Dispatch(ctx context.Context, cmd Command) error
-	// Register 注册命令处理器。
-	Register(cmdName string, handler any) error
 }
 
 // QueryBus 查询总线接口。
 type QueryBus interface {
 	// Execute 执行查询并返回结果。
 	Execute(ctx context.Context, query Query) (any, error)
-	// Register 注册查询处理器。
-	Register(queryName string, handler any) error
 }
 
 // EventProcessor 事件处理器接口（用于 Read Model 投影）。

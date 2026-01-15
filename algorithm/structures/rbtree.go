@@ -2,9 +2,7 @@
 package structures
 
 import (
-	"sync"
-
-	"github.com/wyfcoding/pkg/algorithm/types"
+	"cmp"
 )
 
 // Color 红黑树节点颜色.
@@ -18,94 +16,55 @@ const (
 )
 
 // RBNode 红黑树节点.
-type RBNode struct {
-	Order  *types.Order
-	Left   *RBNode
-	Right  *RBNode
-	Parent *RBNode
+type RBNode[T any] struct {
+	Value  T
+	Left   *RBNode[T]
+	Right  *RBNode[T]
+	Parent *RBNode[T]
 	Color  Color
 }
 
+// Comparator 比较器函数原型.
+type Comparator[T any] func(a, b T) int
+
 // RBTree 红黑树数据结构实现.
-type RBTree struct {
-	Root      *RBNode
-	Size      int
-	IsMaxTree bool
+type RBTree[T any] struct {
+	Root    *RBNode[T]
+	compare Comparator[T]
+	Size    int
 }
 
-var rbNodePool = sync.Pool{
-	New: func() any {
-		return &RBNode{
-			Order:  nil,
-			Left:   nil,
-			Right:  nil,
-			Parent: nil,
-			Color:  ColorBlack,
+// NewRBTree 创建一个新的红黑树.
+func NewRBTree[T any](comp Comparator[T]) *RBTree[T] {
+	return &RBTree[T]{
+		compare: comp,
+		Root:    nil,
+		Size:    0,
+	}
+}
+
+// NewOrderedRBTree 为实现了 cmp.Ordered 的类型创建红黑树.
+func NewOrderedRBTree[T cmp.Ordered]() *RBTree[T] {
+	return NewRBTree(func(a, b T) int {
+		if a < b {
+			return -1
 		}
-	},
-}
-
-func newRBNode(order *types.Order, color Color) *RBNode {
-	node, ok := rbNodePool.Get().(*RBNode)
-	if !ok {
-		return &RBNode{
-			Order:  order,
-			Color:  color,
-			Left:   nil,
-			Right:  nil,
-			Parent: nil,
+		if a > b {
+			return 1
 		}
-	}
-
-	node.Order = order
-	node.Color = color
-	node.Left = nil
-	node.Right = nil
-	node.Parent = nil
-
-	return node
+		return 0
+	})
 }
 
-func releaseRBNode(node *RBNode) {
-	node.Order = nil
-	node.Left = nil
-	node.Right = nil
-	node.Parent = nil
-	rbNodePool.Put(node)
-}
-
-// NewRBTree 创建并返回一个指定排序方向的红黑树.
-func NewRBTree(isMaxTree bool) *RBTree {
-	return &RBTree{
-		IsMaxTree: isMaxTree,
-		Root:      nil,
-		Size:      0,
-	}
-}
-
-// Less 决定节点 a 是否应该排在节点 b 的左侧.
-func (t *RBTree) Less(nodeA, nodeB *types.Order) bool {
-	priceCmp := nodeA.Price.Cmp(nodeB.Price)
-	if priceCmp == 0 {
-		return nodeA.Timestamp < nodeB.Timestamp
-	}
-
-	if t.IsMaxTree {
-		return priceCmp > 0
-	}
-
-	return priceCmp < 0
-}
-
-// Insert 向红黑树中插入一个新的订单.
-func (t *RBTree) Insert(order *types.Order) *RBNode {
-	newNode := newRBNode(order, ColorRed)
-	var parentNode *RBNode
+// Insert 向红黑树中插入一个新值.
+func (t *RBTree[T]) Insert(val T) *RBNode[T] {
+	newNode := &RBNode[T]{Value: val, Color: ColorRed}
+	var parentNode *RBNode[T]
 
 	currNode := t.Root
 	for currNode != nil {
 		parentNode = currNode
-		if t.Less(newNode.Order, currNode.Order) {
+		if t.compare(val, currNode.Value) < 0 {
 			currNode = currNode.Left
 		} else {
 			currNode = currNode.Right
@@ -116,7 +75,7 @@ func (t *RBTree) Insert(order *types.Order) *RBNode {
 	switch {
 	case parentNode == nil:
 		t.Root = newNode
-	case t.Less(newNode.Order, parentNode.Order):
+	case t.compare(val, parentNode.Value) < 0:
 		parentNode.Left = newNode
 	default:
 		parentNode.Right = newNode
@@ -128,22 +87,24 @@ func (t *RBTree) Insert(order *types.Order) *RBNode {
 	return newNode
 }
 
-func (t *RBTree) insertFixup(targetNode *RBNode) {
+func (t *RBTree[T]) insertFixup(targetNode *RBNode[T]) {
 	node := targetNode
 
 	for node.Parent != nil && node.Parent.Color == ColorRed {
-		if node.Parent == node.Parent.Parent.Left {
+		if node.Parent.Parent != nil && node.Parent == node.Parent.Parent.Left {
 			node = t.fixInsertSide(node, true)
-		} else {
+		} else if node.Parent.Parent != nil {
 			node = t.fixInsertSide(node, false)
+		} else {
+			break
 		}
 	}
 
 	t.Root.Color = ColorBlack
 }
 
-func (t *RBTree) fixInsertSide(node *RBNode, isLeft bool) *RBNode {
-	var uncle *RBNode
+func (t *RBTree[T]) fixInsertSide(node *RBNode[T], isLeft bool) *RBNode[T] {
+	var uncle *RBNode[T]
 	if isLeft {
 		uncle = node.Parent.Parent.Right
 	} else {
@@ -180,7 +141,7 @@ func (t *RBTree) fixInsertSide(node *RBNode, isLeft bool) *RBNode {
 	return curr
 }
 
-func (t *RBTree) leftRotate(nodeX *RBNode) {
+func (t *RBTree[T]) leftRotate(nodeX *RBNode[T]) {
 	nodeY := nodeX.Right
 	nodeX.Right = nodeY.Left
 
@@ -202,7 +163,7 @@ func (t *RBTree) leftRotate(nodeX *RBNode) {
 	nodeX.Parent = nodeY
 }
 
-func (t *RBTree) rightRotate(nodeY *RBNode) {
+func (t *RBTree[T]) rightRotate(nodeY *RBNode[T]) {
 	nodeX := nodeY.Left
 	nodeY.Left = nodeX.Right
 
@@ -224,36 +185,9 @@ func (t *RBTree) rightRotate(nodeY *RBNode) {
 	nodeY.Parent = nodeX
 }
 
-// Delete 根据 Order 寻找并删除节点.
-func (t *RBTree) Delete(order *types.Order) {
-	target := t.find(order)
-	if target == nil {
-		return
-	}
-
-	t.DeleteNode(target)
-}
-
-func (t *RBTree) find(order *types.Order) *RBNode {
-	curr := t.Root
-	for curr != nil {
-		if curr.Order.OrderID == order.OrderID {
-			return curr
-		}
-
-		if t.Less(order, curr.Order) {
-			curr = curr.Left
-		} else {
-			curr = curr.Right
-		}
-	}
-
-	return nil
-}
-
-// DeleteNode 删除指定节点.
-func (t *RBTree) DeleteNode(target *RBNode) {
-	var replaceNode, childNode *RBNode
+// DeleteNode 从树中删除一个节点。
+func (t *RBTree[T]) DeleteNode(target *RBNode[T]) {
+	var replaceNode, childNode *RBNode[T]
 
 	if target.Left == nil || target.Right == nil {
 		replaceNode = target
@@ -281,18 +215,17 @@ func (t *RBTree) DeleteNode(target *RBNode) {
 	}
 
 	if replaceNode != target {
-		target.Order = replaceNode.Order
+		target.Value = replaceNode.Value
 	}
 
 	if replaceNode.Color == ColorBlack && childNode != nil {
 		t.deleteFixup(childNode)
 	}
 
-	releaseRBNode(replaceNode)
 	t.Size--
 }
 
-func (t *RBTree) successor(node *RBNode) *RBNode {
+func (t *RBTree[T]) successor(node *RBNode[T]) *RBNode[T] {
 	if node.Right != nil {
 		return t.minimum(node.Right)
 	}
@@ -307,16 +240,15 @@ func (t *RBTree) successor(node *RBNode) *RBNode {
 	return parent
 }
 
-func (t *RBTree) minimum(node *RBNode) *RBNode {
+func (t *RBTree[T]) minimum(node *RBNode[T]) *RBNode[T] {
 	curr := node
 	for curr.Left != nil {
 		curr = curr.Left
 	}
-
 	return curr
 }
 
-func (t *RBTree) deleteFixup(targetNode *RBNode) {
+func (t *RBTree[T]) deleteFixup(targetNode *RBNode[T]) {
 	node := targetNode
 	for node != t.Root && node.Color == ColorBlack {
 		if node == node.Parent.Left {
@@ -325,12 +257,11 @@ func (t *RBTree) deleteFixup(targetNode *RBNode) {
 			node = t.fixDeleteSide(node, false)
 		}
 	}
-
 	node.Color = ColorBlack
 }
 
-func (t *RBTree) fixDeleteSide(node *RBNode, isLeft bool) *RBNode {
-	var sibling *RBNode
+func (t *RBTree[T]) fixDeleteSide(node *RBNode[T], isLeft bool) *RBNode[T] {
+	var sibling *RBNode[T]
 	if isLeft {
 		sibling = node.Parent.Right
 	} else {
@@ -352,14 +283,13 @@ func (t *RBTree) fixDeleteSide(node *RBNode, isLeft bool) *RBNode {
 	if (sibling.Left == nil || sibling.Left.Color == ColorBlack) &&
 		(sibling.Right == nil || sibling.Right.Color == ColorBlack) {
 		sibling.Color = ColorRed
-
 		return node.Parent
 	}
 
 	return t.fixDeleteSideAdvanced(node, sibling, isLeft)
 }
 
-func (t *RBTree) fixDeleteSideAdvanced(node, sibling *RBNode, isLeft bool) *RBNode {
+func (t *RBTree[T]) fixDeleteSideAdvanced(node, sibling *RBNode[T], isLeft bool) *RBNode[T] {
 	sib := sibling
 	if isLeft {
 		if sib.Right == nil || sib.Right.Color == ColorBlack {
@@ -396,71 +326,43 @@ func (t *RBTree) fixDeleteSideAdvanced(node, sibling *RBNode, isLeft bool) *RBNo
 	return t.Root
 }
 
-// GetBest 获取最优订单.
-func (t *RBTree) GetBest() *types.Order {
+// Min 返回最小值节点.
+func (t *RBTree[T]) Min() *RBNode[T] {
 	if t.Root == nil {
 		return nil
 	}
-
-	return t.minimum(t.Root).Order
+	return t.minimum(t.Root)
 }
 
-// Iterator 迭代器.
-type Iterator struct {
-	stack []*RBNode
+// Iterator 迭代器。
+type Iterator[T any] struct {
+	stack []*RBNode[T]
 }
 
-// NewIterator 创建迭代器.
-func (t *RBTree) NewIterator() *Iterator {
-	iterator := &Iterator{stack: make([]*RBNode, 0)}
-	iterator.pushLeft(t.Root)
-
-	return iterator
+// NewIterator 创建一个新迭代器。
+func (t *RBTree[T]) NewIterator() *Iterator[T] {
+	it := &Iterator[T]{stack: make([]*RBNode[T], 0)}
+	it.pushLeft(t.Root)
+	return it
 }
 
-func (it *Iterator) pushLeft(node *RBNode) {
-	curr := node
-	for curr != nil {
-		it.stack = append(it.stack, curr)
-		curr = curr.Left
+func (it *Iterator[T]) pushLeft(node *RBNode[T]) {
+	for node != nil {
+		it.stack = append(it.stack, node)
+		node = node.Left
 	}
 }
 
-// Next 返回下一个订单.
-func (it *Iterator) Next() *types.Order {
+// Next 返回下一个值。
+func (it *Iterator[T]) Next() (T, bool) {
 	if len(it.stack) == 0 {
-		return nil
+		var zero T
+		return zero, false
 	}
 
 	node := it.stack[len(it.stack)-1]
 	it.stack = it.stack[:len(it.stack)-1]
-
 	it.pushLeft(node.Right)
 
-	return node.Order
-}
-
-// LevelOrderTraversal 执行层序遍历.
-func (t *RBTree) LevelOrderTraversal() []*types.Order {
-	if t.Root == nil {
-		return nil
-	}
-
-	result := make([]*types.Order, 0, t.Size)
-	queue := []*RBNode{t.Root}
-
-	for len(queue) > 0 {
-		node := queue[0]
-		queue = queue[1:]
-
-		result = append(result, node.Order)
-		if node.Left != nil {
-			queue = append(queue, node.Left)
-		}
-		if node.Right != nil {
-			queue = append(queue, node.Right)
-		}
-	}
-
-	return result
+	return node.Value, true
 }

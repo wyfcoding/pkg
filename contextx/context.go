@@ -6,16 +6,50 @@ import (
 	"context"
 )
 
-type contextKey string
+type contextKey int
 
 const (
-	UserIDKey   contextKey = "user_id"    // 用户唯一标识 Key。
-	TenantIDKey contextKey = "tenant_id"  // 租户 ID Key。
-	RoleKey     contextKey = "user_role"  // 用户角色 Key。
-	IPKey       contextKey = "client_ip"  // 客户端 IP Key。
-	UAKey       contextKey = "user_agent" // 用户代理 Key。
-	DBTxKey     contextKey = "db_tx"      // 数据库事务 Key。
+	UserIDKey    contextKey = iota // 用户唯一标识 Key。
+	TenantIDKey                    // 租户 ID Key。
+	RoleKey                        // 用户角色 Key。
+	IPKey                          // 客户端 IP Key。
+	UAKey                          // 用户代理 Key。
+	RequestIDKey                   // 请求唯一标识 Key。
+	DBTxKey                        // 数据库事务 Key。
 )
+
+// AllKeys 返回所有标准业务上下文 Key。
+var AllKeys = []contextKey{
+	UserIDKey,
+	TenantIDKey,
+	RoleKey,
+	IPKey,
+	UAKey,
+	RequestIDKey,
+}
+
+// KeyNames 映射 Key 到日志字段名。
+var KeyNames = map[contextKey]string{
+	UserIDKey:    "user_id",
+	TenantIDKey:  "tenant_id",
+	RoleKey:      "user_role",
+	IPKey:        "client_ip",
+	UAKey:        "user_agent",
+	RequestIDKey: "request_id",
+}
+
+// WithRequestID 将请求 ID 注入到 Context 中。
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, RequestIDKey, requestID)
+}
+
+// GetRequestID 从 Context 中提取请求 ID。
+func GetRequestID(ctx context.Context) string {
+	if val, ok := ctx.Value(RequestIDKey).(string); ok {
+		return val
+	}
+	return ""
+}
 
 // WithTx 将 GORM 事务实例注入到 Context 中。
 func WithTx(ctx context.Context, tx any) context.Context {

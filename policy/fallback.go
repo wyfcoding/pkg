@@ -1,5 +1,5 @@
 // Package fallback 提供了通用的业务降级处理机制。
-package fallback
+package policy
 
 import (
 	"context"

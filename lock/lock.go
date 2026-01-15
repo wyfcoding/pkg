@@ -127,7 +127,9 @@ func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.D
 		return "", nil, err
 	}
 
-	watchdogCtx, cancel := context.WithCancel(context.Background())
+	// 创建一个独立的续期 Context，不受原有业务 Context 超时影响 (因为业务可能超时但锁仍需续期直至手动释放)
+	// 但如果业务 Context 明确取消了，我们通常也应该停止续期
+	watchdogCtx, stopWatchdog := context.WithCancel(context.Background())
 
 	go func() {
 		ticker := time.NewTicker(ttl / watchdogIntervalDiv)
@@ -146,13 +148,13 @@ func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.D
 				slog.Debug("watchdog renewed lock", "key", key)
 			case <-watchdogCtx.Done():
 				return
-			case <-ctx.Done():
+			case <-ctx.Done(): // 如果原始业务上下文被取消，也停止续期
 				return
 			}
 		}
 	}()
 
-	return token, cancel, nil
+	return token, stopWatchdog, nil
 }
 
 // Unlock 安全释放锁.

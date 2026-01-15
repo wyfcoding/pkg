@@ -6,10 +6,9 @@ import (
 	"strings"
 
 	algomath "github.com/wyfcoding/pkg/algorithm/math"
-	"github.com/wyfcoding/pkg/cast"
 )
 
-var wordRegex = regexp.MustCompile(`\w+`)
+var defaultSimHashWordRegex = regexp.MustCompile(`\w+`)
 
 const (
 	defaultHashBits = 64
@@ -25,39 +24,51 @@ func NewSimHash() *SimHash {
 	return &SimHash{hashBits: defaultHashBits}
 }
 
-// Calculate 计算文本的 SimHash 值.
-func (s *SimHash) Calculate(text string) uint64 {
-	words := wordRegex.FindAllString(strings.ToLower(text), -1)
+// Tokenizer 将文本分割为词元及其权重.
+type Tokenizer func(text string) map[string]int
+
+// DefaultTokenizer 默认的分词器实现 (1-gram + 2-gram).
+func DefaultTokenizer(text string) map[string]int {
+	words := defaultSimHashWordRegex.FindAllString(strings.ToLower(text), -1)
 	if len(words) == 0 {
-		return 0
+		return nil
 	}
 
-	tokens := make([]string, 0, len(words)*2)
-	tokens = append(tokens, words...)
-	for i := range words[:len(words)-1] {
-		tokens = append(tokens, words[i]+"_"+words[i+1])
+	tokens := make(map[string]int)
+	for _, w := range words {
+		tokens[w]++
+	}
+	for i := 0; i < len(words)-1; i++ {
+		tokens[words[i]+"_"+words[i+1]]++
+	}
+	return tokens
+}
+
+// Calculate 使用指定分词器计算文本的 SimHash 值.
+func (s *SimHash) Calculate(text string, tokenizer Tokenizer) uint64 {
+	tokens := tokenizer(text)
+	if len(tokens) == 0 {
+		return 0
 	}
 
 	weights := make([]int, s.hashBits)
 
-	for _, token := range tokens {
+	for token, weight := range tokens {
 		h := getFNVHash(token)
 
-		for i := range s.hashBits {
-			// 安全：i 范围 [0, 63]，位移量安全。
-			if (h & (uint64(1) << cast.IntToUint32(i&0x3F))) != 0 {
-				weights[i]++
+		for i := 0; i < s.hashBits; i++ {
+			if (h & (1 << uint(i))) != 0 {
+				weights[i] += weight
 			} else {
-				weights[i]--
+				weights[i] -= weight
 			}
 		}
 	}
 
 	var result uint64
-	for i := range s.hashBits {
+	for i := 0; i < s.hashBits; i++ {
 		if weights[i] > 0 {
-			// 安全：i 范围 [0, 63]，位移量安全。
-			result |= (1 << cast.IntToUint32(i&0x3F))
+			result |= (1 << uint(i))
 		}
 	}
 
@@ -71,18 +82,17 @@ func (s *SimHash) HammingDistance(h1, h2 uint64) int {
 
 // IsSimilar 判断两个文本是否相似.
 func (s *SimHash) IsSimilar(text1, text2 string, threshold int) bool {
-	hash1 := s.Calculate(text1)
-	hash2 := s.Calculate(text2)
+	hash1 := s.Calculate(text1, DefaultTokenizer)
+	hash2 := s.Calculate(text2, DefaultTokenizer)
 
 	return s.HammingDistance(hash1, hash2) <= threshold
 }
 
 func getFNVHash(s string) uint64 {
 	var h uint64 = algomath.FnvOffset64
-	for i := range s {
+	for i := range len(s) {
 		h ^= uint64(s[i])
 		h *= algomath.FnvPrime64
 	}
-
 	return h
 }

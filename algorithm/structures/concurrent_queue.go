@@ -1,54 +1,55 @@
-// Package algorithm - 并发安全的队列数据结.
 package structures
 
 import (
-	"log/slog"
+	"errors"
 	"sync"
-
-	"github.com/wyfcoding/pkg/xerrors"
 )
 
-// ConcurrentQueue 并发安全的队.
-// 使用互斥锁保证线程安.
-// 时间复杂度：入队 O(1)，出队 O(1) (amortized.
-type ConcurrentQueue struct {
-	items []any
-	mu    sync.Mutex
+var (
+	// ErrQueueEmpty 队列为空。
+	ErrQueueEmpty = errors.New("queue is empty")
+	// ErrStackEmpty 栈为空。
+	ErrStackEmpty = errors.New("stack is empty")
+	// ErrBufferFull 缓冲区已满。
+	ErrBufferFull = errors.New("buffer is full")
+)
+
+// ConcurrentQueue 线程安全的队列实现。
+type ConcurrentQueue[T any] struct {
+	items []T
+	mu    sync.RWMutex
 }
 
-// NewConcurrentQueue 创建并发队.
-func NewConcurrentQueue() *ConcurrentQueue {
-	slog.Info("ConcurrentQueue initialized")
-	return &ConcurrentQueue{
-		items: make([]any, 0),
+// NewConcurrentQueue 创建一个新的线程安全队列。
+func NewConcurrentQueue[T any]() *ConcurrentQueue[T] {
+	return &ConcurrentQueue[T]{
+		items: make([]T, 0),
 	}
 }
 
-// Enqueue 入.
-func (cq *ConcurrentQueue) Enqueue(item any) {
+// Enqueue 将元素入队。
+func (cq *ConcurrentQueue[T]) Enqueue(item T) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 	cq.items = append(cq.items, item)
 }
 
-// Dequeue 出.
-func (cq *ConcurrentQueue) Dequeue() (any, error) {
+// Dequeue 将元素出队。
+func (cq *ConcurrentQueue[T]) Dequeue() (T, error) {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
 
 	if len(cq.items) == 0 {
-		return nil, xerrors.ErrEmptyData
+		var zero T
+		return zero, ErrQueueEmpty
 	}
 
 	item := cq.items[0]
-	// 防止内存泄漏：将引用置空，允许 GC 回收对.
-	cq.items[0] = nil
 	cq.items = cq.items[1:]
 
-	// 缩容优化：如果长度小于容量的 1/4 且容量大于 256，则重新分配内.
-	// 这可以防止底层数组头部由于切片操作而长期占用内.
-	if n, c := len(cq.items), cap(cq.items); n > 0 && n < c/4 && c > 256 {
-		newItems := make([]any, n, c/2)
+	// 定期缩减切片容量以释放内存
+	if n, c := len(cq.items), cap(cq.items); n > 0 && n <= c/4 {
+		newItems := make([]T, n, c/2)
 		copy(newItems, cq.items)
 		cq.items = newItems
 	}
@@ -56,142 +57,137 @@ func (cq *ConcurrentQueue) Dequeue() (any, error) {
 	return item, nil
 }
 
-// Peek 查看队首元.
-func (cq *ConcurrentQueue) Peek() (any, error) {
-	cq.mu.Lock()
-	defer cq.mu.Unlock()
+// Peek 返回队头元素但不移除。
+func (cq *ConcurrentQueue[T]) Peek() (T, error) {
+	cq.mu.RLock()
+	defer cq.mu.RUnlock()
 
 	if len(cq.items) == 0 {
-		return nil, xerrors.ErrEmptyData
+		var zero T
+		return zero, ErrQueueEmpty
 	}
 
 	return cq.items[0], nil
 }
 
-// Size 获取队列大.
-func (cq *ConcurrentQueue) Size() int {
-	cq.mu.Lock()
-	defer cq.mu.Unlock()
+// Size 返回队列中的元素数量。
+func (cq *ConcurrentQueue[T]) Size() int {
+	cq.mu.RLock()
+	defer cq.mu.RUnlock()
 	return len(cq.items)
 }
 
-// IsEmpty 检查队列是否为.
-func (cq *ConcurrentQueue) IsEmpty() bool {
-	cq.mu.Lock()
-	defer cq.mu.Unlock()
+// IsEmpty 检查队列是否为空。
+func (cq *ConcurrentQueue[T]) IsEmpty() bool {
+	cq.mu.RLock()
+	defer cq.mu.RUnlock()
 	return len(cq.items) == 0
 }
 
-// Clear 清空队.
-func (cq *ConcurrentQueue) Clear() {
+// Clear 清空队列。
+func (cq *ConcurrentQueue[T]) Clear() {
 	cq.mu.Lock()
 	defer cq.mu.Unlock()
-	// 重置时保留一个较小的容量，或者完全释.
-	cq.items = make([]any, 0)
+	cq.items = make([]T, 0)
 }
 
-// ConcurrentStack 并发安全的.
-type ConcurrentStack struct {
-	items []any
-	mu    sync.Mutex
+// ConcurrentStack 线程安全的栈实现。
+type ConcurrentStack[T any] struct {
+	items []T
+	mu    sync.RWMutex
 }
 
-// NewConcurrentStack 创建并发.
-func NewConcurrentStack() *ConcurrentStack {
-	slog.Info("ConcurrentStack initialized")
-	return &ConcurrentStack{
-		items: make([]any, 0),
+// NewConcurrentStack 创建一个新的线程安全栈。
+func NewConcurrentStack[T any]() *ConcurrentStack[T] {
+	return &ConcurrentStack[T]{
+		items: make([]T, 0),
 	}
 }
 
-// Push 入.
-func (cs *ConcurrentStack) Push(item any) {
+// Push 将元素压入栈。
+func (cs *ConcurrentStack[T]) Push(item T) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.items = append(cs.items, item)
 }
 
-// Pop 出.
-func (cs *ConcurrentStack) Pop() (any, error) {
+// Pop 将元素弹出栈。
+func (cs *ConcurrentStack[T]) Pop() (T, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
 	n := len(cs.items)
 	if n == 0 {
-		return nil, xerrors.ErrEmptyData
+		var zero T
+		return zero, ErrStackEmpty
 	}
 
 	item := cs.items[n-1]
-	// 防止内存泄.
-	cs.items[n-1] = nil
 	cs.items = cs.items[:n-1]
+
 	return item, nil
 }
 
-// Peek 查看栈顶元.
-func (cs *ConcurrentStack) Peek() (any, error) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
+// Peek 返回栈顶元素但不移除。
+func (cs *ConcurrentStack[T]) Peek() (T, error) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
 
-	if len(cs.items) == 0 {
-		return nil, xerrors.ErrEmptyData
+	n := len(cs.items)
+	if n == 0 {
+		var zero T
+		return zero, ErrStackEmpty
 	}
 
-	return cs.items[len(cs.items)-1], nil
+	return cs.items[n-1], nil
 }
 
-// Size 获取栈大.
-func (cs *ConcurrentStack) Size() int {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
+// Size 返回栈中的元素数量。
+func (cs *ConcurrentStack[T]) Size() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
 	return len(cs.items)
 }
 
-// IsEmpty 检查栈是否为.
-func (cs *ConcurrentStack) IsEmpty() bool {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
+// IsEmpty 检查栈是否为空。
+func (cs *ConcurrentStack[T]) IsEmpty() bool {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
 	return len(cs.items) == 0
 }
 
-// Clear 清空.
-func (cs *ConcurrentStack) Clear() {
+// Clear 清空栈。
+func (cs *ConcurrentStack[T]) Clear() {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	cs.items = make([]any, 0)
+	cs.items = make([]T, 0)
 }
 
-// ConcurrentRingBuffer 并发安全的环形缓冲.
-// 用于高性能的固定大小缓.
-// 建议：对于极致性能场景，请优先使用 lockfree_queue.go 或 ring_buffer.g.
-type ConcurrentRingBuffer struct {
-	buffer   []any
-	mu       sync.Mutex
-	capacity int
+// ConcurrentRingBuffer 线程安全的环形缓冲区。
+type ConcurrentRingBuffer[T any] struct {
+	buffer   []T
 	head     int
 	tail     int
 	size     int
+	capacity int
+	mu       sync.RWMutex
 }
 
-// NewConcurrentRingBuffer 创建并发环形缓冲.
-func NewConcurrentRingBuffer(capacity int) *ConcurrentRingBuffer {
-	slog.Info("ConcurrentRingBuffer initialized", "capacity", capacity)
-	return &ConcurrentRingBuffer{
-		buffer:   make([]any, capacity),
+// NewConcurrentRingBuffer 创建一个新的环形缓冲区。
+func NewConcurrentRingBuffer[T any](capacity int) *ConcurrentRingBuffer[T] {
+	return &ConcurrentRingBuffer[T]{
+		buffer:   make([]T, capacity),
 		capacity: capacity,
-		head:     0,
-		tail:     0,
-		size:     0,
 	}
 }
 
-// Write 写入数.
-func (crb *ConcurrentRingBuffer) Write(item any) error {
+// Write 写入元素。如果已满则返回错误。
+func (crb *ConcurrentRingBuffer[T]) Write(item T) error {
 	crb.mu.Lock()
 	defer crb.mu.Unlock()
 
 	if crb.size == crb.capacity {
-		return xerrors.ErrBufferFull
+		return ErrBufferFull
 	}
 
 	crb.buffer[crb.tail] = item
@@ -201,54 +197,28 @@ func (crb *ConcurrentRingBuffer) Write(item any) error {
 	return nil
 }
 
-// Read 读取数.
-func (crb *ConcurrentRingBuffer) Read() (any, error) {
+// Read 读取元素。如果为空则返回错误。
+func (crb *ConcurrentRingBuffer[T]) Read() (T, error) {
 	crb.mu.Lock()
 	defer crb.mu.Unlock()
 
 	if crb.size == 0 {
-		return nil, xerrors.ErrBufferEmpty
+		var zero T
+		return zero, ErrQueueEmpty
 	}
 
 	item := crb.buffer[crb.head]
-	// 避免内存泄.
-	crb.buffer[crb.head] = nil
+	var zero T
+	crb.buffer[crb.head] = zero // 释放引用
 	crb.head = (crb.head + 1) % crb.capacity
 	crb.size--
 
 	return item, nil
 }
 
-// Size 获取缓冲区大.
-func (crb *ConcurrentRingBuffer) Size() int {
-	crb.mu.Lock()
-	defer crb.mu.Unlock()
+// Size 返回当前缓冲区大小。
+func (crb *ConcurrentRingBuffer[T]) Size() int {
+	crb.mu.RLock()
+	defer crb.mu.RUnlock()
 	return crb.size
-}
-
-// IsFull 检查缓冲区是否.
-func (crb *ConcurrentRingBuffer) IsFull() bool {
-	crb.mu.Lock()
-	defer crb.mu.Unlock()
-	return crb.size == crb.capacity
-}
-
-// IsEmpty 检查缓冲区是否为.
-func (crb *ConcurrentRingBuffer) IsEmpty() bool {
-	crb.mu.Lock()
-	defer crb.mu.Unlock()
-	return crb.size == 0
-}
-
-// Clear 清空缓冲.
-func (crb *ConcurrentRingBuffer) Clear() {
-	crb.mu.Lock()
-	defer crb.mu.Unlock()
-	// 重置所有元素为 ni.
-	for i := range crb.buffer {
-		crb.buffer[i] = nil
-	}
-	crb.head = 0
-	crb.tail = 0
-	crb.size = 0
 }

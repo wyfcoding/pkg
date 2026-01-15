@@ -6,13 +6,17 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/wyfcoding/pkg/async"
+	"github.com/wyfcoding/pkg/metrics"
 )
 
 var (
-	ErrPoolClosed = errors.New("worker pool is closed")
-	ErrPoolFull   = errors.New("worker pool is full")
+	ErrPoolClosed  = errors.New("worker pool is closed")
+	ErrPoolFull    = errors.New("worker pool is full")
+	ErrTaskTimeout = errors.New("task submission timeout")
 )
 
 // Task 是 worker 执行的任务函数。
@@ -23,14 +27,21 @@ type Pool struct {
 	tasks   chan Task
 	quit    chan struct{}
 	options *poolOptions
+	metrics *workerMetrics
 	wg      sync.WaitGroup
 	closed  int32
 	active  int32 // 当前活跃的 worker 数量
 }
 
+type workerMetrics struct {
+	activeWorkers prometheus.Gauge
+	queueLength   prometheus.Gauge
+}
+
 type poolOptions struct {
 	Logger       *slog.Logger
 	PanicHandler func(any)
+	Metrics      *metrics.Metrics
 	Name         string
 	Size         int
 	QueueSize    int
@@ -67,6 +78,13 @@ func WithPanicHandler(handler func(any)) Option {
 	}
 }
 
+// WithMetrics 注入指标采集器.
+func WithMetrics(m *metrics.Metrics) Option {
+	return func(o *poolOptions) {
+		o.Metrics = m
+	}
+}
+
 // NewPool 创建一个新的 worker 池。
 func NewPool(opts ...Option) *Pool {
 	options := &poolOptions{
@@ -85,6 +103,21 @@ func NewPool(opts ...Option) *Pool {
 		options: options,
 	}
 
+	if options.Metrics != nil {
+		p.metrics = &workerMetrics{
+			activeWorkers: options.Metrics.NewGauge(&prometheus.GaugeOpts{
+				Name:        "worker_pool_active_workers",
+				Help:        "Number of active workers in the pool",
+				ConstLabels: prometheus.Labels{"pool": options.Name},
+			}),
+			queueLength: options.Metrics.NewGauge(&prometheus.GaugeOpts{
+				Name:        "worker_pool_queue_length",
+				Help:        "Current length of the task queue",
+				ConstLabels: prometheus.Labels{"pool": options.Name},
+			}),
+		}
+	}
+
 	p.start()
 	return p
 }
@@ -94,9 +127,15 @@ func (p *Pool) start() {
 	for range p.options.Size {
 		p.wg.Add(1)
 		atomic.AddInt32(&p.active, 1)
+		if p.metrics != nil {
+			p.metrics.activeWorkers.Inc()
+		}
 		async.SafeGo(func() {
 			defer p.wg.Done()
 			defer atomic.AddInt32(&p.active, -1)
+			if p.metrics != nil {
+				p.metrics.activeWorkers.Dec()
+			}
 			p.runWorker()
 		})
 	}
@@ -104,6 +143,9 @@ func (p *Pool) start() {
 
 func (p *Pool) runWorker() {
 	for {
+		if p.metrics != nil {
+			p.metrics.queueLength.Set(float64(len(p.tasks)))
+		}
 		select {
 		case task, ok := <-p.tasks:
 			if !ok {
@@ -126,7 +168,6 @@ func (p *Pool) executeTask(task Task) {
 			}
 		}
 	}()
-	// 执行任务，context 目前使用 Background，也可以从 Task 传入
 	task(context.Background())
 }
 
@@ -139,6 +180,25 @@ func (p *Pool) Submit(task Task) error {
 	select {
 	case p.tasks <- task:
 		return nil
+	case <-p.quit:
+		return ErrPoolClosed
+	}
+}
+
+// SubmitWithTimeout 提交一个带超时的任务。
+func (p *Pool) SubmitWithTimeout(task Task, timeout time.Duration) error {
+	if atomic.LoadInt32(&p.closed) == 1 {
+		return ErrPoolClosed
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case p.tasks <- task:
+		return nil
+	case <-timer.C:
+		return ErrTaskTimeout
 	case <-p.quit:
 		return ErrPoolClosed
 	}

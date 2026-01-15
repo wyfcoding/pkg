@@ -17,8 +17,8 @@ const (
 
 type bucket [bucketSize]byte
 
-// CuckooFilter 工业级布谷鸟过滤器.
-type CuckooFilter struct {
+// CuckooFilter 工业级布谷鸟过滤器泛型实现.
+type CuckooFilter[T Hashable] struct {
 	buckets []bucket
 	count   uint
 	size    uint
@@ -26,7 +26,7 @@ type CuckooFilter struct {
 }
 
 // NewCuckooFilter 创建布谷鸟过滤器.
-func NewCuckooFilter(capacity uint) (*CuckooFilter, error) {
+func NewCuckooFilter[T Hashable](capacity uint) (*CuckooFilter[T], error) {
 	if capacity == 0 {
 		return nil, xerrors.ErrCapacityRequired
 	}
@@ -42,7 +42,7 @@ func NewCuckooFilter(capacity uint) (*CuckooFilter, error) {
 
 	slog.Info("CuckooFilter initialized", "capacity", capacity, "buckets_size", n)
 
-	return &CuckooFilter{
+	return &CuckooFilter[T]{
 		buckets: make([]bucket, n),
 		size:    n,
 		mask:    n - 1,
@@ -51,12 +51,15 @@ func NewCuckooFilter(capacity uint) (*CuckooFilter, error) {
 }
 
 // Add 插入元素.
-func (cf *CuckooFilter) Add(data []byte) bool {
+func (cf *CuckooFilter[T]) Add(item T) bool {
+	data, err := item.MarshalBinary()
+	if err != nil {
+		return false
+	}
 	idx1, idx2, fp := cf.getHashes(data)
 
 	if cf.insertToBucket(idx1, fp) || cf.insertToBucket(idx2, fp) {
 		cf.count++
-
 		return true
 	}
 
@@ -77,36 +80,39 @@ func (cf *CuckooFilter) Add(data []byte) bool {
 
 		if cf.insertToBucket(currIdx, fp) {
 			cf.count++
-
 			return true
 		}
 	}
 
 	slog.Warn("CuckooFilter is full, insertion failed", "count", cf.count, "buckets", cf.size)
-
 	return false
 }
 
 // Contains 查询元素是否存在.
-func (cf *CuckooFilter) Contains(data []byte) bool {
+func (cf *CuckooFilter[T]) Contains(item T) bool {
+	data, err := item.MarshalBinary()
+	if err != nil {
+		return false
+	}
 	idx1, idx2, fp := cf.getHashes(data)
-
 	return cf.lookupInBucket(idx1, fp) || cf.lookupInBucket(idx2, fp)
 }
 
 // Delete 删除元素.
-func (cf *CuckooFilter) Delete(data []byte) bool {
+func (cf *CuckooFilter[T]) Delete(item T) bool {
+	data, err := item.MarshalBinary()
+	if err != nil {
+		return false
+	}
 	idx1, idx2, fp := cf.getHashes(data)
 	if cf.deleteFromBucket(idx1, fp) || cf.deleteFromBucket(idx2, fp) {
 		cf.count--
-
 		return true
 	}
-
 	return false
 }
 
-func (cf *CuckooFilter) getHashes(data []byte) (h1, h2 uint, fp byte) {
+func (cf *CuckooFilter[T]) getHashes(data []byte) (h1, h2 uint, fp byte) {
 	var h uint64 = algomath.FnvOffset64
 	for _, b := range data {
 		h ^= uint64(b)
@@ -120,47 +126,41 @@ func (cf *CuckooFilter) getHashes(data []byte) (h1, h2 uint, fp byte) {
 	return idx1, idx2, fp
 }
 
-func (cf *CuckooFilter) getHashOfFingerprint(fp byte) uint {
+func (cf *CuckooFilter[T]) getHashOfFingerprint(fp byte) uint {
 	var h uint64 = algomath.FnvOffset64
 	h ^= uint64(fp)
 	h *= algomath.FnvPrime64
-
 	return uint(h)
 }
 
-func (cf *CuckooFilter) insertToBucket(i uint, fp byte) bool {
+func (cf *CuckooFilter[T]) insertToBucket(i uint, fp byte) bool {
 	b := &cf.buckets[i]
 	for idx := range bucketSize {
 		if b[idx] == 0 {
 			b[idx] = fp
-
 			return true
 		}
 	}
-
 	return false
 }
 
-func (cf *CuckooFilter) lookupInBucket(i uint, fp byte) bool {
+func (cf *CuckooFilter[T]) lookupInBucket(i uint, fp byte) bool {
 	b := &cf.buckets[i]
 	for idx := range bucketSize {
 		if b[idx] == fp {
 			return true
 		}
 	}
-
 	return false
 }
 
-func (cf *CuckooFilter) deleteFromBucket(i uint, fp byte) bool {
+func (cf *CuckooFilter[T]) deleteFromBucket(i uint, fp byte) bool {
 	b := &cf.buckets[i]
 	for idx := range bucketSize {
 		if b[idx] == fp {
 			b[idx] = 0
-
 			return true
 		}
 	}
-
 	return false
 }

@@ -4,7 +4,33 @@ package validator
 import (
 	"regexp"
 	"strings"
+
+	"github.com/go-playground/validator/v10"
 )
+
+var globalValidator = validator.New()
+
+func init() {
+	// 注册自定义校验规则：手机号
+	_ = globalValidator.RegisterValidation("mobile", func(fl validator.FieldLevel) bool {
+		return phoneRegex.MatchString(fl.Field().String())
+	})
+
+	// 注册自定义校验规则：强密码 (至少 8 位，含数字和字母)
+	_ = globalValidator.RegisterValidation("password", func(fl validator.FieldLevel) bool {
+		return IsValidPassword(fl.Field().String())
+	})
+}
+
+// ValidateStruct 校验结构体中的 tag 约束。
+func ValidateStruct(s any) error {
+	return globalValidator.Struct(s)
+}
+
+// GetValidator 返回全局 validator 实例以便自定义。
+func GetValidator() *validator.Validate {
+	return globalValidator
+}
 
 var (
 	phoneRegex    = regexp.MustCompile(`^1[3-9]\d{9}$`)                                    // 中国大陆手机号格式。

@@ -38,8 +38,19 @@ type Manager interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// ErrInProgress 表示当前请求已存在且正在处理中.
-var ErrInProgress = errors.New("request already in progress")
+var (
+	// ErrInProgress 表示当前请求已存在且正在处理中.
+	ErrInProgress = errors.New("request already in progress")
+
+	startScript = redis.NewScript(`
+		local val = redis.call("get", KEYS[1])
+		if not val then
+			redis.call("set", KEYS[1], ARGV[1], "EX", ARGV[2])
+			return "OK"
+		end
+		return val
+	`)
+)
 
 type redisManager struct { // Redis 幂等管理器内部结构，已对齐。
 	client redis.UniversalClient
@@ -61,16 +72,7 @@ func (m *redisManager) makeKey(key string) string {
 func (m *redisManager) TryStart(ctx context.Context, key string, ttl time.Duration) (bool, *Response, error) {
 	fullKey := m.makeKey(key)
 
-	script := `
-		local val = redis.call("get", KEYS[1])
-		if not val then
-			redis.call("set", KEYS[1], ARGV[1], "EX", ARGV[2])
-			return "OK"
-		end
-		return val
-	`
-
-	res, err := m.client.Eval(ctx, script, []string{fullKey}, string(StatusStarted), int(ttl.Seconds())).Result()
+	res, err := startScript.Run(ctx, m.client, []string{fullKey}, string(StatusStarted), int(ttl.Seconds())).Result()
 	if err != nil {
 		slog.Error("idempotency try_start error", "key", fullKey, "error", err)
 

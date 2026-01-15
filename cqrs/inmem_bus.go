@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"sync"
 	"time"
 )
@@ -31,41 +30,17 @@ func NewInMemCommandBus() *InMemCommandBus {
 	}
 }
 
-// Register 注册命令处理器.
-func (b *InMemCommandBus) Register(cmdName string, handler any) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// RegisterCommand 注册命令处理器.
+func RegisterCommand[C Command](bus *InMemCommandBus, handler CommandHandler[C]) {
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
 
-	handlerValue := reflect.ValueOf(handler)
-	method := handlerValue.MethodByName("Handle")
+	var cmd C
+	cmdName := cmd.CommandName()
 
-	if !method.IsValid() {
-		panic(fmt.Sprintf("handler for command %s does not have a Handle method", cmdName))
+	bus.handlers[cmdName] = func(ctx context.Context, c Command) error {
+		return handler.Handle(ctx, c.(C))
 	}
-
-	methodType := method.Type()
-	if methodType.NumIn() != 2 || methodType.NumOut() != 1 {
-		panic(fmt.Sprintf("handler for command %s has invalid signature", cmdName))
-	}
-
-	wrapper := func(ctx context.Context, cmd Command) error {
-		args := []reflect.Value{
-			reflect.ValueOf(ctx),
-			reflect.ValueOf(cmd),
-		}
-
-		results := method.Call(args)
-
-		if !results[0].IsNil() {
-			if err, ok := results[0].Interface().(error); ok {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	b.handlers[cmdName] = wrapper
 }
 
 // Dispatch 将命令分发至已注册的处理器.
@@ -79,7 +54,6 @@ func (b *InMemCommandBus) Dispatch(ctx context.Context, cmd Command) error {
 
 	if !ok {
 		slog.ErrorContext(ctx, "no command handler registered", "command", cmdName)
-
 		return fmt.Errorf("%w: %s", ErrNoCommandHandler, cmdName)
 	}
 
@@ -109,48 +83,17 @@ func NewInMemQueryBus() *InMemQueryBus {
 	}
 }
 
-// Register 注册查询处理器.
-func (b *InMemQueryBus) Register(queryName string, handler any) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// RegisterQuery 注册查询处理器.
+func RegisterQuery[Q Query, R any](bus *InMemQueryBus, handler QueryHandler[Q, R]) {
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
 
-	handlerValue := reflect.ValueOf(handler)
-	method := handlerValue.MethodByName("Handle")
+	var q Q
+	queryName := q.QueryName()
 
-	if !method.IsValid() {
-		panic(fmt.Sprintf("handler for query %s does not have a Handle method", queryName))
+	bus.handlers[queryName] = func(ctx context.Context, query Query) (any, error) {
+		return handler.Handle(ctx, query.(Q))
 	}
-
-	methodType := method.Type()
-	if methodType.NumIn() != 2 || methodType.NumOut() != 2 {
-		panic(fmt.Sprintf("handler for query %s has invalid signature", queryName))
-	}
-
-	wrapper := func(ctx context.Context, query Query) (any, error) {
-		args := []reflect.Value{
-			reflect.ValueOf(ctx),
-			reflect.ValueOf(query),
-		}
-
-		results := method.Call(args)
-
-		var res any
-		var err error
-
-		if len(results) > 0 {
-			res = results[0].Interface()
-		}
-
-		if len(results) > 1 && !results[1].IsNil() {
-			if e, ok := results[1].Interface().(error); ok {
-				err = e
-			}
-		}
-
-		return res, err
-	}
-
-	b.handlers[queryName] = wrapper
 }
 
 // Execute 执行查询并返回结果.
@@ -164,7 +107,6 @@ func (b *InMemQueryBus) Execute(ctx context.Context, query Query) (any, error) {
 
 	if !ok {
 		slog.ErrorContext(ctx, "no query handler registered", "query", queryName)
-
 		return nil, fmt.Errorf("%w: %s", ErrNoQueryHandler, queryName)
 	}
 

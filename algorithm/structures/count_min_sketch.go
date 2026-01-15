@@ -12,8 +12,8 @@ import (
 	"github.com/wyfcoding/pkg/xerrors"
 )
 
-// CountMinSketch 高性能概率数据结构.
-type CountMinSketch struct {
+// CountMinSketch 高性能概率数据结构泛型实现.
+type CountMinSketch[T Hashable] struct {
 	matrix []uint64
 	seeds  []uint32
 	width  uint
@@ -22,7 +22,7 @@ type CountMinSketch struct {
 }
 
 // NewCountMinSketch 创建 CMS.
-func NewCountMinSketch(epsilon, delta float64) (*CountMinSketch, error) {
+func NewCountMinSketch[T Hashable](epsilon, delta float64) (*CountMinSketch[T], error) {
 	if epsilon <= 0 || epsilon >= 1 || delta <= 0 || delta >= 1 {
 		return nil, xerrors.ErrInvalidEpsilonDelta
 	}
@@ -32,7 +32,7 @@ func NewCountMinSketch(epsilon, delta float64) (*CountMinSketch, error) {
 
 	slog.Info("CountMinSketch initialized", "epsilon", epsilon, "delta", delta, "width", width, "depth", depth)
 
-	return &CountMinSketch{
+	return &CountMinSketch[T]{
 		width:  width,
 		depth:  depth,
 		matrix: make([]uint64, depth*width),
@@ -48,12 +48,15 @@ func generateSeeds(depth uint) []uint32 {
 		_, _ = rand.Read(b[:])
 		seeds[i] = binary.LittleEndian.Uint32(b[:])
 	}
-
 	return seeds
 }
 
 // Add 原子增加元素的计数.
-func (cms *CountMinSketch) Add(data []byte, count uint64) {
+func (cms *CountMinSketch[T]) Add(item T, count uint64) {
+	data, err := item.MarshalBinary()
+	if err != nil {
+		return
+	}
 	atomic.AddUint64(&cms.count, count)
 	h1, h2 := getCMSHashes(data)
 
@@ -63,13 +66,12 @@ func (cms *CountMinSketch) Add(data []byte, count uint64) {
 	}
 }
 
-// AddString 增加字符串元素的计数.
-func (cms *CountMinSketch) AddString(key string, count uint64) {
-	cms.Add([]byte(key), count)
-}
-
 // Estimate 估算频率.
-func (cms *CountMinSketch) Estimate(data []byte) uint64 {
+func (cms *CountMinSketch[T]) Estimate(item T) uint64 {
+	data, err := item.MarshalBinary()
+	if err != nil {
+		return 0
+	}
 	minCount := uint64(math.MaxUint64)
 	h1, h2 := getCMSHashes(data)
 
@@ -84,13 +86,8 @@ func (cms *CountMinSketch) Estimate(data []byte) uint64 {
 	return minCount
 }
 
-// EstimateString 估算字符串频率.
-func (cms *CountMinSketch) EstimateString(key string) uint64 {
-	return cms.Estimate([]byte(key))
-}
-
 // Decay 衰减机制：将所有计数值减半.
-func (cms *CountMinSketch) Decay() {
+func (cms *CountMinSketch[T]) Decay() {
 	start := time.Now()
 	for i := range cms.matrix {
 		val := atomic.LoadUint64(&cms.matrix[i])
@@ -104,21 +101,20 @@ func (cms *CountMinSketch) Decay() {
 }
 
 // Reset 重置所有计数.
-func (cms *CountMinSketch) Reset() {
+func (cms *CountMinSketch[T]) Reset() {
 	for i := range cms.matrix {
 		atomic.StoreUint64(&cms.matrix[i], 0)
 	}
-
 	atomic.StoreUint64(&cms.count, 0)
 }
 
 // TotalCount 返回总的添加次数.
-func (cms *CountMinSketch) TotalCount() uint64 {
+func (cms *CountMinSketch[T]) TotalCount() uint64 {
 	return atomic.LoadUint64(&cms.count)
 }
 
 // Merge 合并另一个 CMS.
-func (cms *CountMinSketch) Merge(other *CountMinSketch) error {
+func (cms *CountMinSketch[T]) Merge(other *CountMinSketch[T]) error {
 	if cms.width != other.width || cms.depth != other.depth {
 		return xerrors.ErrDimMismatch
 	}
@@ -129,7 +125,6 @@ func (cms *CountMinSketch) Merge(other *CountMinSketch) error {
 	}
 
 	atomic.AddUint64(&cms.count, atomic.LoadUint64(&other.count))
-
 	return nil
 }
 
@@ -140,8 +135,6 @@ func getCMSHashes(data []byte) (h1, h2 uint32) {
 		h *= algomath.FnvPrime64
 	}
 
-	// 安全：这是标准的哈希拆分技术，截断是预期行为。
-	// G115 Fix: Safe truncation using binary
 	var b [8]byte
 	binary.LittleEndian.PutUint64(b[:], h)
 	h1 = binary.LittleEndian.Uint32(b[:4])

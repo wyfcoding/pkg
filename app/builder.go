@@ -6,16 +6,20 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 	"reflect"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wyfcoding/pkg/config"
+	"github.com/wyfcoding/pkg/contextx"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/middleware"
 	"github.com/wyfcoding/pkg/response"
 	"github.com/wyfcoding/pkg/server"
+	"github.com/wyfcoding/pkg/system"
 	"github.com/wyfcoding/pkg/tracing"
 	"google.golang.org/grpc"
 )
@@ -24,13 +28,23 @@ const (
 	defaultMetricsPath = "/metrics"
 )
 
-// Builder 提供了构建 App 的灵活方式.
-type Builder struct {
+// Initializer 定义了业务服务的初始化函数原型。
+type Initializer[C any, S any] func(cfg C, m *metrics.Metrics) (S, func(), error)
+
+// GRPCRegistrar 定义了 gRPC 服务注册函数原型。
+type GRPCRegistrar[S any] func(s *grpc.Server, svc S)
+
+// GinRegistrar 定义了 Gin 路由注册函数原型。
+type GinRegistrar[S any] func(e *gin.Engine, svc S)
+
+// Builder 提供了构建 App 的灵活方式，通过泛型支持强类型的配置与服务实例。
+type Builder[C any, S any] struct {
 	serviceName      string
-	configInstance   any
-	initService      any
-	registerGRPC     any
-	registerGin      any
+	configInstance   C
+	initService      Initializer[C, S]
+	registerGRPC     GRPCRegistrar[S]
+	registerGin      GinRegistrar[S]
+	wsManager        *server.WSManager
 	metricsPort      string
 	appOpts          []Option
 	healthCheckers   []func() error
@@ -38,82 +52,108 @@ type Builder struct {
 	ginMiddleware    []gin.HandlerFunc
 }
 
-// NewBuilder 创建一个新的应用构建器.
-func NewBuilder(serviceName string) *Builder {
-	return &Builder{
+// NewBuilder 创建一个新的应用构建器。
+func NewBuilder[C any, S any](serviceName string) *Builder[C, S] {
+	return &Builder[C, S]{
 		serviceName:      serviceName,
 		appOpts:          make([]Option, 0),
 		healthCheckers:   make([]func() error, 0),
 		grpcInterceptors: make([]grpc.UnaryServerInterceptor, 0),
 		ginMiddleware:    make([]gin.HandlerFunc, 0),
-		configInstance:   nil,
-		initService:      nil,
-		registerGRPC:     nil,
-		registerGin:      nil,
-		metricsPort:      "",
 	}
 }
 
-// WithConfig 设置配置实例.
-func (b *Builder) WithConfig(conf any) *Builder {
+// WithConfig 设置配置实例。
+func (b *Builder[C, S]) WithConfig(conf C) *Builder[C, S] {
 	b.configInstance = conf
 
 	return b
 }
 
-// WithGRPC 注册 gRPC 服务注册钩子.
-func (b *Builder) WithGRPC(register func(*grpc.Server, any)) *Builder {
+// WithGRPC 注册 gRPC 服务注册钩子。
+func (b *Builder[C, S]) WithGRPC(register GRPCRegistrar[S]) *Builder[C, S] {
 	b.registerGRPC = register
 
 	return b
 }
 
-// WithGin 注册 Gin 路由注册钩子.
-func (b *Builder) WithGin(register func(*gin.Engine, any)) *Builder {
+// WithGin 注册 Gin 路由注册钩子。
+func (b *Builder[C, S]) WithGin(register GinRegistrar[S]) *Builder[C, S] {
 	b.registerGin = register
 
 	return b
 }
 
-// WithService 注册核心业务初始化逻辑.
-func (b *Builder) WithService(init func(any, *metrics.Metrics) (any, func(), error)) *Builder {
+// WithService 注册核心业务初始化逻辑。
+func (b *Builder[C, S]) WithService(init Initializer[C, S]) *Builder[C, S] {
 	b.initService = init
 
 	return b
 }
 
-// WithMetrics 在指定端口启用指标暴露.
-func (b *Builder) WithMetrics(port string) *Builder {
+// WithMetrics 在指定端口启用指标暴露。
+func (b *Builder[C, S]) WithMetrics(port string) *Builder[C, S] {
 	b.metricsPort = port
 
 	return b
 }
 
-// WithHealthChecker 添加自定义健康检查.
-func (b *Builder) WithHealthChecker(checker func() error) *Builder {
+// WithHealthChecker 添加自定义健康检查。
+func (b *Builder[C, S]) WithHealthChecker(checker func() error) *Builder[C, S] {
 	b.healthCheckers = append(b.healthCheckers, checker)
 
 	return b
 }
 
-// WithGRPCInterceptor 添加 gRPC 拦截器.
-func (b *Builder) WithGRPCInterceptor(interceptors ...grpc.UnaryServerInterceptor) *Builder {
+// WithGRPCInterceptor 添加 gRPC 拦截器。
+func (b *Builder[C, S]) WithGRPCInterceptor(interceptors ...grpc.UnaryServerInterceptor) *Builder[C, S] {
 	b.grpcInterceptors = append(b.grpcInterceptors, interceptors...)
 
 	return b
 }
 
-// WithGinMiddleware 添加 Gin 中间件.
-func (b *Builder) WithGinMiddleware(mw ...gin.HandlerFunc) *Builder {
+// WithGinMiddleware 添加 Gin 中间件。
+func (b *Builder[C, S]) WithGinMiddleware(mw ...gin.HandlerFunc) *Builder[C, S] {
 	b.ginMiddleware = append(b.ginMiddleware, mw...)
 
 	return b
 }
 
-// Build 构建并组装完整的 App 实例.
-func (b *Builder) Build() *App {
+// WithWebSocket 启用 WebSocket 支持.
+func (b *Builder[C, S]) WithWebSocket(path string) *Builder[C, S] {
+	b.wsManager = server.NewWSManager(logging.Default().Logger)
+	b.WithGin(func(e *gin.Engine, svc S) {
+		e.GET(path, func(c *gin.Context) {
+			b.wsManager.ServeHTTP(c.Writer, c.Request)
+		})
+	})
+
+	return b
+}
+
+// Build 构建并组装完整的 App 实例。
+func (b *Builder[C, S]) Build() *App {
 	cfg := b.loadConfig()
 	loggerInstance := b.initLogger(&cfg)
+
+	// 如果开启了 pprof (通过环境变量控制)
+	if system.GetEnvBool("ENABLE_PPROF", false) {
+		addr := system.GetEnv("PPROF_ADDR", ":6060")
+		go func() {
+			slog.Info("Starting pprof server", "addr", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				slog.Error("pprof server failed", "error", err)
+			}
+		}()
+	}
+
+	if b.wsManager != nil {
+		b.appOpts = append(b.appOpts, WithCleanup(func() {
+			// WebSocket manager cleanup can be added here
+		}))
+		// 启动 WS Manager
+		go b.wsManager.Run(context.Background())
+	}
 
 	if cfg.Tracing.Enabled {
 		b.initTracing(&cfg, loggerInstance)
@@ -135,42 +175,47 @@ func (b *Builder) Build() *App {
 	return New(b.serviceName, loggerInstance.Logger, b.appOpts...)
 }
 
-func (b *Builder) loadConfig() config.Config {
+func (b *Builder[C, S]) loadConfig() config.Config {
 	configPath := fmt.Sprintf("./configs/%s/config.toml", b.serviceName)
 	var flagPath string
 	flag.StringVar(&flagPath, "conf", configPath, "path to config file")
 	flag.Parse()
 
 	if err := config.Load(flagPath, b.configInstance); err != nil {
-		panic(fmt.Sprintf("failed to load config: %v", err))
+		panic(fmt.Errorf("failed to load config: %v", err))
 	}
 
 	var cfg config.Config
-	if c, ok := b.configInstance.(*config.Config); ok {
+	if c, ok := any(b.configInstance).(*config.Config); ok {
 		cfg = *c
+	} else if c, ok := any(b.configInstance).(config.Config); ok {
+		cfg = c
 	} else {
-		val := reflect.ValueOf(b.configInstance).Elem()
+		// 使用反射尝试提取嵌套的 config.Config
+		val := reflect.ValueOf(b.configInstance)
+		if val.Kind() == reflect.Ptr {
+			val = val.Elem()
+		}
+		
 		found := false
-
-		for i := range val.NumField() {
+		for i := 0; i < val.NumField(); i++ {
 			field := val.Type().Field(i)
 			if (field.Name == "Config" || field.Anonymous) && field.Type == reflect.TypeFor[config.Config]() {
 				cfg = val.Field(i).Interface().(config.Config)
 				found = true
-
 				break
 			}
 		}
 
 		if !found {
-			panic("invalid config instance format")
+			panic("invalid config instance format: must be *config.Config or embed config.Config")
 		}
 	}
 
 	return cfg
 }
 
-func (b *Builder) initLogger(cfg *config.Config) *logging.Logger {
+func (b *Builder[C, S]) initLogger(cfg *config.Config) *logging.Logger {
 	logConfig := logging.Config{
 		Service:    b.serviceName,
 		Module:     "app",
@@ -189,10 +234,24 @@ func (b *Builder) initLogger(cfg *config.Config) *logging.Logger {
 	loggerInstance := logging.NewFromConfig(&logConfig)
 	slog.SetDefault(loggerInstance.Logger)
 
+	// 注册上下文提取器，将 contextx 中的业务字段自动注入日志
+	logging.RegisterContextExtractor(func(ctx context.Context) []slog.Attr {
+		var attrs []slog.Attr
+		for _, key := range contextx.AllKeys {
+			if val := ctx.Value(key); val != nil {
+				if str, ok := val.(string); ok && str != "" {
+					attrs = append(attrs, slog.String(contextx.KeyNames[key], str))
+				}
+			}
+		}
+
+		return attrs
+	})
+
 	return loggerInstance
 }
 
-func (b *Builder) initTracing(cfg *config.Config, logger *logging.Logger) {
+func (b *Builder[C, S]) initTracing(cfg *config.Config, logger *logging.Logger) {
 	shutdown, err := tracing.InitTracer(cfg.Tracing)
 	if err != nil {
 		logger.Logger.Error("failed to initialize tracer", "error", err)
@@ -209,7 +268,7 @@ func (b *Builder) initTracing(cfg *config.Config, logger *logging.Logger) {
 	b.ginMiddleware = append([]gin.HandlerFunc{middleware.TracingMiddleware(b.serviceName)}, b.ginMiddleware...)
 }
 
-func (b *Builder) initMetrics(cfg *config.Config) *metrics.Metrics {
+func (b *Builder[C, S]) initMetrics(cfg *config.Config) *metrics.Metrics {
 	metricsPort := b.metricsPort
 	if metricsPort == "" && cfg.Metrics.Enabled {
 		metricsPort = cfg.Metrics.Port
@@ -225,7 +284,15 @@ func (b *Builder) initMetrics(cfg *config.Config) *metrics.Metrics {
 	return metricsInstance
 }
 
-func (b *Builder) setupMiddleware(cfg *config.Config, m *metrics.Metrics) {
+func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) {
+	// 添加基础中间件
+	b.ginMiddleware = append([]gin.HandlerFunc{
+		middleware.RequestID(),
+		middleware.Recovery(),
+		middleware.RequestLogger("/sys/health", "/metrics"),
+	}, b.ginMiddleware...)
+	b.grpcInterceptors = append([]grpc.UnaryServerInterceptor{middleware.GRPCRecovery()}, b.grpcInterceptors...)
+
 	if cfg.CircuitBreaker.Enabled {
 		b.ginMiddleware = append(b.ginMiddleware, middleware.HTTPCircuitBreaker(cfg.CircuitBreaker, m))
 	}
@@ -234,13 +301,12 @@ func (b *Builder) setupMiddleware(cfg *config.Config, m *metrics.Metrics) {
 	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptor(m))
 }
 
-func (b *Builder) assembleService(m *metrics.Metrics, logger *logging.Logger) (instance any, cleanup func()) {
-	initFn, ok := b.initService.(func(any, *metrics.Metrics) (any, func(), error))
-	if !ok {
-		panic("invalid initService format")
+func (b *Builder[C, S]) assembleService(m *metrics.Metrics, logger *logging.Logger) (instance S, cleanup func()) {
+	if b.initService == nil {
+		panic("initService is required")
 	}
 
-	instance, cleanup, err := initFn(b.configInstance, m)
+	instance, cleanup, err := b.initService(b.configInstance, m)
 	if err != nil {
 		logger.Logger.Error("failed to initialize service", "error", err)
 		panic(err)
@@ -249,16 +315,14 @@ func (b *Builder) assembleService(m *metrics.Metrics, logger *logging.Logger) (i
 	return instance, cleanup
 }
 
-func (b *Builder) registerServers(cfg *config.Config, svc any, m *metrics.Metrics, logger *logging.Logger) {
+func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Metrics, logger *logging.Logger) {
 	var servers []server.Server
 
 	if b.registerGRPC != nil {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.GRPC.Addr, cfg.Server.GRPC.Port)
 		srv := server.NewGRPCServer(addr, logger.Logger, func(s *grpc.Server) {
-			if reg, ok := b.registerGRPC.(func(*grpc.Server, any)); ok {
-				reg(s, svc)
-			}
-		}, b.grpcInterceptors...)
+			b.registerGRPC(s, svc)
+		}, b.grpcInterceptors)
 
 		servers = append(servers, srv)
 	}
@@ -269,9 +333,7 @@ func (b *Builder) registerServers(cfg *config.Config, svc any, m *metrics.Metric
 
 		b.registerAdminRoutes(engine, cfg, m)
 
-		if reg, ok := b.registerGin.(func(*gin.Engine, any)); ok {
-			reg(engine, svc)
-		}
+		b.registerGin(engine, svc)
 
 		servers = append(servers, server.NewGinServer(engine, addr, logger.Logger))
 	}
@@ -279,7 +341,7 @@ func (b *Builder) registerServers(cfg *config.Config, svc any, m *metrics.Metric
 	b.appOpts = append(b.appOpts, WithServer(servers...))
 }
 
-func (b *Builder) registerAdminRoutes(engine *gin.Engine, cfg *config.Config, m *metrics.Metrics) {
+func (b *Builder[C, S]) registerAdminRoutes(engine *gin.Engine, cfg *config.Config, m *metrics.Metrics) {
 	sys := engine.Group("/sys")
 	sys.GET("/health", func(c *gin.Context) {
 		response.SuccessWithRawData(c, gin.H{

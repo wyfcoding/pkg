@@ -17,15 +17,20 @@ const (
 	wordMask    = 63
 )
 
+// Hashable 接口定义了可被布隆过滤器哈希的对象行为.
+type Hashable interface {
+	MarshalBinary() ([]byte, error)
+}
+
 // BloomFilter 封装了高空间利用率的概率型数据结构.
-type BloomFilter struct {
+type BloomFilter[T Hashable] struct {
 	bits []uint64
 	size uint
 	hash uint
 }
 
 // NewBloomFilter 根据预估容量与允许的误报率，科学计算并初始化布隆过滤器.
-func NewBloomFilter(expectedElements uint, falsePositiveRate float64) (*BloomFilter, error) {
+func NewBloomFilter[T Hashable](expectedElements uint, falsePositiveRate float64) (*BloomFilter[T], error) {
 	if expectedElements == 0 {
 		return nil, xerrors.ErrCapacityTooSmall
 	}
@@ -44,7 +49,7 @@ func NewBloomFilter(expectedElements uint, falsePositiveRate float64) (*BloomFil
 		"bits_size", m,
 		"hashes_count", k)
 
-	return &BloomFilter{
+	return &BloomFilter[T]{
 		bits: make([]uint64, (m+bitsPerWord-1)/bitsPerWord),
 		size: m,
 		hash: k,
@@ -52,16 +57,17 @@ func NewBloomFilter(expectedElements uint, falsePositiveRate float64) (*BloomFil
 }
 
 // Add 向布隆过滤器中插入新的数据.
-// 优化：使用原子操作实现无锁化 Add。
-func (bf *BloomFilter) Add(data []byte) {
+func (bf *BloomFilter[T]) Add(item T) {
+	data, err := item.MarshalBinary()
+	if err != nil {
+		return
+	}
 	h1, h2 := bf.getHashes(data)
 	for i := range bf.hash {
-		// 双哈希模拟 k 个哈希函数。
 		idx := (uint64(h1) + uint64(i)*uint64(h2)) % uint64(bf.size)
 		wordIdx := idx >> wordShift
 		bitMask := uint64(1) << (idx & wordMask)
 
-		// 原子 OR 操作，确保并发安全且无锁。
 		for {
 			old := atomic.LoadUint64(&bf.bits[wordIdx])
 			if old&bitMask != 0 || atomic.CompareAndSwapUint64(&bf.bits[wordIdx], old, old|bitMask) {
@@ -72,8 +78,11 @@ func (bf *BloomFilter) Add(data []byte) {
 }
 
 // Contains 执行成员存在性检查.
-// 优化：无锁读取。
-func (bf *BloomFilter) Contains(data []byte) bool {
+func (bf *BloomFilter[T]) Contains(item T) bool {
+	data, err := item.MarshalBinary()
+	if err != nil {
+		return false
+	}
 	h1, h2 := bf.getHashes(data)
 	for i := range bf.hash {
 		idx := (uint64(h1) + uint64(i)*uint64(h2)) % uint64(bf.size)
@@ -85,7 +94,7 @@ func (bf *BloomFilter) Contains(data []byte) bool {
 	return true
 }
 
-func (bf *BloomFilter) getHashes(data []byte) (h1, h2 uint32) {
+func (bf *BloomFilter[T]) getHashes(data []byte) (h1, h2 uint32) {
 	var h uint64 = algomath.FnvOffset64
 	for _, b := range data {
 		h ^= uint64(b)
@@ -94,3 +103,13 @@ func (bf *BloomFilter) getHashes(data []byte) (h1, h2 uint32) {
 
 	return cast.Uint64ToUint32(h >> 32), cast.Uint64ToUint32(h)
 }
+
+// ByteHash 简单的字节切片包装器，实现 Hashable 接口。
+type ByteHash []byte
+
+func (b ByteHash) MarshalBinary() ([]byte, error) { return b, nil }
+
+// StringHash 简单的字符串包装器，实现 Hashable 接口。
+type StringHash string
+
+func (s StringHash) MarshalBinary() ([]byte, error) { return []byte(s), nil }

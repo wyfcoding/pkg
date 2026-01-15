@@ -70,6 +70,18 @@ func (c *MinIOClient) Delete(ctx context.Context, objectName string) error {
 	return c.client.RemoveObject(ctx, c.bucket, objectName, minio.RemoveObjectOptions{})
 }
 
+// Exists 检查对象是否存在.
+func (c *MinIOClient) Exists(ctx context.Context, objectName string) (bool, error) {
+	_, err := c.client.StatObject(ctx, c.bucket, objectName, minio.StatObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (c *MinIOClient) GetPresignedURL(ctx context.Context, objectName string, expiry time.Duration) (string, error) {
 	reqParams := make(url.Values)
 	presignedURL, err := c.client.PresignedGetObject(ctx, c.bucket, objectName, expiry, reqParams)

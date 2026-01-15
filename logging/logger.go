@@ -30,6 +30,7 @@ const (
 var (
 	defaultLogger *Logger
 	once          sync.Once
+	programLevel  = &slog.LevelVar{} // 支持原子操作的日志级别
 )
 
 // Config 定义日志配置结构.
@@ -51,15 +52,45 @@ type Logger struct {
 	Module  string
 }
 
+// ContextExtractor 定义了从 context 中提取日志属性的函数原型.
+type ContextExtractor func(ctx context.Context) []slog.Attr
+
+var (
+	extractors []ContextExtractor
+	extMu      sync.RWMutex
+)
+
+// RegisterContextExtractor 注册一个新的上下文提取器.
+func RegisterContextExtractor(e ContextExtractor) {
+	extMu.Lock()
+	defer extMu.Unlock()
+	extractors = append(extractors, e)
+}
+
+// SetLevel 动态调整全局日志级别.
+func SetLevel(level string) {
+	var l slog.Level
+	switch level {
+	case LevelDebug:
+		l = slog.LevelDebug
+	case LevelInfo:
+		l = slog.LevelInfo
+	case LevelWarn:
+		l = slog.LevelWarn
+	case LevelError:
+		l = slog.LevelError
+	default:
+		l = slog.LevelInfo
+	}
+	programLevel.Set(l)
+}
+
 // TraceHandler 是一个 Handler 中间件.
 type TraceHandler struct {
 	slog.Handler
 }
 
 // Handle 实现日志条目的最终处理.
-// slog.Handler 接口要求 record 按值传递。
-//
-//nolint:gocritic
 func (h *TraceHandler) Handle(ctx context.Context, record slog.Record) error {
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
@@ -68,6 +99,14 @@ func (h *TraceHandler) Handle(ctx context.Context, record slog.Record) error {
 			slog.String("span_id", spanCtx.SpanID().String()),
 		)
 	}
+
+	extMu.RLock()
+	for _, extractor := range extractors {
+		if attrs := extractor(ctx); len(attrs) > 0 {
+			record.AddAttrs(attrs...)
+		}
+	}
+	extMu.RUnlock()
 
 	if err := h.Handler.Handle(ctx, record); err != nil {
 		return fmt.Errorf("failed to handle log record: %w", err)
@@ -78,23 +117,9 @@ func (h *TraceHandler) Handle(ctx context.Context, record slog.Record) error {
 
 // NewFromConfig 创建一个新的 Logger 实例.
 func NewFromConfig(cfg *Config) *Logger {
-	var logLevel slog.Level
-
-	switch cfg.Level {
-	case LevelDebug:
-		logLevel = slog.LevelDebug
-	case LevelInfo:
-		logLevel = slog.LevelInfo
-	case LevelWarn:
-		logLevel = slog.LevelWarn
-	case LevelError:
-		logLevel = slog.LevelError
-	default:
-		logLevel = slog.LevelInfo
-	}
+	SetLevel(cfg.Level)
 
 	replaceAttr := func(groups []string, attr slog.Attr) slog.Attr {
-		// 仅当位于根路径（groups 为空）且键为时间键时进行重命名。
 		if len(groups) == 0 && attr.Key == slog.TimeKey {
 			attr.Key = "timestamp"
 		}
@@ -105,7 +130,7 @@ func NewFromConfig(cfg *Config) *Logger {
 	var handler slog.Handler
 
 	opts := &slog.HandlerOptions{
-		Level:       logLevel,
+		Level:       programLevel,
 		ReplaceAttr: replaceAttr,
 		AddSource:   false,
 	}

@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
+	"github.com/wyfcoding/pkg/logging"
 	"gorm.io/gorm/logger"
 )
 
@@ -203,6 +205,22 @@ type ServiceAddr struct {
 	HTTPAddr string `mapstructure:"http_addr" toml:"http_addr"`
 }
 
+// GetGRPCAddr 获取指定服务的 gRPC 地址.
+func (c *Config) GetGRPCAddr(name string) string {
+	if addr, ok := c.Services[name]; ok {
+		return addr.GRPCAddr
+	}
+	return ""
+}
+
+// GetHTTPAddr 获取指定服务的 HTTP 地址.
+func (c *Config) GetHTTPAddr(name string) string {
+	if addr, ok := c.Services[name]; ok {
+		return addr.HTTPAddr
+	}
+	return ""
+}
+
 // HadoopConfig 大数据生态组件 HDFS 配置.
 type HadoopConfig struct {
 	NameNode string `mapstructure:"name_node" toml:"name_node"`
@@ -281,6 +299,24 @@ func Load(path string, conf any) error {
 			slog.Error("reload config unmarshal failed", "error", unmarshalErr)
 
 			return
+		}
+
+		// 核心优化：如果配置中有日志级别，自动更新全局日志级别
+		if c, ok := conf.(*Config); ok {
+			logging.SetLevel(c.Log.Level)
+		} else {
+			// 尝试使用反射获取 Log.Level
+			val := reflect.ValueOf(conf)
+			if val.Kind() == reflect.Ptr {
+				val = val.Elem()
+			}
+			logField := val.FieldByName("Log")
+			if logField.IsValid() {
+				levelField := logField.FieldByName("Level")
+				if levelField.IsValid() && levelField.Kind() == reflect.String {
+					logging.SetLevel(levelField.String())
+				}
+			}
 		}
 
 		if validateErr := validate.Struct(conf); validateErr != nil {

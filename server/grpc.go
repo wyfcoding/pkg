@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -17,23 +18,24 @@ type GRPCServer struct {
 	server *grpc.Server // 底层 gRPC 服务器实例.
 	logger *slog.Logger // 日志记录.
 	addr   string       // 监听地址 (Host:Port).
+	opts   Options
 }
 
 // NewGRPCServer 构造一个新的 gRPC 协议服务器实例。
-// 核心特性.
-// 1. 自动启用 OpenTelemetry StatsHandler 进行全链路监控。
-// 2. 支持自定义拦截器链。
-// 3. 自动开启 gRPC Reflection（反射服务），便于调试与工具集成。
-func NewGRPCServer(addr string, logger *slog.Logger, register func(*grpc.Server), interceptors ...grpc.UnaryServerInterceptor) *GRPCServer {
-	var opts []grpc.ServerOption
-
-	opts = append(opts, grpc.StatsHandler(otelgrpc.NewServerHandler()))
-
-	if len(interceptors) > 0 {
-		opts = append(opts, grpc.ChainUnaryInterceptor(interceptors...))
+func NewGRPCServer(addr string, logger *slog.Logger, register func(*grpc.Server), interceptors []grpc.UnaryServerInterceptor, options ...Options) *GRPCServer {
+	opts := Options{ShutdownTimeout: DefaultShutdownTimeout}
+	if len(options) > 0 {
+		opts = options[0]
 	}
 
-	s := grpc.NewServer(opts...)
+	var grpcOpts []grpc.ServerOption
+	grpcOpts = append(grpcOpts, grpc.StatsHandler(otelgrpc.NewServerHandler()))
+
+	if len(interceptors) > 0 {
+		grpcOpts = append(grpcOpts, grpc.ChainUnaryInterceptor(interceptors...))
+	}
+
+	s := grpc.NewServer(grpcOpts...)
 	register(s)
 	reflection.Register(s)
 
@@ -41,11 +43,11 @@ func NewGRPCServer(addr string, logger *slog.Logger, register func(*grpc.Server)
 		server: s,
 		addr:   addr,
 		logger: logger,
+		opts:   opts,
 	}
 }
 
 // Start 启动 TCP 监听并运行 gRPC 服务。
-// 流程：建立 TCP 监听 -> 启动 Serve 协程 -> 监听信号。
 func (s *GRPCServer) Start(ctx context.Context) error {
 	lis, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -61,20 +63,34 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.logger.Info("grpc server stopping due to context cancellation")
-		s.server.Stop()
-		return ctx.Err()
+		return s.Stop(context.Background())
 	case err := <-errChan:
 		return err
 	}
 }
 
 // Stop 执行 gRPC 服务器的优雅关停。
-// 它会等待所有活跃的 RPC 调用完成后再退出。
 func (s *GRPCServer) Stop(ctx context.Context) error {
-	if ctx.Err() != nil {
+	s.logger.Info("stopping grpc server gracefully")
+	
+	stopped := make(chan struct{})
+	go func() {
+		s.server.GracefulStop()
+		close(stopped)
+	}()
+
+	timer := time.NewTimer(s.opts.ShutdownTimeout)
+	defer timer.Stop()
+
+	select {
+	case <-stopped:
+		return nil
+	case <-timer.C:
+		s.logger.Warn("grpc server graceful stop timeout, forcing stop")
+		s.server.Stop()
+		return nil
+	case <-ctx.Done():
+		s.server.Stop()
 		return ctx.Err()
 	}
-	s.logger.Info("stopping grpc server gracefully")
-	s.server.GracefulStop()
-	return nil
 }

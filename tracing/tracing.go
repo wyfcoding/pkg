@@ -1,4 +1,4 @@
-// Package tracing 提供基于 OpenTelemetry 的分布式追踪基础设施.
+// Package tracing 提供了 OpenTelemetry (OTEL) 链路追踪的初始化与生命周期管理。
 package tracing
 
 import (
@@ -30,6 +30,7 @@ func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error,
 		return nil, fmt.Errorf("failed to create otlp exporter: %w", err)
 	}
 
+	// 资源描述（服务名等）。
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(cfg.ServiceName),
@@ -48,6 +49,7 @@ func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error,
 		sdktrace.WithSampler(sampler),
 	)
 
+	// 设置全局 TracerProvider 和传播器（用于跨服务传递上下文）。
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},

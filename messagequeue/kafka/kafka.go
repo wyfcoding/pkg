@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -95,6 +96,15 @@ func NewProducer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Met
 // Publish 将消息发送至默认配置的主题.
 func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
 	return p.PublishToTopic(ctx, p.writer.Topic, key, value)
+}
+
+// PublishJSON 将对象序列化为 JSON 并发送至指定主题.
+func (p *Producer) PublishJSON(ctx context.Context, topic string, key string, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal json: %w", err)
+	}
+	return p.PublishToTopic(ctx, topic, []byte(key), data)
 }
 
 // PublishToTopic 将消息发送至指定主题.

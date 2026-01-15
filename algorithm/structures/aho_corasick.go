@@ -11,36 +11,43 @@ const (
 )
 
 // ACNode AC自动机节点.
-type ACNode struct {
-	children   map[rune]*ACNode
-	fail       *ACNode
-	endFail    *ACNode // 指向最近的一个代表模式串终点的 fail 节点
-	patternIdx int     // 如果当前节点是终点，记录模式串索引，否则为 -1
+type ACNode[T any] struct {
+	children   map[rune]*ACNode[T]
+	fail       *ACNode[T]
+	endFail    *ACNode[T] // 指向最近的一个代表模式串终点的 fail 节点
+	patternIdx int        // 如果当前节点是终点，记录模式串索引，否则为 -1
 }
 
-// AhoCorasick AC自动机.
-type AhoCorasick struct {
-	root     *ACNode
-	patterns []string
+// AhoCorasick AC自动机泛型实现.
+type AhoCorasick[T any] struct {
+	root     *ACNode[T]
+	patterns []T
 	mu       sync.RWMutex
+	toString func(T) string
 }
 
 // NewAhoCorasick 创建AC自动机.
-func NewAhoCorasick() *AhoCorasick {
-	return &AhoCorasick{
-		root: &ACNode{
-			children:   make(map[rune]*ACNode),
+func NewAhoCorasick[T any](toString func(T) string) *AhoCorasick[T] {
+	return &AhoCorasick[T]{
+		root: &ACNode[T]{
+			children:   make(map[rune]*ACNode[T]),
 			fail:       nil,
 			endFail:    nil,
 			patternIdx: -1,
 		},
-		patterns: make([]string, 0),
+		patterns: make([]T, 0),
 		mu:       sync.RWMutex{},
+		toString: toString,
 	}
 }
 
+// NewStringAhoCorasick 创建专门处理字符串的 AC 自动机助手.
+func NewStringAhoCorasick() *AhoCorasick[string] {
+	return NewAhoCorasick(func(s string) string { return s })
+}
+
 // AddPatterns 添加多个模式串.
-func (ac *AhoCorasick) AddPatterns(patterns ...string) {
+func (ac *AhoCorasick[T]) AddPatterns(patterns ...T) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
 
@@ -49,10 +56,10 @@ func (ac *AhoCorasick) AddPatterns(patterns ...string) {
 		ac.patterns = append(ac.patterns, p)
 
 		curr := ac.root
-		for _, r := range p {
+		for _, r := range ac.toString(p) {
 			if _, ok := curr.children[r]; !ok {
-				curr.children[r] = &ACNode{
-					children:   make(map[rune]*ACNode),
+				curr.children[r] = &ACNode[T]{
+					children:   make(map[rune]*ACNode[T]),
 					fail:       nil,
 					endFail:    nil,
 					patternIdx: -1,
@@ -67,12 +74,12 @@ func (ac *AhoCorasick) AddPatterns(patterns ...string) {
 }
 
 // Build 构造失败指针.
-func (ac *AhoCorasick) Build() {
+func (ac *AhoCorasick[T]) Build() {
 	start := time.Now()
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
 
-	queue := make([]*ACNode, 0, initialQueueSize)
+	queue := make([]*ACNode[T], 0, initialQueueSize)
 
 	for _, child := range ac.root.children {
 		child.fail = ac.root
@@ -88,10 +95,8 @@ func (ac *AhoCorasick) Build() {
 			for f != nil {
 				if next, ok := f.children[r]; ok {
 					v.fail = next
-
 					break
 				}
-
 				f = f.fail
 			}
 
@@ -113,39 +118,43 @@ func (ac *AhoCorasick) Build() {
 	slog.Info("AhoCorasick build completed", "duration", time.Since(start))
 }
 
+// MatchResult 匹配结果单元.
+type MatchResult[T any] struct {
+	Pattern T
+	Pos     int
+}
+
 // Match 在文本中搜索所有出现的模式串.
-func (ac *AhoCorasick) Match(text string) map[string][]int {
+func (ac *AhoCorasick[T]) Match(text string) []MatchResult[T] {
 	start := time.Now()
 	ac.mu.RLock()
 	defer ac.mu.RUnlock()
 
-	results := make(map[string][]int)
+	var results []MatchResult[T]
 	curr := ac.root
 
 	for i, r := range text {
 		for {
 			if next, ok := curr.children[r]; ok {
 				curr = next
-
 				break
 			}
-
 			if curr == ac.root {
 				break
 			}
-
 			curr = curr.fail
 		}
 
-		// 检查当前节点及 endFail 链上的所有匹配
 		temp := curr
 		if temp.patternIdx == -1 {
 			temp = temp.endFail
 		}
 
 		for temp != nil {
-			p := ac.patterns[temp.patternIdx]
-			results[p] = append(results[p], i-len(p)+1)
+			results = append(results, MatchResult[T]{
+				Pattern: ac.patterns[temp.patternIdx],
+				Pos:     i - len(ac.toString(ac.patterns[temp.patternIdx])) + 1,
+			})
 			temp = temp.endFail
 		}
 	}
@@ -155,34 +164,60 @@ func (ac *AhoCorasick) Match(text string) map[string][]int {
 		"results_count", len(results),
 		"duration", time.Since(start))
 
-	return results
-}
+		return results
 
-// Contains 检查文本中是否包含任何模式串.
-func (ac *AhoCorasick) Contains(text string) bool {
-	ac.mu.RLock()
-	defer ac.mu.RUnlock()
-
-	curr := ac.root
-	for _, r := range text {
-		for {
-			if next, ok := curr.children[r]; ok {
-				curr = next
-
-				break
-			}
-
-			if curr == ac.root {
-				break
-			}
-
-			curr = curr.fail
-		}
-
-		if curr.patternIdx != -1 || curr.endFail != nil {
-			return true
-		}
 	}
 
-	return false
-}
+	
+
+	// Contains 检查文本中是否包含任何模式串.
+
+	func (ac *AhoCorasick[T]) Contains(text string) bool {
+
+		ac.mu.RLock()
+
+		defer ac.mu.RUnlock()
+
+	
+
+		curr := ac.root
+
+		for _, r := range text {
+
+			for {
+
+				if next, ok := curr.children[r]; ok {
+
+					curr = next
+
+					break
+
+				}
+
+				if curr == ac.root {
+
+					break
+
+				}
+
+				curr = curr.fail
+
+			}
+
+	
+
+			if curr.patternIdx != -1 || curr.endFail != nil {
+
+				return true
+
+			}
+
+		}
+
+	
+
+		return false
+
+	}
+
+	

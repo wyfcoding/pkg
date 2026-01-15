@@ -4,6 +4,7 @@ package xerrors
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 
@@ -56,6 +57,28 @@ func (e *Error) Error() string {
 	}
 
 	return fmt.Sprintf("[%s] %d: %s", e.Type.String(), e.Code, e.Message)
+}
+
+// Format 实现 fmt.Formatter 接口，支持 %+v 输出详细堆栈。
+func (e *Error) Format(s fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			_, _ = io.WriteString(s, e.Error())
+			if len(e.Stack) > 0 {
+				_, _ = io.WriteString(s, "\nStack trace:\n")
+				for _, frame := range e.Stack {
+					_, _ = io.WriteString(s, "\t"+frame+"\n")
+				}
+			}
+			return
+		}
+		fallthrough
+	case 's':
+		_, _ = io.WriteString(s, e.Error())
+	case 'q':
+		_, _ = io.WriteString(s, "\""+e.Error()+"\"")
+	}
 }
 
 // Unwrap 实现 Go 1.13 解包接口.
@@ -150,6 +173,21 @@ func NotFound(msg string) *Error {
 // Unauthenticated 快捷构造未认证错误.
 func Unauthenticated(msg string) *Error {
 	return New(ErrUnauthenticated, httpUnauthorized, msg, "", nil)
+}
+
+// AlreadyExists 快捷构造冲突错误.
+func AlreadyExists(msg string) *Error {
+	return New(ErrAlreadyExists, http.StatusConflict, msg, "", nil)
+}
+
+// PermissionDenied 快捷构造权限错误.
+func PermissionDenied(msg string) *Error {
+	return New(ErrPermissionDenied, http.StatusForbidden, msg, "", nil)
+}
+
+// Unavailable 快捷构造服务不可用错误.
+func Unavailable(msg string, cause error) *Error {
+	return New(ErrUnavailable, http.StatusServiceUnavailable, msg, "", cause)
 }
 
 // GetHTTPStatus 根据错误类型获取默认的 HTTP 状态码.

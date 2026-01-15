@@ -5,14 +5,20 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 )
 
-// ErrCiphertextTooShort 密文长度不足。
-var ErrCiphertextTooShort = errors.New("ciphertext too short")
+// HashSHA256 计算 SHA256 哈希值并返回十六进制字符串.
+func HashSHA256(data string) string {
+	h := sha256.New()
+	h.Write([]byte(data))
+	return hex.EncodeToString(h.Sum(nil))
+}
 
 // GenerateRandomKey 生成加密安全的随机密钥。
 func GenerateRandomKey(length int) ([]byte, error) {
@@ -65,7 +71,7 @@ func Decrypt(ciphertextStr string, key []byte) ([]byte, error) {
 
 	nonceSize := aesGCM.NonceSize()
 	if len(data) < nonceSize {
-		return nil, ErrCiphertextTooShort
+		return nil, errors.New("ciphertext too short")
 	}
 
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]

@@ -91,3 +91,34 @@ func (g *RunGroup) Wait() error {
 	g.wg.Wait()
 	return g.err
 }
+
+// ParallelMap 并发地对切片中的每个元素执行函数，并按序返回结果。
+// 如果任一任务返回错误，则停止处理（通过 ctx）并返回第一个发生的错误。
+func ParallelMap[T any, R any](ctx context.Context, items []T, fn func(context.Context, T) (R, error)) ([]R, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	results := make([]R, len(items))
+	g := &RunGroup{}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	for i, item := range items {
+		g.Go(func() error {
+			res, err := fn(ctx, item)
+			if err != nil {
+				cancel()
+				return err
+			}
+			results[i] = res
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}

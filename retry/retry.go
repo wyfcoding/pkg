@@ -3,10 +3,8 @@ package retry
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"fmt"
-	"math"
+	"math/rand/v2"
 	"time"
 )
 
@@ -35,6 +33,15 @@ func DefaultRetryConfig() Config {
 
 // Retry 根据配置的策略执行函数 fn.
 func Retry(ctx context.Context, fn Func, cfg Config) error {
+	return RetryIf(ctx, fn, func(error) bool { return true }, cfg)
+}
+
+// RetryIf 仅在 shouldRetry 返回 true 时进行重试.
+func RetryIf(ctx context.Context, fn Func, shouldRetry func(error) bool, cfg Config) error {
+	if cfg.MaxRetries < 0 {
+		return fn()
+	}
+
 	var lastErr error
 	backoff := cfg.InitialBackoff
 
@@ -44,7 +51,7 @@ func Retry(ctx context.Context, fn Func, cfg Config) error {
 			return nil
 		}
 
-		if retryIdx == cfg.MaxRetries {
+		if retryIdx == cfg.MaxRetries || !shouldRetry(lastErr) {
 			break
 		}
 
@@ -57,16 +64,13 @@ func Retry(ctx context.Context, fn Func, cfg Config) error {
 		nextBackoff := float64(backoff) * cfg.Multiplier
 
 		if cfg.Jitter > 0 {
-			var b [8]byte
-			if _, err := rand.Read(b[:]); err == nil {
-				rv := float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)
-				jitterValue := (rv*2 - 1) * cfg.Jitter * nextBackoff
-				nextBackoff += jitterValue
-			}
+			rv := rand.Float64()
+			jitterValue := (rv*2 - 1) * cfg.Jitter * nextBackoff
+			nextBackoff += jitterValue
 		}
 
 		backoff = min(time.Duration(nextBackoff), cfg.MaxBackoff)
 	}
 
-	return fmt.Errorf("maximum retries (%d) reached: %w", cfg.MaxRetries, lastErr)
+	return fmt.Errorf("retry failed after %d attempts: %w", cfg.MaxRetries, lastErr)
 }

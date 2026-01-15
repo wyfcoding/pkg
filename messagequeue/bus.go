@@ -46,6 +46,28 @@ type EventBus interface {
 // EventHandler 事件处理函数类型。
 type EventHandler func(ctx context.Context, event eventsourcing.DomainEvent) error
 
+// TypedHandler 定义了强类型的事件处理函数原型。
+type TypedHandler[T any] func(ctx context.Context, event T) error
+
+// SubscribeTyped 是一个泛型辅助函数，提供类型安全的事件订阅能力。
+func SubscribeTyped[T any](ctx context.Context, sub EventSubscriber, topic string, handler TypedHandler[T]) error {
+	return sub.Subscribe(ctx, topic, func(ctx context.Context, ev eventsourcing.DomainEvent) error {
+		// 尝试从 BaseEvent.Data 中提取数据（如果 ev 是 *BaseEvent）
+		if base, ok := ev.(*eventsourcing.BaseEvent); ok {
+			if data, ok := base.Data.(T); ok {
+				return handler(ctx, data)
+			}
+		}
+
+		// 尝试直接转换事件对象本身
+		if data, ok := ev.(T); ok {
+			return handler(ctx, data)
+		}
+
+		return nil // 类型不匹配则忽略或记录警告
+	})
+}
+
 // EventSubscriber 事件订阅者接口。
 type EventSubscriber interface {
 	// Subscribe 订阅特定类型的事件。

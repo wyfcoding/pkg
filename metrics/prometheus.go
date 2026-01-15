@@ -28,31 +28,30 @@ type Metrics struct {
 }
 
 // NewMetrics 初始化并返回一个新的指标采集器。
-// 它会自动注册 Go 运行时指标和进程指标。
 func NewMetrics(serviceName string) *Metrics {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
-	metricsInstance := &Metrics{registry: reg}
+	m := &Metrics{registry: reg}
 
-	metricsInstance.HTTPRequestsTotal = metricsInstance.NewCounterVec(&prometheus.CounterOpts{
+	m.HTTPRequestsTotal = m.NewCounterVec(&prometheus.CounterOpts{
 		Name: "http_server_requests_total",
 		Help: "Total number of HTTP requests",
 	}, []string{"method", "path", "status"})
 
-	metricsInstance.HTTPRequestDuration = metricsInstance.NewHistogramVec(&prometheus.HistogramOpts{
+	m.HTTPRequestDuration = m.NewHistogramVec(&prometheus.HistogramOpts{
 		Name:    "http_server_request_duration_seconds",
 		Help:    "HTTP request latency in seconds",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
-	metricsInstance.GRPCRequestsTotal = metricsInstance.NewCounterVec(&prometheus.CounterOpts{
+	m.GRPCRequestsTotal = m.NewCounterVec(&prometheus.CounterOpts{
 		Name: "grpc_server_requests_total",
 		Help: "Total number of gRPC requests",
 	}, []string{"service", "method", "status"})
 
-	metricsInstance.GRPCRequestDuration = metricsInstance.NewHistogramVec(&prometheus.HistogramOpts{
+	m.GRPCRequestDuration = m.NewHistogramVec(&prometheus.HistogramOpts{
 		Name:    "grpc_server_request_duration_seconds",
 		Help:    "gRPC request latency in seconds",
 		Buckets: prometheus.DefBuckets,
@@ -60,39 +59,47 @@ func NewMetrics(serviceName string) *Metrics {
 
 	slog.Info("unified metrics registry initialized", "service", serviceName)
 
-	return metricsInstance
+	return m
+}
+
+// Register 注册自定义指标。
+func (m *Metrics) Register(collectors ...prometheus.Collector) {
+	m.registry.MustRegister(collectors...)
 }
 
 // NewCounterVec 创建并注册一个新的计数器指标。
 func (m *Metrics) NewCounterVec(opts *prometheus.CounterOpts, labelNames []string) *prometheus.CounterVec {
-	counterVec := prometheus.NewCounterVec(*opts, labelNames)
-	m.registry.MustRegister(counterVec)
+	cv := prometheus.NewCounterVec(*opts, labelNames)
+	m.registry.MustRegister(cv)
+	return cv
+}
 
-	return counterVec
+// NewGauge 创建并注册一个新的仪表盘指标。
+func (m *Metrics) NewGauge(opts *prometheus.GaugeOpts) prometheus.Gauge {
+	g := prometheus.NewGauge(*opts)
+	m.registry.MustRegister(g)
+	return g
 }
 
 // NewGaugeVec 创建并注册一个新的仪表盘指标。
 func (m *Metrics) NewGaugeVec(opts *prometheus.GaugeOpts, labelNames []string) *prometheus.GaugeVec {
-	gaugeVec := prometheus.NewGaugeVec(*opts, labelNames)
-	m.registry.MustRegister(gaugeVec)
-
-	return gaugeVec
+	gv := prometheus.NewGaugeVec(*opts, labelNames)
+	m.registry.MustRegister(gv)
+	return gv
 }
 
 // NewHistogramVec 创建并注册一个新的直方图指标。
 func (m *Metrics) NewHistogramVec(opts *prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
-	histogramVec := prometheus.NewHistogramVec(*opts, labelNames)
-	m.registry.MustRegister(histogramVec)
-
-	return histogramVec
+	hv := prometheus.NewHistogramVec(*opts, labelNames)
+	m.registry.MustRegister(hv)
+	return hv
 }
 
 // NewGaugeFunc 创建并注册一个新的函数式仪表盘指标。
 func (m *Metrics) NewGaugeFunc(opts *prometheus.GaugeOpts, function func() float64) prometheus.GaugeFunc {
-	gaugeFunc := prometheus.NewGaugeFunc(*opts, function)
-	m.registry.MustRegister(gaugeFunc)
-
-	return gaugeFunc
+	gf := prometheus.NewGaugeFunc(*opts, function)
+	m.registry.MustRegister(gf)
+	return gf
 }
 
 // Handler 返回用于暴露指标的 HTTP 处理器。
@@ -101,7 +108,6 @@ func (m *Metrics) Handler() http.Handler {
 }
 
 // ExposeHTTP 在指定端口启动一个独立的 HTTP 服务器用于暴露指标数据。
-// 返回一个清理函数用于优雅关闭该服务器。
 func (m *Metrics) ExposeHTTP(port string) (stop func()) {
 	server := &http.Server{
 		Addr:              ":" + port,
@@ -119,7 +125,6 @@ func (m *Metrics) ExposeHTTP(port string) (stop func()) {
 		const shutdownTimeout = 5 * time.Second
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-
 		if err := server.Shutdown(ctx); err != nil {
 			slog.Error("failed to shutdown metrics server", "error", err)
 		}

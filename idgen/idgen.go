@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -32,7 +33,7 @@ var (
 const (
 	msPerSecond           = 1000000
 	maxRetries            = 3
-	sonyflakeDefaultEpoch = "2025-07-09"
+	sonyflakeDefaultEpoch = "2020-01-01"
 )
 
 // Generator 定义 ID 生成器接口.
@@ -41,8 +42,7 @@ type Generator interface {
 }
 
 // SnowflakeGenerator 使用雪花算法实现 Generator.
-// 特点：每毫秒可生成 4096 个 ID，支持 1024 台机器，可用约 69 年.
-type SnowflakeGenerator struct { // 雪花算法生成器，已对齐。
+type SnowflakeGenerator struct {
 	node *snowflake.Node
 }
 
@@ -67,23 +67,18 @@ func NewSnowflakeGenerator(cfg config.SnowflakeConfig) (*SnowflakeGenerator, err
 
 	slog.Info("snowflake generator initialized", "machine_id", cfg.MachineID, "epoch", snowflake.Epoch)
 
-	return &SnowflakeGenerator{
-		node: node,
-	}, nil
+	return &SnowflakeGenerator{node: node}, nil
 }
 
-// Generate 生成一个新的 ID.
 func (g *SnowflakeGenerator) Generate() int64 {
 	return g.node.Generate().Int64()
 }
 
 // SonyflakeGenerator 使用 Sonyflake 算法实现 Generator.
-// 特点：每 10 毫秒可生成 256 个 ID，支持 65536 台机器，可用约 174 年.
-type SonyflakeGenerator struct { // Sonyflake 生成器，已对齐。
+type SonyflakeGenerator struct {
 	sf *sonyflake.Sonyflake
 }
 
-// NewSonyflakeGenerator 创建一个新的 SonyflakeGenerator.
 func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, error) {
 	var startTime time.Time
 	startTimeStr := cfg.StartTime
@@ -104,42 +99,28 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 	settings := sonyflake.Settings{
 		StartTime: startTime,
 		MachineID: func() (uint16, error) {
-			// G115 fix: Explicitly mask to correct size before casting
-			mid := cfg.MachineID & 0xFFFF
-			// G115 fix
-			return cast.Int64ToUint16(mid), nil
+			return cast.Int64ToUint16(cfg.MachineID & 0xFFFF), nil
 		},
 	}
 
-	sonyFlake, err := sonyflake.New(settings)
+	sf, err := sonyflake.New(settings)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCreateSonyflake, err)
 	}
 
 	slog.Info("sonyflake generator initialized", "machine_id", cfg.MachineID, "start_time", startTime)
 
-	return &SonyflakeGenerator{
-		sf: sonyFlake,
-	}, nil
+	return &SonyflakeGenerator{sf: sf}, nil
 }
 
-// Generate 生成一个新的 ID.
 func (g *SonyflakeGenerator) Generate() int64 {
-	for i := range maxRetries {
+	for i := 0; i < maxRetries; i++ {
 		id, err := g.sf.NextID()
 		if err == nil {
-			// G115 fix: Mask before cast
-			maskedID := id & 0x7FFFFFFFFFFFFFFF
-			// G115 fix
-			return cast.Uint64ToInt64(maskedID)
+			return cast.Uint64ToInt64(id & 0x7FFFFFFFFFFFFFFF)
 		}
-
-		slog.Warn("Sonyflake generator failed, retrying...", "retry", i+1, "error", err)
 		time.Sleep(10 * time.Millisecond)
 	}
-
-	slog.Error("Sonyflake generator failed after multiple retries")
-
 	return 0
 }
 
@@ -155,7 +136,6 @@ func NewGenerator(cfg config.SnowflakeConfig) (Generator, error) {
 	}
 }
 
-// 全局默认生成器.
 var (
 	defaultGenerator Generator
 	once             sync.Once
@@ -165,80 +145,58 @@ var (
 func Init(cfg config.SnowflakeConfig) error {
 	var err error
 	once.Do(func() {
+		if cfg.MachineID <= 0 {
+			if envMid := os.Getenv("MACHINE_ID"); envMid != "" {
+				if id, parseErr := strconv.ParseInt(envMid, 10, 64); parseErr == nil {
+					cfg.MachineID = id
+				}
+			}
+		}
+		if cfg.MachineID <= 0 {
+			cfg.MachineID = 1 // 兜底
+		}
 		defaultGenerator, err = NewGenerator(cfg)
 	})
-
 	return err
 }
 
-// Default 返回全局默认生成器实例.
-func Default() Generator {
-	if defaultGenerator == nil {
-		if err := Init(config.SnowflakeConfig{MachineID: 1}); err != nil {
-			slog.Error("failed to initialize default id generator", "error", err)
-		}
-	}
-
-	return defaultGenerator
-}
-
-// GenID 使用默认生成器生成全局唯一的 uint64 ID.
 func GenID() uint64 {
 	if defaultGenerator == nil {
-		if err := Init(config.SnowflakeConfig{MachineID: 1}); err != nil {
-			panic(fmt.Errorf("failed to auto-initialize default id generator: %w", err))
-		}
+		_ = Init(config.SnowflakeConfig{MachineID: 1})
 	}
-
-	generatedID := defaultGenerator.Generate()
-	// G115 fix: Safe cast
-	return cast.Int64ToUint64(generatedID & 0x7FFFFFFFFFFFFFFF)
+	return cast.Int64ToUint64(defaultGenerator.Generate() & 0x7FFFFFFFFFFFFFFF)
 }
 
-// GenOrderNo 生成订单号，格式为 "O" + 唯一ID.
+func GenIDString() string {
+	return strconv.FormatUint(GenID(), 10)
+}
+
 func GenOrderNo() string {
 	id := GenID()
-	b := make([]byte, 0, 21)
-	b = append(b, 'O')
-	return string(strconv.AppendUint(b, id, 10))
+	return "O" + strconv.FormatUint(id, 10)
 }
 
-// GenPaymentNo 生成支付单号.
 func GenPaymentNo() string {
 	id := GenID()
-	b := make([]byte, 0, 21)
-	b = append(b, 'P')
-	return string(strconv.AppendUint(b, id, 10))
+	return "P" + strconv.FormatUint(id, 10)
 }
 
-// GenRefundNo 生成退款单号.
 func GenRefundNo() string {
 	id := GenID()
-	b := make([]byte, 0, 21)
-	b = append(b, 'R')
-	return string(strconv.AppendUint(b, id, 10))
+	return "R" + strconv.FormatUint(id, 10)
 }
 
-// GenSPUNo 生成 SPU 编号.
 func GenSPUNo() string {
 	id := GenID()
-	b := make([]byte, 0, 23)
-	b = append(b, "SPU"...)
-	return string(strconv.AppendUint(b, id, 10))
+	return "SPU" + strconv.FormatUint(id, 10)
 }
 
-// GenSKUNo 生成 SKU 编号.
 func GenSKUNo() string {
 	id := GenID()
-	b := make([]byte, 0, 23)
-	b = append(b, "SKU"...)
-	return string(strconv.AppendUint(b, id, 10))
+	return "SKU" + strconv.FormatUint(id, 10)
 }
 
-// GenCouponCode 生成优惠券码.
 func GenCouponCode() string {
 	id := GenID()
-	b := make([]byte, 0, 21)
-	b = append(b, 'C')
-	return string(strconv.AppendUint(b, id, 10))
+	return "C" + strconv.FormatUint(id, 10)
 }
