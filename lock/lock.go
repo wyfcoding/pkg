@@ -19,6 +19,22 @@ var (
 	ErrLockFailed = errors.New("failed to acquire lock")
 	// ErrUnlockFailed 释放锁失败.
 	ErrUnlockFailed = errors.New("failed to release lock")
+
+	unlockScript = redis.NewScript(`
+		if redis.call("get", KEYS[1]) == ARGV[1] then
+			return redis.call("del", KEYS[1])
+		else
+			return 0
+		end
+	`)
+
+	renewScript = redis.NewScript(`
+		if redis.call("get", KEYS[1]) == ARGV[1] then
+			return redis.call("expire", KEYS[1], ARGV[2])
+		else
+			return 0
+		end
+	`)
 )
 
 const (
@@ -120,14 +136,7 @@ func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.D
 		for {
 			select {
 			case <-ticker.C:
-				script := `
-					if redis.call("get", KEYS[1]) == ARGV[1] then
-						return redis.call("expire", KEYS[1], ARGV[2])
-					else
-						return 0
-					end
-				`
-				res, err := l.client.Eval(watchdogCtx, script, []string{key}, token, int(ttl.Seconds())).Int()
+				res, err := renewScript.Run(watchdogCtx, l.client, []string{key}, token, int(ttl.Seconds())).Int()
 				if err != nil || res == 0 {
 					slog.Warn("watchdog failed to renew lock", "key", key, "error", err)
 
@@ -148,14 +157,7 @@ func (l *RedisLock) LockWithWatchdog(ctx context.Context, key string, ttl time.D
 
 // Unlock 安全释放锁.
 func (l *RedisLock) Unlock(ctx context.Context, key, token string) error {
-	script := `
-		if redis.call("get", KEYS[1]) == ARGV[1] then
-			return redis.call("del", KEYS[1])
-		else
-			return 0
-		end
-	`
-	result, err := l.client.Eval(ctx, script, []string{key}, token).Int()
+	result, err := unlockScript.Run(ctx, l.client, []string{key}, token).Int()
 	if err != nil {
 		slog.Error("redis_unlock error", "key", key, "error", err)
 

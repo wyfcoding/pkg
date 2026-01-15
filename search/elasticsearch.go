@@ -58,14 +58,12 @@ type Client struct {
 
 // Config 定义了初始化搜索客户端所需的各项参数.
 type Config struct {
-	Username      string
-	Password      string
-	ServiceName   string
-	Addresses     []string
+	config.ElasticsearchConfig
 	BreakerConfig config.CircuitBreakerConfig
+	Limiter       limiter.Limiter // 可选：注入自定义限流器（如分布式限流器）。
+	ServiceName   string
 	SlowThreshold time.Duration
 	MaxRetries    int
-	Limiter       limiter.Limiter // 可选：注入自定义限流器（如分布式限流器）。
 }
 
 // NewClient 创建具备全方位治理能力的 ES 客户端.

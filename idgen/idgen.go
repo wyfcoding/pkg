@@ -12,8 +12,8 @@ import (
 
 	"github.com/bwmarrin/snowflake"
 	"github.com/sony/sonyflake"
-	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/cast"
+	"github.com/wyfcoding/pkg/config"
 )
 
 var (
@@ -30,8 +30,9 @@ var (
 )
 
 const (
-	msPerSecond = 1000000
-	maxRetries  = 3
+	msPerSecond           = 1000000
+	maxRetries            = 3
+	sonyflakeDefaultEpoch = "2025-07-09"
 )
 
 // Generator 定义 ID 生成器接口.
@@ -53,6 +54,10 @@ func NewSnowflakeGenerator(cfg config.SnowflakeConfig) (*SnowflakeGenerator, err
 			return nil, fmt.Errorf("%w: %w", ErrParseTime, err)
 		}
 		snowflake.Epoch = st.UnixNano() / msPerSecond
+	}
+
+	if cfg.MachineID < 0 || cfg.MachineID > 1023 {
+		return nil, fmt.Errorf("snowflake machine_id must be between 0 and 1023")
 	}
 
 	node, err := snowflake.NewNode(cfg.MachineID)
@@ -81,15 +86,16 @@ type SonyflakeGenerator struct { // Sonyflake 生成器，已对齐。
 // NewSonyflakeGenerator 创建一个新的 SonyflakeGenerator.
 func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, error) {
 	var startTime time.Time
-	if cfg.StartTime != "" {
-		st, err := time.Parse("2006-01-02", cfg.StartTime)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrParseTime, err)
-		}
-		startTime = st
-	} else {
-		startTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	startTimeStr := cfg.StartTime
+	if startTimeStr == "" {
+		startTimeStr = sonyflakeDefaultEpoch
 	}
+
+	st, err := time.Parse("2006-01-02", startTimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrParseTime, err)
+	}
+	startTime = st
 
 	if cfg.MachineID < 0 || cfg.MachineID > 65535 {
 		return nil, ErrInvalidMachineID
