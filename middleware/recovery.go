@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,6 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/response"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Recovery 返回一个自定义的 Gin Panic 恢复中间件。
@@ -60,5 +64,28 @@ func Recovery() gin.HandlerFunc {
 		}()
 
 		c.Next()
+	}
+}
+
+// GRPCRecovery 返回一个 gRPC 一元拦截器，用于捕获 Panic 并记录日志。
+func GRPCRecovery() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (resp interface{}, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.Error(ctx, "gRPC recovered from panic",
+					"error", r,
+					"method", info.FullMethod,
+					"stack", string(debug.Stack()),
+				)
+				err = status.Errorf(codes.Internal, "panic recovered: %v", r)
+			}
+		}()
+
+		return handler(ctx, req)
 	}
 }

@@ -26,6 +26,11 @@ type Order struct {
 	Timestamp  int64
 	IsIceberg  bool
 	PostOnly   bool
+
+	// Pegged Orders
+	IsPegged  bool
+	PegType   string          // "MID", "BEST_BID", "BEST_ASK"
+	PegOffset decimal.Decimal // 偏移量
 }
 
 // OrderBookLevel 订单簿档位，聚合了同一价格下的委托总量。

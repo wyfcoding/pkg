@@ -1,6 +1,12 @@
 package middleware
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -8,7 +14,12 @@ import (
 	"github.com/wyfcoding/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	authv1 "github.com/wyfcoding/financialtrading/go-api/auth/v1"
 )
+
+type APIKeyProvider interface {
+	GetSecret(ctx context.Context, apiKey string) (string, error)
+}
 
 // JWTAuth 增强版：支持基础认证并注入用户信息
 func JWTAuth(secret string) gin.HandlerFunc {
@@ -40,6 +51,67 @@ func JWTAuth(secret string) gin.HandlerFunc {
 		c.Set("roles", claims.Roles) // 假设 JWT 中包含角色列表
 		c.Next()
 	}
+}
+
+// APIKeyAuth 提供基于 HMAC-SHA256 签名的 API Key 认证器。
+// 鉴权公式: HMAC-SHA256(secret, method + path + timestamp + body)
+func APIKeyAuth(provider APIKeyProvider) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey := c.GetHeader("X-API-KEY")
+		signature := c.GetHeader("X-SIGNATURE")
+		timestamp := c.GetHeader("X-TIMESTAMP")
+
+		if apiKey == "" || signature == "" || timestamp == "" {
+			response.ErrorWithStatus(c, http.StatusUnauthorized, "missing security headers (APIKEY/SIGN/TS)", "")
+			c.Abort()
+			return
+		}
+
+		secret, err := provider.GetSecret(c.Request.Context(), apiKey)
+		if err != nil || secret == "" {
+			response.ErrorWithStatus(c, http.StatusUnauthorized, "invalid API Key", "")
+			c.Abort()
+			return
+		}
+
+		// 验证签名
+		body, _ := io.ReadAll(c.Request.Body)
+		c.Request.Body = io.NopCloser(strings.NewReader(string(body))) // 重置 body 以供后续使用
+
+		payload := fmt.Sprintf("%s%s%s%s", c.Request.Method, c.Request.URL.Path, timestamp, string(body))
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write([]byte(payload))
+		expectedSign := hex.EncodeToString(mac.Sum(nil))
+
+		if signature != expectedSign {
+			response.ErrorWithStatus(c, http.StatusUnauthorized, "invalid signature", "")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+type RemoteAPIKeyProvider struct {
+	client authv1.AuthServiceClient
+}
+
+func NewRemoteAPIKeyProvider(client authv1.AuthServiceClient) *RemoteAPIKeyProvider {
+	return &RemoteAPIKeyProvider{client: client}
+}
+
+func (p *RemoteAPIKeyProvider) GetSecret(ctx context.Context, apiKey string) (string, error) {
+	resp, err := p.client.ValidateAPIKey(ctx, &authv1.ValidateAPIKeyRequest{
+		ApiKey: apiKey,
+	})
+	if err != nil {
+		return "", err
+	}
+	if !resp.Enabled {
+		return "", fmt.Errorf("api key disabled")
+	}
+	return resp.Secret, nil
 }
 
 // HasRole 提供角色权限校验中间件。

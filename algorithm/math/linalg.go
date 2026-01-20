@@ -143,3 +143,54 @@ func (m *Matrix) Cholesky() (*Matrix, error) {
 
 	return res, nil
 }
+
+// ForwardSubstitute 解下三角方程组 Ly = b.
+func (m *Matrix) ForwardSubstitute(b []float64) ([]float64, error) {
+	if m.Rows != m.Cols || len(b) != m.Rows {
+		return nil, xerrors.ErrDimMismatch
+	}
+
+	res := make([]float64, m.Rows)
+	for i := range m.Rows {
+		var sum float64
+		for j := range i {
+			sum += m.Get(i, j) * res[j]
+		}
+		res[i] = (b[i] - sum) / m.Get(i, i)
+	}
+
+	return res, nil
+}
+
+// BackwardSubstitute 解上三角方程组 Ux = y (U 是 L^T).
+func (m *Matrix) BackwardSubstitute(b []float64) ([]float64, error) {
+	if m.Rows != m.Cols || len(b) != m.Rows {
+		return nil, xerrors.ErrDimMismatch
+	}
+
+	res := make([]float64, m.Rows)
+	for i := m.Rows - 1; i >= 0; i-- {
+		var sum float64
+		for j := i + 1; j < m.Cols; j++ {
+			sum += m.Get(j, i) * res[j] // 这里使用 L 的转置，即原本的 L.Get(j, i)
+		}
+		res[i] = (b[i] - sum) / m.Get(i, i)
+	}
+
+	return res, nil
+}
+
+// SolveCholesky 使用 Cholesky 分解求解 Mx = b.
+func (m *Matrix) SolveCholesky(b []float64) ([]float64, error) {
+	L, err := m.Cholesky()
+	if err != nil {
+		return nil, err
+	}
+
+	y, err := L.ForwardSubstitute(b)
+	if err != nil {
+		return nil, err
+	}
+
+	return L.BackwardSubstitute(y)
+}

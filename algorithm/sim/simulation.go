@@ -1,4 +1,4 @@
-// Package algos - 市场模拟算法.
+// Package sim - 市场模拟算法.
 package sim
 
 import (
@@ -216,4 +216,89 @@ func (mc *MonteCarlo) CalculateVaRMonteCarlo(steps, paths int, confidenceLevel f
 	// 使用历史方法计算 VaR.
 	rc := finance.NewRiskCalculator()
 	return rc.CalculateVaR(returns, confidenceLevel)
+}
+
+// HestonModel 赫斯顿模型 (随机波动率).
+type HestonModel struct {
+	InitialPrice decimal.Decimal
+	InitialVol   decimal.Decimal
+	Kappa        decimal.Decimal // 波动率回归速度.
+	Theta        decimal.Decimal // 长期平均波动率.
+	Sigma        decimal.Decimal // 波动率的波动率.
+	Rho          decimal.Decimal // 资产与波动率的相关性.
+}
+
+func NewHestonModel(price, vol, kappa, theta, sigma, rho decimal.Decimal) *HestonModel {
+	return &HestonModel{price, vol, kappa, theta, sigma, rho}
+}
+
+// Simulate 模拟 Heston 价格路径.
+func (h *HestonModel) Simulate(steps int, dt decimal.Decimal) []decimal.Decimal {
+	prices := make([]decimal.Decimal, steps+1)
+	vols := make([]float64, steps+1)
+	prices[0] = h.InitialPrice
+	vols[0] = h.InitialVol.InexactFloat64()
+
+	dtF := dt.InexactFloat64()
+	kappaF := h.Kappa.InexactFloat64()
+	thetaF := h.Theta.InexactFloat64()
+	sigmaF := h.Sigma.InexactFloat64()
+	rhoF := h.Rho.InexactFloat64()
+
+	for i := 1; i <= steps; i++ {
+		z1 := cryptoNormFloat64()
+		z2 := cryptoNormFloat64()
+		zv := rhoF*z1 + math.Sqrt(1-rhoF*rhoF)*z2
+
+		// 波动率演化 (CIR Process). 必须保证非负.
+		vPrev := math.Max(0, vols[i-1])
+		vNext := vPrev + kappaF*(thetaF-vPrev)*dtF + sigmaF*math.Sqrt(vPrev*dtF)*zv
+		vols[i] = math.Max(0, vNext)
+
+		// 价格演化.
+		pPrev := prices[i-1].InexactFloat64()
+		exponent := (0-0.5*vPrev)*dtF + math.Sqrt(vPrev*dtF)*z1
+		prices[i] = decimal.NewFromFloat(pPrev * math.Exp(exponent))
+	}
+	return prices
+}
+
+// MertonJumpDiffusion 默顿跳跃扩散模型.
+type MertonJumpDiffusion struct {
+	InitialPrice decimal.Decimal
+	Drift        decimal.Decimal
+	Volatility   decimal.Decimal
+	JumpLambda   decimal.Decimal // 跳跃频率.
+	JumpMu       decimal.Decimal // 跳跃均值.
+	JumpSigma    decimal.Decimal // 跳跃标准差.
+}
+
+func (m *MertonJumpDiffusion) Simulate(steps int, dt decimal.Decimal) []decimal.Decimal {
+	prices := make([]decimal.Decimal, steps+1)
+	prices[0] = m.InitialPrice
+
+	dtF := dt.InexactFloat64()
+	muF := m.Drift.InexactFloat64()
+	volF := m.Volatility.InexactFloat64()
+	lambdaF := m.JumpLambda.InexactFloat64()
+	jMuF := m.JumpMu.InexactFloat64()
+	jVolF := m.JumpSigma.InexactFloat64()
+
+	for i := 1; i <= steps; i++ {
+		z := cryptoNormFloat64()
+		// 基础扩散项.
+		driftTerm := (muF - 0.5*volF*volF) * dtF
+		diffTerm := volF * math.Sqrt(dtF) * z
+
+		// 跳跃项 (Poisson Process).
+		var jumpTerm float64
+		// 生成泊松分布随机数 (简化版：假设一个小步长内最多发生一次跳跃).
+		if cryptoNormFloat64() < lambdaF*dtF {
+			jumpTerm = jMuF + jVolF*cryptoNormFloat64()
+		}
+
+		pPrev := prices[i-1].InexactFloat64()
+		prices[i] = decimal.NewFromFloat(pPrev * math.Exp(driftTerm+diffTerm+jumpTerm))
+	}
+	return prices
 }

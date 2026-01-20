@@ -1,6 +1,6 @@
 module github.com/wyfcoding/pkg
 
-go 1.25.5
+go 1.25.6
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
@@ -17,7 +17,7 @@ require (
 	github.com/neo4j/neo4j-go-driver/v6 v6.0.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.17.2
-	github.com/segmentio/kafka-go v0.4.49
+	github.com/segmentio/kafka-go v0.4.50
 	github.com/shopspring/decimal v1.4.0
 	github.com/sony/gobreaker v1.0.0
 	github.com/sony/sonyflake v1.3.0
@@ -43,6 +43,8 @@ require (
 	gorm.io/plugin/opentelemetry v0.1.16
 )
 
+require github.com/go-ini/ini v1.67.0 // indirect
+
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/ClickHouse/ch-go v0.69.0 // indirect
@@ -65,7 +67,6 @@ require (
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
-	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -87,7 +88,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.2 // indirect
+	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -102,7 +103,7 @@ require (
 	github.com/paulmach/orb v0.12.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.23 // indirect
+	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
