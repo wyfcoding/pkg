@@ -58,9 +58,9 @@ type Client struct {
 
 // Config 定义了初始化搜索客户端所需的各项参数.
 type Config struct {
+	Limiter     limiter.Limiter // 可选：注入自定义限流器（如分布式限流器）。
+	ServiceName string
 	config.ElasticsearchConfig
-	Limiter       limiter.Limiter // 可选：注入自定义限流器（如分布式限流器）。
-	ServiceName   string
 	BreakerConfig config.CircuitBreakerConfig
 	SlowThreshold time.Duration
 	MaxRetries    int

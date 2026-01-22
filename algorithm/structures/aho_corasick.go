@@ -20,10 +20,10 @@ type ACNode[T any] struct {
 
 // AhoCorasick AC自动机泛型实现.
 type AhoCorasick[T any] struct {
-	mu       sync.RWMutex
-	patterns []T
 	root     *ACNode[T]
 	toString func(T) string
+	patterns []T
+	mu       sync.RWMutex
 }
 
 // NewAhoCorasick 创建AC自动机.

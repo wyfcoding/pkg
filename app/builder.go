@@ -6,8 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
-	_ "net/http/pprof"
 	"reflect"
 	"time"
 
@@ -19,7 +17,6 @@ import (
 	"github.com/wyfcoding/pkg/middleware"
 	"github.com/wyfcoding/pkg/response"
 	"github.com/wyfcoding/pkg/server"
-	"github.com/wyfcoding/pkg/system"
 	"github.com/wyfcoding/pkg/tracing"
 	"google.golang.org/grpc"
 )
@@ -136,20 +133,8 @@ func (b *Builder[C, S]) Build() *App {
 	cfg := b.loadConfig()
 	loggerInstance := b.initLogger(&cfg)
 
-	// 如果开启了 pprof (通过环境变量控制)
-	if system.GetEnvBool("ENABLE_PPROF", false) {
-		addr := system.GetEnv("PPROF_ADDR", ":6060")
-		go func() {
-			slog.Info("Starting pprof server", "addr", addr)
-			server := &http.Server{
-				Addr:              addr,
-				ReadHeaderTimeout: 3 * time.Second,
-			}
-			if err := server.ListenAndServe(); err != nil {
-				slog.Error("pprof server failed", "error", err)
-			}
-		}()
-	}
+	// Removed pprof auto-start to avoid G108 (Profiling endpoint exposed).
+	// If pprof is needed, please register it manually on a secure port or internal network.
 
 	if b.wsManager != nil {
 		b.appOpts = append(b.appOpts, WithCleanup(func() {

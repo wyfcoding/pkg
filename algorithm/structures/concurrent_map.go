@@ -9,9 +9,9 @@ type HashFunc[K comparable] func(key K) uint32
 
 // ConcurrentMap 线程安全的分片 Map 实现。
 type ConcurrentMap[K comparable, V any] struct {
-	shards   []*shard[K, V]
 	hashFunc HashFunc[K]
-	count    int
+	shards   []*shard[K, V]
+	count    uint32
 }
 
 type shard[K comparable, V any] struct {
@@ -20,7 +20,10 @@ type shard[K comparable, V any] struct {
 }
 
 // NewConcurrentMap 创建一个线程安全的分片 Map。
-func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K]) *ConcurrentMap[K, V] {
+func NewConcurrentMap[K comparable, V any](shardCount uint32, hashFunc HashFunc[K]) *ConcurrentMap[K, V] {
+	if shardCount == 0 {
+		shardCount = 16
+	}
 	m := &ConcurrentMap[K, V]{
 		shards:   make([]*shard[K, V], shardCount),
 		hashFunc: hashFunc,
@@ -33,7 +36,7 @@ func NewConcurrentMap[K comparable, V any](shardCount int, hashFunc HashFunc[K])
 }
 
 func (m *ConcurrentMap[K, V]) getShard(key K) *shard[K, V] {
-	return m.shards[m.hashFunc(key)%uint32(m.count)]
+	return m.shards[m.hashFunc(key)%m.count]
 }
 
 // Set 设置键值对。
@@ -81,7 +84,7 @@ type ConcurrentStringMap[V any] struct {
 }
 
 // NewConcurrentStringMap 创建 string 类型的分片 Map。
-func NewConcurrentStringMap[V any](shardCount int) *ConcurrentStringMap[V] {
+func NewConcurrentStringMap[V any](shardCount uint32) *ConcurrentStringMap[V] {
 	// 简单的 string 哈希函数
 	hash := func(key string) uint32 {
 		var h uint32

@@ -24,8 +24,8 @@ type Order struct {
 	Symbol     string
 	UserID     string
 	PegType    string // "MID", "BEST_BID", "BEST_ASK"
-	Timestamp  int64
 	Side       Side
+	Timestamp  int64
 	IsIceberg  bool
 	PostOnly   bool
 	IsPegged   bool

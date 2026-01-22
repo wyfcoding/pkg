@@ -17,10 +17,10 @@ var (
 // Session 维护一个 FIX 连接的状态
 type Session struct {
 	LastHeartbeat time.Time
-	mu            sync.RWMutex
 	ID            string
 	SenderCompID  string
 	TargetCompID  string
+	mu            sync.RWMutex
 	InSeqNum      int64
 	OutSeqNum     int64
 }

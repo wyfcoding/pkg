@@ -1,10 +1,10 @@
 package finance
 
 import (
+	crand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math"
-	"math/rand/v2"
-	"time"
 
 	algomath "github.com/wyfcoding/pkg/algorithm/math"
 )
@@ -39,13 +39,14 @@ func (p *LSMPricer) ComputePrice(params AmericanOptionParams) (float64, error) {
 	df := math.Exp(-params.R * dt)
 
 	// 1. 生成路径
-	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
+	// G404 Fix: Use crypto/rand for simulation (slow but safe)
 	paths := make([][]float64, params.Paths)
 	for i := range paths {
 		paths[i] = make([]float64, params.Steps+1)
 		paths[i][0] = params.S0
 		for j := 1; j <= params.Steps; j++ {
-			z := rng.NormFloat64()
+			// Box-Muller transform using crypto/rand
+			z := p.cryptoNormFloat64()
 			paths[i][j] = paths[i][j-1] * math.Exp((params.R-0.5*math.Pow(params.Sigma, 2))*dt+params.Sigma*math.Sqrt(dt)*z)
 		}
 	}
@@ -135,4 +136,24 @@ func (p *LSMPricer) regress(x, y []float64) ([]float64, error) {
 
 	// 求解线性方程组 ATA * coeffs = ATy
 	return ATA.SolveCholesky(ATy)
+}
+
+func (p *LSMPricer) cryptoNormFloat64() float64 {
+	// Box-Muller transform
+	// Generate u1, u2 in (0, 1]
+	u1 := p.cryptoFloat64()
+	u2 := p.cryptoFloat64()
+
+	R := math.Sqrt(-2.0 * math.Log(u1))
+	Theta := 2.0 * math.Pi * u2
+	return R * math.Cos(Theta)
+}
+
+func (p *LSMPricer) cryptoFloat64() float64 {
+	// Generate random float in (0, 1]
+	// 53 bits of precision
+	b := make([]byte, 8)
+	_, _ = crand.Read(b)
+	i := binary.LittleEndian.Uint64(b)
+	return float64(i&(1<<53-1)+1) / (1 << 53)
 }

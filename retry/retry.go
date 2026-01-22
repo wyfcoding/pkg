@@ -3,8 +3,9 @@ package retry
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"math/rand/v2"
+	"math/big"
 	"time"
 )
 
@@ -64,7 +65,9 @@ func If(ctx context.Context, fn Func, shouldRetry func(error) bool, cfg Config) 
 		nextBackoff := float64(backoff) * cfg.Multiplier
 
 		if cfg.Jitter > 0 {
-			rv := rand.Float64()
+			// G404 Fix: Use crypto/rand
+			n, _ := rand.Int(rand.Reader, big.NewInt(1000000))
+			rv := float64(n.Int64()) / 1000000.0
 			jitterValue := (rv*2 - 1) * cfg.Jitter * nextBackoff
 			nextBackoff += jitterValue
 		}

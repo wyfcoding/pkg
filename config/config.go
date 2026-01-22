@@ -84,9 +84,9 @@ type DatabaseConfig struct {
 
 // RedisConfig 定义 Redis 连接与池化参数.
 type RedisConfig struct {
-	Addrs        []string      `mapstructure:"addrs"         toml:"addrs"`
 	MasterName   string        `mapstructure:"master_name"   toml:"master_name"`
 	Password     string        `mapstructure:"password"      toml:"password"`
+	Addrs        []string      `mapstructure:"addrs"         toml:"addrs"`
 	ReadTimeout  time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
 	WriteTimeout time.Duration `mapstructure:"write_timeout" toml:"write_timeout"`
 	DB           int           `mapstructure:"db"            toml:"db"`

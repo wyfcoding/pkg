@@ -56,8 +56,8 @@ func (s *SimHash) Calculate(text string, tokenizer Tokenizer) uint64 {
 	for token, weight := range tokens {
 		h := getFNVHash(token)
 
-		for i := range s.hashBits {
-			if (h & (uint64(1) << uint(i))) != 0 {
+		for i := uint(0); i < uint(s.hashBits); i++ {
+			if (h & (uint64(1) << i)) != 0 {
 				weights[i] += weight
 			} else {
 				weights[i] -= weight
@@ -66,9 +66,9 @@ func (s *SimHash) Calculate(text string, tokenizer Tokenizer) uint64 {
 	}
 
 	var result uint64
-	for i := range s.hashBits {
+	for i := uint(0); i < uint(s.hashBits); i++ {
 		if weights[i] > 0 {
-			result |= (uint64(1) << uint(i))
+			result |= (uint64(1) << i)
 		}
 	}
 

@@ -60,8 +60,8 @@ type RedisCache struct {
 }
 
 // NewRedisCache 初始化并返回一个具备熔断和监控能力的 Redis 缓存实例。
-func NewRedisCache(cfg config.RedisConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*RedisCache, error) {
-	client, cleanup, err := pkgredis.NewClient(&cfg, logger)
+func NewRedisCache(cfg *config.RedisConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*RedisCache, error) {
+	client, cleanup, err := pkgredis.NewClient(cfg, logger)
 	if err != nil {
 		return nil, err
 	}
