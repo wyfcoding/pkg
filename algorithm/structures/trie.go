@@ -12,14 +12,14 @@ type TrieNode[V any] struct {
 }
 
 // Reset 重置节点以便复用。
-func (n *TrieNode[V]) reset() {
-	for k := range n.children {
-		delete(n.children, k)
-	}
-	n.isEnd = false
-	var zero V
-	n.value = zero
-}
+// func (n *TrieNode[V]) reset() {
+// 	for k := range n.children {
+// 		delete(n.children, k)
+// 	}
+// 	n.isEnd = false
+// 	var zero V
+// 	n.value = zero
+// }
 
 // Trie 结构体实现了字典树（前缀树）数据结构。
 type Trie[V any] struct {

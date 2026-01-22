@@ -114,7 +114,7 @@ func NewSonyflakeGenerator(cfg config.SnowflakeConfig) (*SonyflakeGenerator, err
 }
 
 func (g *SonyflakeGenerator) Generate() int64 {
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		id, err := g.sf.NextID()
 		if err == nil {
 			return cast.Uint64ToInt64(id & 0x7FFFFFFFFFFFFFFF)

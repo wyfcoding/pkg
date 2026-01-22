@@ -16,6 +16,7 @@ const (
 	UAKey                          // 用户代理 Key。
 	RequestIDKey                   // 请求唯一标识 Key。
 	DBTxKey                        // 数据库事务 Key。
+	ScopesKey                      // 用户权限范围 Key。
 )
 
 // AllKeys 返回所有标准业务上下文 Key。
@@ -26,6 +27,7 @@ var AllKeys = []contextKey{
 	IPKey,
 	UAKey,
 	RequestIDKey,
+	ScopesKey,
 }
 
 // KeyNames 映射 Key 到日志字段名。
@@ -36,6 +38,7 @@ var KeyNames = map[contextKey]string{
 	IPKey:        "client_ip",
 	UAKey:        "user_agent",
 	RequestIDKey: "request_id",
+	ScopesKey:    "scopes",
 }
 
 // WithRequestID 将请求 ID 注入到 Context 中。
@@ -121,6 +124,19 @@ func WithTenantID(ctx context.Context, tenantID string) context.Context {
 // GetTenantID 从 Context 中尝试提取租户 ID，若不存在则返回空字符串。
 func GetTenantID(ctx context.Context) string {
 	if val, ok := ctx.Value(TenantIDKey).(string); ok {
+		return val
+	}
+	return ""
+}
+
+// WithScopes 将用户权限范围信息注入到 Context 中。
+func WithScopes(ctx context.Context, scopes string) context.Context {
+	return context.WithValue(ctx, ScopesKey, scopes)
+}
+
+// GetScopes 从 Context 中尝试提取用户权限范围，若不存在则返回空字符串。
+func GetScopes(ctx context.Context) string {
+	if val, ok := ctx.Value(ScopesKey).(string); ok {
 		return val
 	}
 	return ""

@@ -71,10 +71,10 @@ func Recovery() gin.HandlerFunc {
 func GRPCRecovery() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (resp interface{}, err error) {
+	) (resp any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				logging.Error(ctx, "gRPC recovered from panic",

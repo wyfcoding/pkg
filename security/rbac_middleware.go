@@ -2,6 +2,7 @@ package security
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,13 +19,7 @@ func RBACMiddleware(allowedRoles ...string) gin.HandlerFunc {
 		}
 
 		userRole := role.(string)
-		isAllowed := false
-		for _, r := range allowedRoles {
-			if userRole == r {
-				isAllowed = true
-				break
-			}
-		}
+		isAllowed := slices.Contains(allowedRoles, userRole)
 
 		if !isAllowed {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})

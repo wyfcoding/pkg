@@ -8,6 +8,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/wyfcoding/pkg/contextx"
 )
 
 // APIKeyValidator 定义了验证 API Key 的接口
@@ -26,7 +28,7 @@ func NewAuthInterceptor(v APIKeyValidator) *AuthInterceptor {
 
 // Unary 是一元请求的认证拦截器
 func (i *AuthInterceptor) Unary() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// 1. 提取 Metadata 中的 API Key
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
@@ -46,8 +48,8 @@ func (i *AuthInterceptor) Unary() grpc.UnaryServerInterceptor {
 		}
 
 		// 3. 注入用户信息到 Context
-		newCtx := context.WithValue(ctx, "user_id", userID)
-		newCtx = context.WithValue(newCtx, "scopes", scopes)
+		newCtx := contextx.WithUserID(ctx, userID)
+		newCtx = contextx.WithScopes(newCtx, scopes)
 
 		return handler(newCtx, req)
 	}
@@ -55,8 +57,8 @@ func (i *AuthInterceptor) Unary() grpc.UnaryServerInterceptor {
 
 // ScopeRequired 检查 Context 中是否包含指定的 Scope
 func ScopeRequired(ctx context.Context, requiredScope string) error {
-	scopes, ok := ctx.Value("scopes").(string)
-	if !ok {
+	scopes := contextx.GetScopes(ctx)
+	if scopes == "" {
 		return status.Errorf(codes.PermissionDenied, "no scopes found in context")
 	}
 

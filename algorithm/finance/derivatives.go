@@ -121,8 +121,8 @@ func (p *LSMPricer) regress(x, y []float64) ([]float64, error) {
 
 	// A 是 Vandermonde 矩阵 [n x m]
 	A := algomath.NewMatrix(n, m)
-	for i := 0; i < n; i++ {
-		for j := 0; j < m; j++ {
+	for i := range x {
+		for j := range y {
 			A.Set(i, j, math.Pow(x[i], float64(j)))
 		}
 	}

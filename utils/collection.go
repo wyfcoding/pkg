@@ -1,6 +1,8 @@
 // Package utils 提供了通用的集合处理工具.
 package utils
 
+import "slices"
+
 // Filter 对切片进行过滤，返回符合条件的元素.
 func Filter[T any](items []T, fn func(T) bool) []T {
 	var result []T
@@ -34,12 +36,7 @@ func Find[T any](items []T, fn func(T) bool) (T, bool) {
 
 // Contains 判断切片是否包含某个元素.
 func Contains[T comparable](items []T, target T) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(items, target)
 }
 
 // Unique 返回去重后的切片.
@@ -80,10 +77,7 @@ func Chunk[T any](items []T, size int) [][]T {
 	}
 	var chunks [][]T
 	for i := 0; i < len(items); i += size {
-		end := i + size
-		if end > len(items) {
-			end = len(items)
-		}
+		end := min(i+size, len(items))
 		chunks = append(chunks, items[i:end])
 	}
 	return chunks
