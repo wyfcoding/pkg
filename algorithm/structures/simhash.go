@@ -16,7 +16,7 @@ const (
 
 // SimHash 局部敏感哈希算法实现.
 type SimHash struct {
-	hashBits int
+	hashBits uint
 }
 
 // NewSimHash 创建一个新的 SimHash 实例.
@@ -56,7 +56,7 @@ func (s *SimHash) Calculate(text string, tokenizer Tokenizer) uint64 {
 	for token, weight := range tokens {
 		h := getFNVHash(token)
 
-		for i := uint(0); i < uint(s.hashBits); i++ {
+		for i := range s.hashBits {
 			if (h & (uint64(1) << i)) != 0 {
 				weights[i] += weight
 			} else {
@@ -66,7 +66,7 @@ func (s *SimHash) Calculate(text string, tokenizer Tokenizer) uint64 {
 	}
 
 	var result uint64
-	for i := uint(0); i < uint(s.hashBits); i++ {
+	for i := range s.hashBits {
 		if weights[i] > 0 {
 			result |= (uint64(1) << i)
 		}

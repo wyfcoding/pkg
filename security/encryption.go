@@ -13,10 +13,8 @@ import (
 	"io"
 )
 
-var (
-	// ErrCiphertextTooShort 密文长度不足
-	ErrCiphertextTooShort = errors.New("ciphertext too short")
-)
+// ErrCiphertextTooShort 密文长度不足
+var ErrCiphertextTooShort = errors.New("ciphertext too short")
 
 // HashSHA256 计算 SHA256 哈希值并返回十六进制字符串.
 func HashSHA256(data string) string {
