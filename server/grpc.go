@@ -63,7 +63,7 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.logger.Info("grpc server stopping due to context cancellation")
-		return s.Stop(context.Background())
+		return s.Stop(context.WithoutCancel(ctx))
 	case err := <-errChan:
 		return err
 	}

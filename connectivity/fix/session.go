@@ -1,22 +1,28 @@
 package fix
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
 
+var (
+	// ErrSeqNumTooLow 序列号过低.
+	ErrSeqNumTooLow = errors.New("seq num too low")
+	// ErrSeqNumGap 序列号存在间隔.
+	ErrSeqNumGap = errors.New("seq num gap detected")
+)
+
 // Session 维护一个 FIX 连接的状态
 type Session struct {
-	ID           string
-	SenderCompID string
-	TargetCompID string
-
-	InSeqNum  int64
-	OutSeqNum int64
-
 	LastHeartbeat time.Time
 	mu            sync.RWMutex
+	ID            string
+	SenderCompID  string
+	TargetCompID  string
+	InSeqNum      int64
+	OutSeqNum     int64
 }
 
 func NewSession(id, sender, target string) *Session {
@@ -43,11 +49,11 @@ func (s *Session) ValidateInSeq(seq int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if seq < s.InSeqNum {
-		return fmt.Errorf("seq num too low: got %d, want %d", seq, s.InSeqNum)
+		return fmt.Errorf("%w: got %d, want %d", ErrSeqNumTooLow, seq, s.InSeqNum)
 	}
 	if seq > s.InSeqNum {
 		// 实际应触发 ResendRequest
-		return fmt.Errorf("seq num gap detected: got %d, want %d", seq, s.InSeqNum)
+		return fmt.Errorf("%w: got %d, want %d", ErrSeqNumGap, seq, s.InSeqNum)
 	}
 	s.InSeqNum++
 	s.LastHeartbeat = time.Now()

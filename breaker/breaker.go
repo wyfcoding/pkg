@@ -104,7 +104,6 @@ func ExecuteTyped[T any](b *Breaker, fn func() (T, error)) (T, error) {
 	res, err := b.circuitBreaker.Execute(func() (any, error) {
 		return fn()
 	})
-
 	if err != nil {
 		var zero T
 		if errors.Is(err, gobreaker.ErrOpenState) {

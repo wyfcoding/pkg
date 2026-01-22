@@ -26,8 +26,8 @@ type SOROptimizer struct {
 
 func (o *SOROptimizer) Optimize(totalQty decimal.Decimal, inputs []RouteInput, isBuy bool) []RouteOutput {
 	type effectiveNode struct {
-		input    RouteInput
 		effPrice decimal.Decimal
+		input    RouteInput
 	}
 
 	nodes := make([]effectiveNode, len(inputs))
@@ -76,7 +76,7 @@ func (o *SOROptimizer) Optimize(totalQty decimal.Decimal, inputs []RouteInput, i
 	}
 
 	// VWAP 合并各 Venue 的结果
-	var final []RouteOutput
+	final := make([]RouteOutput, 0, len(venueGroups))
 	for venueID, group := range venueGroups {
 		var totalV, totalQ decimal.Decimal
 		for _, r := range group {

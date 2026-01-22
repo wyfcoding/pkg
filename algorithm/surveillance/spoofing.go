@@ -7,19 +7,19 @@ import (
 )
 
 type MarketEvent struct {
-	UserID    string
-	Type      string // PLACE, CANCEL, FILL
 	Price     decimal.Decimal
 	Quantity  decimal.Decimal
 	Timestamp time.Time
+	UserID    string
+	Type      string // PLACE, CANCEL, FILL
 }
 
-type SurveillanceEngine struct {
+type Engine struct {
 	Threshold decimal.Decimal
 	Window    time.Duration
 }
 
-func (e *SurveillanceEngine) Analyze(events []MarketEvent) (score float64, reason string) {
+func (e *Engine) Analyze(events []MarketEvent) (score float64, reason string) {
 	if len(events) == 0 {
 		return 0, "No events"
 	}

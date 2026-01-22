@@ -20,9 +20,9 @@ type ACNode[T any] struct {
 
 // AhoCorasick AC自动机泛型实现.
 type AhoCorasick[T any] struct {
-	root     *ACNode[T]
-	patterns []T
 	mu       sync.RWMutex
+	patterns []T
+	root     *ACNode[T]
 	toString func(T) string
 }
 
@@ -165,13 +165,11 @@ func (ac *AhoCorasick[T]) Match(text string) []MatchResult[T] {
 		"duration", time.Since(start))
 
 	return results
-
 }
 
 // Contains 检查文本中是否包含任何模式串.
 
 func (ac *AhoCorasick[T]) Contains(text string) bool {
-
 	ac.mu.RLock()
 
 	defer ac.mu.RUnlock()
@@ -179,35 +177,21 @@ func (ac *AhoCorasick[T]) Contains(text string) bool {
 	curr := ac.root
 
 	for _, r := range text {
-
 		for {
-
 			if next, ok := curr.children[r]; ok {
-
 				curr = next
-
 				break
-
 			}
-
 			if curr == ac.root {
-
 				break
-
 			}
-
 			curr = curr.fail
-
 		}
 
 		if curr.patternIdx != -1 || curr.endFail != nil {
-
 			return true
-
 		}
-
 	}
 
 	return false
-
 }

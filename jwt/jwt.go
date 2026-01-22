@@ -75,7 +75,6 @@ func ParseToken(tokenString, secret string) (*MyCustomClaims, error) {
 
 		return []byte(secret), nil
 	})
-
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired

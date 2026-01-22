@@ -38,7 +38,7 @@ func TimeoutMiddleware(duration time.Duration) gin.HandlerFunc {
 
 // GRPCTimeoutInterceptor 为 gRPC 提供一元调用的超时拦截器。
 func GRPCTimeoutInterceptor(timeout time.Duration) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return handler(ctx, req)

@@ -38,7 +38,7 @@ func DefaultTokenizer(text string) map[string]int {
 	for _, w := range words {
 		tokens[w]++
 	}
-	for i := 0; i < len(words)-1; i++ {
+	for i := range len(words) - 1 {
 		tokens[words[i]+"_"+words[i+1]]++
 	}
 	return tokens
@@ -56,8 +56,8 @@ func (s *SimHash) Calculate(text string, tokenizer Tokenizer) uint64 {
 	for token, weight := range tokens {
 		h := getFNVHash(token)
 
-		for i := 0; i < s.hashBits; i++ {
-			if (h & (1 << uint(i))) != 0 {
+		for i := range s.hashBits {
+			if (h & (uint64(1) << uint(i))) != 0 {
 				weights[i] += weight
 			} else {
 				weights[i] -= weight
@@ -66,9 +66,9 @@ func (s *SimHash) Calculate(text string, tokenizer Tokenizer) uint64 {
 	}
 
 	var result uint64
-	for i := 0; i < s.hashBits; i++ {
+	for i := range s.hashBits {
 		if weights[i] > 0 {
-			result |= (1 << uint(i))
+			result |= (uint64(1) << uint(i))
 		}
 	}
 

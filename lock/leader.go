@@ -43,7 +43,7 @@ func (e *LeaderElector) Campaign(ctx context.Context, callback func(ctx context.
 
 			// 正常退出或 ctx 结束，释放锁
 			stop()
-			e.lock.Unlock(context.Background(), e.key, token)
+			_ = e.lock.Unlock(context.WithoutCancel(ctx), e.key, token)
 			slog.Info("Successfully resigned from leader", "key", e.key)
 		}
 	}

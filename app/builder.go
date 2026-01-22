@@ -122,7 +122,7 @@ func (b *Builder[C, S]) WithGinMiddleware(mw ...gin.HandlerFunc) *Builder[C, S] 
 // WithWebSocket 启用 WebSocket 支持.
 func (b *Builder[C, S]) WithWebSocket(path string) *Builder[C, S] {
 	b.wsManager = server.NewWSManager(logging.Default().Logger)
-	b.WithGin(func(e *gin.Engine, svc S) {
+	b.WithGin(func(e *gin.Engine, _ S) {
 		e.GET(path, func(c *gin.Context) {
 			b.wsManager.ServeHTTP(c.Writer, c.Request)
 		})
@@ -141,7 +141,11 @@ func (b *Builder[C, S]) Build() *App {
 		addr := system.GetEnv("PPROF_ADDR", ":6060")
 		go func() {
 			slog.Info("Starting pprof server", "addr", addr)
-			if err := http.ListenAndServe(addr, nil); err != nil {
+			server := &http.Server{
+				Addr:              addr,
+				ReadHeaderTimeout: 3 * time.Second,
+			}
+			if err := server.ListenAndServe(); err != nil {
 				slog.Error("pprof server failed", "error", err)
 			}
 		}()
@@ -182,15 +186,16 @@ func (b *Builder[C, S]) loadConfig() config.Config {
 	flag.Parse()
 
 	if err := config.Load(flagPath, b.configInstance); err != nil {
-		panic(fmt.Errorf("failed to load config: %v", err))
+		panic("failed to load config: " + err.Error())
 	}
 
 	var cfg config.Config
-	if c, ok := any(b.configInstance).(*config.Config); ok {
+	switch c := any(b.configInstance).(type) {
+	case *config.Config:
 		cfg = *c
-	} else if c, ok := any(b.configInstance).(config.Config); ok {
+	case config.Config:
 		cfg = c
-	} else {
+	default:
 		// 使用反射尝试提取嵌套的 config.Config
 		val := reflect.ValueOf(b.configInstance)
 		if val.Kind() == reflect.Ptr {
@@ -198,7 +203,7 @@ func (b *Builder[C, S]) loadConfig() config.Config {
 		}
 
 		found := false
-		for i := 0; i < val.NumField(); i++ {
+		for i := range val.NumField() {
 			field := val.Type().Field(i)
 			if (field.Name == "Config" || field.Anonymous) && field.Type == reflect.TypeFor[config.Config]() {
 				cfg = val.Field(i).Interface().(config.Config)

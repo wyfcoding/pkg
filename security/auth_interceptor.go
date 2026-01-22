@@ -28,7 +28,7 @@ func NewAuthInterceptor(v APIKeyValidator) *AuthInterceptor {
 
 // Unary 是一元请求的认证拦截器
 func (i *AuthInterceptor) Unary() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// 1. 提取 Metadata 中的 API Key
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {

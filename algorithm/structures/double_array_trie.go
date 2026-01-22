@@ -38,12 +38,12 @@ func (dat *DoubleArrayTrie[V]) Build(keys []string, values []V) error {
 
 	// 简单的包装，用于排序
 	type entry struct {
-		key string
 		val V
+		key string
 	}
 	entries := make([]entry, len(keys))
 	for i := range keys {
-		entries[i] = entry{keys[i], values[i]}
+		entries[i] = entry{values[i], keys[i]}
 	}
 	slices.SortFunc(entries, func(a, b entry) int {
 		if a.key < b.key {

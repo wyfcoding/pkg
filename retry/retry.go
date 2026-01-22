@@ -33,11 +33,11 @@ func DefaultRetryConfig() Config {
 
 // Retry 根据配置的策略执行函数 fn.
 func Retry(ctx context.Context, fn Func, cfg Config) error {
-	return RetryIf(ctx, fn, func(error) bool { return true }, cfg)
+	return If(ctx, fn, func(error) bool { return true }, cfg)
 }
 
-// RetryIf 仅在 shouldRetry 返回 true 时进行重试.
-func RetryIf(ctx context.Context, fn Func, shouldRetry func(error) bool, cfg Config) error {
+// If 仅在 shouldRetry 返回 true 时进行重试.
+func If(ctx context.Context, fn Func, shouldRetry func(error) bool, cfg Config) error {
 	if cfg.MaxRetries < 0 {
 		return fn()
 	}

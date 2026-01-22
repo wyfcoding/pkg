@@ -76,7 +76,7 @@ func NewRiskCalculator() *RiskCalculator {
 }
 
 // CalculateVaR 计算 Value at Risk (VaR)
-func (c *RiskCalculator) CalculateVaR(returns []decimal.Decimal, confidence float64) (decimal.Decimal, error) {
+func (c *RiskCalculator) CalculateVaR(returns []decimal.Decimal, _ float64) (decimal.Decimal, error) {
 	if len(returns) == 0 {
 		return decimal.Zero, nil
 	}
@@ -125,7 +125,7 @@ func (c *RiskCalculator) CalculateSharpeRatio(returns []decimal.Decimal, riskFre
 }
 
 // EvaluateFraudScore 评估异常/欺诈评分 (加权聚合)
-func (c *RiskCalculator) EvaluateFraudScore(factors map[string]float64, weights map[string]float64) float64 {
+func (c *RiskCalculator) EvaluateFraudScore(factors, weights map[string]float64) float64 {
 	var totalScore float64
 	for k, w := range weights {
 		if val, ok := factors[k]; ok {

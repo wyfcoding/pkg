@@ -62,7 +62,7 @@ func (p *LSMPricer) ComputePrice(params AmericanOptionParams) (float64, error) {
 		var yData []float64
 		var indices []int
 
-		for i := 0; i < params.Paths; i++ {
+		for i := range params.Paths {
 			s := paths[i][t]
 			iv := p.payoff(s, params.K, params.IsPut)
 			if iv > 0 { // 仅考虑价内路径

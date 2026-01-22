@@ -9,10 +9,8 @@ import (
 	"sync"
 )
 
-var (
-	// ErrPanicRecovered 表示异步任务中恢复的 panic。
-	ErrPanicRecovered = errors.New("async task panic recovered")
-)
+// ErrPanicRecovered 表示异步任务中恢复的 panic。
+var ErrPanicRecovered = errors.New("async task panic recovered")
 
 // Runner 定义了安全的并发执行器接口。
 type Runner interface {

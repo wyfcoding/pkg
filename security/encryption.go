@@ -13,6 +13,11 @@ import (
 	"io"
 )
 
+var (
+	// ErrCiphertextTooShort 密文长度不足
+	ErrCiphertextTooShort = errors.New("ciphertext too short")
+)
+
 // HashSHA256 计算 SHA256 哈希值并返回十六进制字符串.
 func HashSHA256(data string) string {
 	h := sha256.New()
@@ -71,7 +76,7 @@ func Decrypt(ciphertextStr string, key []byte) ([]byte, error) {
 
 	nonceSize := aesGCM.NonceSize()
 	if len(data) < nonceSize {
-		return nil, errors.New("ciphertext too short")
+		return nil, ErrCiphertextTooShort
 	}
 
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]

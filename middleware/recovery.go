@@ -43,7 +43,7 @@ func Recovery() gin.HandlerFunc {
 						"request", string(httpRequest),
 					)
 					// 断开的连接无法写状态码。
-					c.Error(err.(error))
+					_ = c.Error(err.(error))
 					c.Abort()
 					return
 				}

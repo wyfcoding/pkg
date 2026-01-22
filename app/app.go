@@ -52,7 +52,7 @@ func New(name string, logger *slog.Logger, opts ...Option) *App {
 	for _, cleanup := range o.cleanups {
 		l.Append(Hook{
 			Name: "Cleanup",
-			OnStop: func(ctx context.Context) error {
+			OnStop: func(_ context.Context) error {
 				cleanup()
 				return nil
 			},

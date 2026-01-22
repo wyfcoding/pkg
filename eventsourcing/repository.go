@@ -3,8 +3,12 @@ package eventsourcing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
+
+// ErrAggregateNotFound 聚合根未找到.
+var ErrAggregateNotFound = errors.New("aggregate not found")
 
 // AggregateRepository 定义了聚合根的泛型仓储接口。
 type AggregateRepository[A Aggregate] interface {
@@ -54,7 +58,7 @@ func (r *EventSourcedRepository[A]) Load(ctx context.Context, id string) (A, err
 	// 1. 尝试加载快照
 	snapshot, version, err := r.store.GetSnapshot(ctx, id)
 	if err == nil && snapshot != nil {
-		if applier, ok := any(aggregate).(interface{ ApplySnapshot(any) }); ok {
+		if applier, ok := any(aggregate).(interface{ ApplySnapshot(snapshot any) }); ok {
 			applier.ApplySnapshot(snapshot)
 			aggregate.SetVersion(version)
 		}
@@ -69,7 +73,7 @@ func (r *EventSourcedRepository[A]) Load(ctx context.Context, id string) (A, err
 
 	if len(events) == 0 && aggregate.Version() == 0 {
 		var zero A
-		return zero, fmt.Errorf("aggregate %s not found", id)
+		return zero, fmt.Errorf("%w: %s", ErrAggregateNotFound, id)
 	}
 
 	// 3. 回放事件恢复状态

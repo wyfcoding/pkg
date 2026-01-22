@@ -62,7 +62,7 @@ func (s *GinServer) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.logger.Info("gin server stopping due to context cancellation")
-		return s.Stop(context.Background()) // 使用背景上下文触发 Stop
+		return s.Stop(context.WithoutCancel(ctx))
 	case err := <-errChan:
 		return err
 	}

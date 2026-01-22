@@ -91,15 +91,16 @@ func (t *RBTree[T]) insertFixup(targetNode *RBNode[T]) {
 	node := targetNode
 
 	for node.Parent != nil && node.Parent.Color == ColorRed {
-		if node.Parent.Parent != nil && node.Parent == node.Parent.Parent.Left {
+		switch {
+		case node.Parent.Parent != nil && node.Parent == node.Parent.Parent.Left:
 			node = t.fixInsertSide(node, true)
-		} else if node.Parent.Parent != nil {
+		case node.Parent.Parent != nil:
 			node = t.fixInsertSide(node, false)
-		} else {
-			break
+		default:
+			goto End // 跳出循环
 		}
 	}
-
+End:
 	t.Root.Color = ColorBlack
 }
 

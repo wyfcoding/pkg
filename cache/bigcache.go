@@ -66,7 +66,7 @@ func (c *BigCache) Get(ctx context.Context, key string, value any) error {
 }
 
 // Set 设置缓存，支持指定过期时间。
-func (c *BigCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
+func (c *BigCache) Set(ctx context.Context, key string, value any, _ time.Duration) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

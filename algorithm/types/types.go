@@ -19,18 +19,16 @@ type Order struct {
 	Quantity   decimal.Decimal
 	DisplayQty decimal.Decimal
 	HiddenQty  decimal.Decimal
+	PegOffset  decimal.Decimal // 偏移量
 	OrderID    string
 	Symbol     string
 	UserID     string
-	Side       Side
+	PegType    string // "MID", "BEST_BID", "BEST_ASK"
 	Timestamp  int64
+	Side       Side
 	IsIceberg  bool
 	PostOnly   bool
-
-	// Pegged Orders
-	IsPegged  bool
-	PegType   string          // "MID", "BEST_BID", "BEST_ASK"
-	PegOffset decimal.Decimal // 偏移量
+	IsPegged   bool
 }
 
 // OrderBookLevel 订单簿档位，聚合了同一价格下的委托总量。

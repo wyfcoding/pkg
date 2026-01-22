@@ -11,11 +11,11 @@ import (
 
 // HistoricalQuote 定义历史行情数据点
 type HistoricalQuote struct {
+	Timestamp time.Time
 	Symbol    string
 	BidPrice  decimal.Decimal
 	AskPrice  decimal.Decimal
 	LastPrice decimal.Decimal
-	Timestamp time.Time
 }
 
 // ClickHouseFetcher 从 ClickHouse 读取历史数据进行回测

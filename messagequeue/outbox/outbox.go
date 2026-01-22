@@ -199,7 +199,6 @@ func (p *Processor) process() {
 		// 锁定 1 分钟，给异步发送预留足够时间。
 		return tx.Model(&Message{}).Where("id IN ?", ids).Update("next_retry", time.Now().Add(time.Minute)).Error
 	})
-
 	if err != nil {
 		p.mgr.logger.Error("outbox batch fetch failed", "error", err)
 

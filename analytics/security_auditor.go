@@ -29,7 +29,7 @@ func NewSecurityAuditor(conn driver.Conn) *SecurityAuditor {
 }
 
 // Audit 记录安全审计事件
-func (a *SecurityAuditor) Audit(ctx context.Context, record SecurityAuditRecord) error {
+func (a *SecurityAuditor) Audit(ctx context.Context, record *SecurityAuditRecord) error {
 	query := `
 		INSERT INTO security_audits (
 			timestamp, user_id, event, status, ip_address, user_agent, request_url, error_message

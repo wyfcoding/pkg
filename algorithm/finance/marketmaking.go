@@ -21,11 +21,9 @@ type ASQuote struct {
 	Ask              decimal.Decimal
 }
 
-func (m *AvellanedaStoikovModel) Calculate(mid float64, q float64, timeRemaining float64) ASQuote {
-	// r(s, t) = s - q * gamma * sigma^2 * (T - t)
+func (m *AvellanedaStoikovModel) Calculate(mid, q, timeRemaining float64) ASQuote {
 	resPrice := mid - q*m.Gamma*math.Pow(m.Sigma, 2)*timeRemaining
 
-	// delta = (gamma * sigma^2 * (T - t)) + (2/gamma) * ln(1 + gamma/kappa)
 	spread := m.Gamma*math.Pow(m.Sigma, 2)*timeRemaining + (2.0/m.Gamma)*math.Log(1.0+(m.Gamma/m.Kappa))
 
 	resDec := decimal.NewFromFloat(resPrice)
