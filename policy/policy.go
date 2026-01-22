@@ -15,7 +15,7 @@ type Policy interface {
 
 // DefaultPolicy 组合了熔断与重试的默认策略.
 type DefaultPolicy struct {
-	breaker *breaker.Breaker
+	breaker  *breaker.Breaker
 	retryCfg retry.Config
 }
 

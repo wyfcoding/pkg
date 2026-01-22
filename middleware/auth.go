@@ -14,7 +14,6 @@ import (
 	"github.com/wyfcoding/pkg/response"
 
 	"github.com/gin-gonic/gin"
-	authv1 "github.com/wyfcoding/financialtrading/go-api/auth/v1"
 )
 
 type APIKeyProvider interface {
@@ -91,27 +90,6 @@ func APIKeyAuth(provider APIKeyProvider) gin.HandlerFunc {
 
 		c.Next()
 	}
-}
-
-type RemoteAPIKeyProvider struct {
-	client authv1.AuthServiceClient
-}
-
-func NewRemoteAPIKeyProvider(client authv1.AuthServiceClient) *RemoteAPIKeyProvider {
-	return &RemoteAPIKeyProvider{client: client}
-}
-
-func (p *RemoteAPIKeyProvider) GetSecret(ctx context.Context, apiKey string) (string, error) {
-	resp, err := p.client.ValidateAPIKey(ctx, &authv1.ValidateAPIKeyRequest{
-		ApiKey: apiKey,
-	})
-	if err != nil {
-		return "", err
-	}
-	if !resp.Enabled {
-		return "", fmt.Errorf("api key disabled")
-	}
-	return resp.Secret, nil
 }
 
 // HasRole 提供角色权限校验中间件。

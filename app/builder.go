@@ -196,7 +196,7 @@ func (b *Builder[C, S]) loadConfig() config.Config {
 		if val.Kind() == reflect.Ptr {
 			val = val.Elem()
 		}
-		
+
 		found := false
 		for i := 0; i < val.NumField(); i++ {
 			field := val.Type().Field(i)

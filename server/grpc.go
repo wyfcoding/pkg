@@ -72,7 +72,7 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 // Stop 执行 gRPC 服务器的优雅关停。
 func (s *GRPCServer) Stop(ctx context.Context) error {
 	s.logger.Info("stopping grpc server gracefully")
-	
+
 	stopped := make(chan struct{})
 	go func() {
 		s.server.GracefulStop()

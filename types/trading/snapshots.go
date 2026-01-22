@@ -7,10 +7,10 @@ import (
 
 // OrderBookSnapshot 订单簿深度快照.
 type OrderBookSnapshot struct {
-	Symbol    string          `json:"symbol"`
-	Bids      []*PriceLevel   `json:"bids"`
-	Asks      []*PriceLevel   `json:"asks"`
-	Timestamp int64           `json:"timestamp"`
+	Symbol    string        `json:"symbol"`
+	Bids      []*PriceLevel `json:"bids"`
+	Asks      []*PriceLevel `json:"asks"`
+	Timestamp int64         `json:"timestamp"`
 }
 
 // PriceLevel 价格档位信息.

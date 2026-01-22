@@ -164,60 +164,50 @@ func (ac *AhoCorasick[T]) Match(text string) []MatchResult[T] {
 		"results_count", len(results),
 		"duration", time.Since(start))
 
-		return results
+	return results
 
-	}
+}
 
-	
+// Contains 检查文本中是否包含任何模式串.
 
-	// Contains 检查文本中是否包含任何模式串.
+func (ac *AhoCorasick[T]) Contains(text string) bool {
 
-	func (ac *AhoCorasick[T]) Contains(text string) bool {
+	ac.mu.RLock()
 
-		ac.mu.RLock()
+	defer ac.mu.RUnlock()
 
-		defer ac.mu.RUnlock()
+	curr := ac.root
 
-	
+	for _, r := range text {
 
-		curr := ac.root
+		for {
 
-		for _, r := range text {
+			if next, ok := curr.children[r]; ok {
 
-			for {
+				curr = next
 
-				if next, ok := curr.children[r]; ok {
-
-					curr = next
-
-					break
-
-				}
-
-				if curr == ac.root {
-
-					break
-
-				}
-
-				curr = curr.fail
+				break
 
 			}
 
-	
+			if curr == ac.root {
 
-			if curr.patternIdx != -1 || curr.endFail != nil {
-
-				return true
+				break
 
 			}
+
+			curr = curr.fail
 
 		}
 
-	
+		if curr.patternIdx != -1 || curr.endFail != nil {
 
-		return false
+			return true
+
+		}
 
 	}
 
-	
+	return false
+
+}
