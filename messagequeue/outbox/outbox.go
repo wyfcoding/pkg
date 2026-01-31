@@ -78,6 +78,11 @@ func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
 	}
 }
 
+// DB 返回管理器持有的数据库实例。
+func (m *Manager) DB() *gorm.DB {
+	return m.db
+}
+
 // PublishInTx 在现有的数据库事务中持久化一条待发送的消息。
 func (m *Manager) PublishInTx(ctx context.Context, tx *gorm.DB, topic, key string, payload any) error {
 	data, err := json.Marshal(payload)
