@@ -1,3 +1,5 @@
+// 变更说明：支持事务内保存事件/快照，并允许自定义快照表名以服务多业务隔离。
+// 假设：调用方已确保事务与分片一致，且表名在同一数据库内唯一。
 // Package gormstore 提供了基于 GORM 的事件存储实现.
 package gormstore
 
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wyfcoding/pkg/eventsourcing"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -45,94 +48,38 @@ type SnapshotModel struct {
 
 // GormEventStore 基于 GORM 的 EventStore 实现.
 type GormEventStore struct {
-	db        *gorm.DB
-	tableName string
+	db                *gorm.DB
+	tableName         string
+	snapshotTableName string
 }
 
-// NewGormEventStore 创建新的 GORM EventStore.
-func NewGormEventStore(db *gorm.DB, tableName string) (*GormEventStore, error) {
+// NewGormEventStoreWithTables 创建指定事件表与快照表的 EventStore.
+func NewGormEventStoreWithTables(db *gorm.DB, tableName, snapshotTableName string) (*GormEventStore, error) {
 	name := tableName
 	if name == "" {
 		name = "events"
 	}
 
+	snapName := snapshotTableName
+	if snapName == "" {
+		snapName = "event_snapshots"
+	}
+
 	store := &GormEventStore{
-		db:        db,
-		tableName: name,
+		db:                db,
+		tableName:         name,
+		snapshotTableName: snapName,
 	}
 
 	if err := db.Table(name).AutoMigrate(&EventModel{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate events table: %w", err)
 	}
 
-	if err := db.AutoMigrate(&SnapshotModel{}); err != nil {
+	if err := db.Table(snapName).AutoMigrate(&SnapshotModel{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate snapshots table: %w", err)
 	}
 
 	return store, nil
-}
-
-// Save 在事务中保存事件流.
-func (s *GormEventStore) Save(ctx context.Context, aggregateID string, events []eventsourcing.DomainEvent, expectedVersion int64) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		var currentVersion int64
-		err := tx.Table(s.tableName).
-			Where("aggregate_id = ? AND deleted_at IS NULL", aggregateID).
-			Select("COALESCE(MAX(version), 0)").
-			Scan(&currentVersion).Error
-		if err != nil {
-			return fmt.Errorf("failed to query max version: %w", err)
-		}
-
-		if currentVersion != expectedVersion {
-			return fmt.Errorf("%w: aggregate %s, expected %d but got %d",
-				ErrConcurrency, aggregateID, expectedVersion, currentVersion)
-		}
-
-		eventModels := make([]*EventModel, 0, len(events))
-		for idx, event := range events {
-			var dataAny any
-			var metaAny any
-
-			if baseEventPtr, ok := event.(*eventsourcing.BaseEvent); ok {
-				dataAny = baseEventPtr.Data
-				metaAny = baseEventPtr.Metadata
-			} else {
-				dataAny = event
-			}
-
-			dataBytes, errMarshal := json.Marshal(dataAny)
-			if errMarshal != nil {
-				return fmt.Errorf("failed to marshal event data: %w", errMarshal)
-			}
-
-			metaBytes, errMeta := json.Marshal(metaAny)
-			if errMeta != nil {
-				return fmt.Errorf("failed to marshal event metadata: %w", errMeta)
-			}
-
-			eventModels = append(eventModels, &EventModel{
-				AggregateID: aggregateID,
-				Type:        event.EventType(),
-				Version:     expectedVersion + int64(idx) + 1,
-				Data:        string(dataBytes),
-				Metadata:    string(metaBytes),
-				OccurredAt:  event.OccurredAt(),
-				Model:       gorm.Model{},
-			})
-		}
-
-		if len(eventModels) == 0 {
-			return nil
-		}
-
-		return tx.WithContext(ctx).Table(s.tableName).Create(&eventModels).Error
-	})
-}
-
-// Load 加载所有事件.
-func (s *GormEventStore) Load(ctx context.Context, aggregateID string) ([]eventsourcing.DomainEvent, error) {
-	return s.LoadFromVersion(ctx, aggregateID, 0)
 }
 
 // LoadFromVersion 从指定版本加载事件.
@@ -176,34 +123,10 @@ func (s *GormEventStore) LoadFromVersion(ctx context.Context, aggregateID string
 	return events, nil
 }
 
-// SaveSnapshot 保存聚合快照.
-func (s *GormEventStore) SaveSnapshot(ctx context.Context, aggregateID string, state any, version int64) error {
-	stateBytes, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("failed to marshal snapshot state: %w", err)
-	}
-
-	snapshot := SnapshotModel{
-		AggregateID: aggregateID,
-		Version:     version,
-		State:       string(stateBytes),
-		Model:       gorm.Model{},
-	}
-
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:      []clause.Column{{Name: "aggregate_id", Table: "", Alias: "", Raw: false}},
-		DoUpdates:    clause.AssignmentColumns([]string{"version", "state", "updated_at"}),
-		Where:        clause.Where{},
-		OnConstraint: "",
-		DoNothing:    false,
-		UpdateAll:    false,
-	}).Create(&snapshot).Error
-}
-
 // GetSnapshot 获取最新快照.
 func (s *GormEventStore) GetSnapshot(ctx context.Context, aggregateID string) (state any, version int64, err error) {
 	var snapshot SnapshotModel
-	errDB := s.db.WithContext(ctx).Where("aggregate_id = ?", aggregateID).First(&snapshot).Error
+	errDB := s.db.WithContext(ctx).Table(s.snapshotTableName).Where("aggregate_id = ?", aggregateID).First(&snapshot).Error
 	if errDB != nil {
 		if errors.Is(errDB, gorm.ErrRecordNotFound) {
 			return nil, 0, nil
@@ -218,4 +141,84 @@ func (s *GormEventStore) GetSnapshot(ctx context.Context, aggregateID string) (s
 	}
 
 	return stateMap, snapshot.Version, nil
+}
+
+// SaveWithTx 在外部事务中保存事件流.
+func (s *GormEventStore) SaveWithTx(ctx context.Context, tx *gorm.DB, aggregateID string, events []eventsourcing.DomainEvent, expectedVersion int64) error {
+	var currentVersion int64
+	err := tx.Table(s.tableName).
+		Where("aggregate_id = ? AND deleted_at IS NULL", aggregateID).
+		Select("COALESCE(MAX(version), 0)").
+		Scan(&currentVersion).Error
+	if err != nil {
+		return fmt.Errorf("failed to query max version: %w", err)
+	}
+
+	if currentVersion != expectedVersion {
+		return fmt.Errorf("%w: aggregate %s, expected %d but got %d",
+			ErrConcurrency, aggregateID, expectedVersion, currentVersion)
+	}
+
+	eventModels := make([]*EventModel, 0, len(events))
+	for idx, event := range events {
+		var dataAny any
+		var metaAny any
+
+		if baseEventPtr, ok := event.(*eventsourcing.BaseEvent); ok {
+			dataAny = baseEventPtr.Data
+			metaAny = baseEventPtr.Metadata
+		} else {
+			dataAny = event
+		}
+
+		dataBytes, errMarshal := json.Marshal(dataAny)
+		if errMarshal != nil {
+			return fmt.Errorf("failed to marshal event data: %w", errMarshal)
+		}
+
+		metaBytes, errMeta := json.Marshal(metaAny)
+		if errMeta != nil {
+			return fmt.Errorf("failed to marshal event metadata: %w", errMeta)
+		}
+
+		eventModels = append(eventModels, &EventModel{
+			AggregateID: aggregateID,
+			Type:        event.EventType(),
+			Version:     expectedVersion + int64(idx) + 1,
+			Data:        string(dataBytes),
+			Metadata:    string(metaBytes),
+			OccurredAt:  event.OccurredAt(),
+			Model:       gorm.Model{},
+		})
+	}
+
+	if len(eventModels) == 0 {
+		return nil
+	}
+
+	return tx.WithContext(ctx).Table(s.tableName).Create(&eventModels).Error
+}
+
+// SaveSnapshotWithTx 在外部事务中保存快照.
+func (s *GormEventStore) SaveSnapshotWithTx(ctx context.Context, tx *gorm.DB, aggregateID string, state any, version int64) error {
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal snapshot state: %w", err)
+	}
+
+	snapshot := SnapshotModel{
+		AggregateID: aggregateID,
+		Version:     version,
+		State:       string(stateBytes),
+		Model:       gorm.Model{},
+	}
+
+	return tx.WithContext(ctx).Table(s.snapshotTableName).Clauses(clause.OnConflict{
+		Columns:      []clause.Column{{Name: "aggregate_id", Table: "", Alias: "", Raw: false}},
+		DoUpdates:    clause.AssignmentColumns([]string{"version", "state", "updated_at"}),
+		Where:        clause.Where{},
+		OnConstraint: "",
+		DoNothing:    false,
+		UpdateAll:    false,
+	}).Create(&snapshot).Error
 }
