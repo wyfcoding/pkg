@@ -1,4 +1,9 @@
 // Package tracing 提供了 OpenTelemetry (OTEL) 链路追踪的初始化与生命周期管理。
+// 生成摘要:
+// 1) 支持采样率与禁用开关的安全降级。
+// 2) 当端点为空时启用 Noop Provider 并记录提示日志。
+// 假设:
+// 1) 采样率合法范围为 (0, 1]，否则回退为 1.0。
 package tracing
 
 import (
@@ -7,6 +12,7 @@ import (
 	"log/slog"
 
 	"github.com/wyfcoding/pkg/config"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -20,6 +26,18 @@ import (
 
 // InitTracer 执行追踪系统的初始化配置.
 func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error, err error) {
+	if !cfg.Enabled {
+		slog.Info("tracing disabled by config", "service", cfg.ServiceName)
+		otel.SetTracerProvider(trace.NewNoopTracerProvider())
+		return func(context.Context) error { return nil }, nil
+	}
+
+	if cfg.OTLPEndpoint == "" {
+		slog.Warn("tracing endpoint is empty, fallback to noop provider", "service", cfg.ServiceName)
+		otel.SetTracerProvider(trace.NewNoopTracerProvider())
+		return func(context.Context) error { return nil }, nil
+	}
+
 	ctx := context.Background()
 
 	exporter, err := otlptracegrpc.New(ctx,
@@ -31,9 +49,14 @@ func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error,
 	}
 
 	// 资源描述（服务名等）。
+	serviceName := cfg.ServiceName
+	if serviceName == "" {
+		serviceName = "unknown"
+	}
+
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String(cfg.ServiceName),
+			semconv.ServiceNameKey.String(serviceName),
 			attribute.String("exporter", "otlp"),
 		),
 	)
@@ -41,7 +64,11 @@ func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error,
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(1.0))
+	ratio := cfg.SamplerRatio
+	if ratio <= 0 || ratio > 1 {
+		ratio = 1.0
+	}
+	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
@@ -56,7 +83,7 @@ func InitTracer(cfg config.TracingConfig) (shutdown func(context.Context) error,
 		propagation.Baggage{},
 	))
 
-	slog.Info("tracer provider initialized", "service", cfg.ServiceName, "endpoint", cfg.OTLPEndpoint)
+	slog.Info("tracer provider initialized", "service", serviceName, "endpoint", cfg.OTLPEndpoint, "ratio", ratio)
 
 	return tp.Shutdown, nil
 }

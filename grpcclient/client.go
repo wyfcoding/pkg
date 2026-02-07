@@ -1,3 +1,9 @@
+// Package grpcclient 提供了统一治理能力的 gRPC 客户端工厂。
+// 生成摘要:
+// 1) 增加 Request ID 自动传递拦截器，确保跨服务链路一致。
+// 2) metrics 为空时自动降级，避免空指针。
+// 假设:
+// 1) Request ID 通过 metadata 键 "x-request-id" 传递。
 package grpcclient
 
 import (
@@ -7,17 +13,23 @@ import (
 
 	"github.com/wyfcoding/pkg/breaker"
 	"github.com/wyfcoding/pkg/config"
+	"github.com/wyfcoding/pkg/contextx"
+	"github.com/wyfcoding/pkg/idgen"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/retry"
+
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+const grpcRequestIDKey = "x-request-id"
 
 // ClientFactory 是一个生产级的 gRPC 客户端工厂，集成了治理能力（限流、熔断、重试、监控、追踪）。
 type ClientFactory struct {
@@ -75,6 +87,7 @@ func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc
 		}),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithChainUnaryInterceptor(
+			f.requestIDInterceptor(),
 			f.metricsInterceptor(target),
 			f.circuitBreakerInterceptor(cb),
 			f.rateLimitInterceptor(limiter),
@@ -88,6 +101,9 @@ func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc
 
 func (f *ClientFactory) metricsInterceptor(target string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if f.metrics == nil {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
 		start := time.Now()
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		duration := time.Since(start).Seconds()
@@ -95,6 +111,25 @@ func (f *ClientFactory) metricsInterceptor(target string) grpc.UnaryClientInterc
 		f.metrics.GRPCRequestsTotal.WithLabelValues("client", target+":"+method, st.Code().String()).Inc()
 		f.metrics.GRPCRequestDuration.WithLabelValues("client", target+":"+method).Observe(duration)
 		return err
+	}
+}
+
+func (f *ClientFactory) requestIDInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if md, ok := metadata.FromOutgoingContext(ctx); ok {
+			if len(md.Get(grpcRequestIDKey)) > 0 {
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}
+		}
+
+		requestID := contextx.GetRequestID(ctx)
+		if requestID == "" {
+			requestID = idgen.GenIDString()
+		}
+
+		ctx = metadata.AppendToOutgoingContext(ctx, grpcRequestIDKey, requestID)
+
+		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }
 

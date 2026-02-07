@@ -1,11 +1,16 @@
 // Package middleware 提供了通用的 Gin 中间件。
+// 生成摘要:
+// 1) 访问日志字段统一使用 duration 作为耗时键。
+// 假设:
+// 1) 上游日志处理按 duration 读取耗时字段。
 package middleware
 
 import (
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/wyfcoding/pkg/logging"
+
+	"github.com/gin-gonic/gin"
 )
 
 // RequestLogger 返回一个用于记录 HTTP 请求详情的 Gin 中间件。
@@ -41,7 +46,7 @@ func RequestLogger(skipPaths ...string) gin.HandlerFunc {
 			"query", query,
 			"ip", c.ClientIP(),
 			"status", status,
-			"latency", latency,
+			"duration", latency,
 			"user_agent", c.Request.UserAgent(),
 		}
 

@@ -1,4 +1,8 @@
 // Package app 提供了应用程序生命周期管理的基础设施.
+// 生成摘要:
+// 1) 默认接入 gRPC Request ID 与访问日志拦截器，统一链路字段输出。
+// 假设:
+// 1) 业务侧沿用 builder 默认拦截器顺序即可满足观测需求。
 package app
 
 import (
@@ -9,7 +13,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/contextx"
 	"github.com/wyfcoding/pkg/logging"
@@ -18,6 +21,8 @@ import (
 	"github.com/wyfcoding/pkg/response"
 	"github.com/wyfcoding/pkg/server"
 	"github.com/wyfcoding/pkg/tracing"
+
+	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 )
 
@@ -281,7 +286,11 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		middleware.Recovery(),
 		middleware.RequestLogger("/sys/health", "/metrics"),
 	}, b.ginMiddleware...)
-	b.grpcInterceptors = append([]grpc.UnaryServerInterceptor{middleware.GRPCRecovery()}, b.grpcInterceptors...)
+	b.grpcInterceptors = append([]grpc.UnaryServerInterceptor{
+		middleware.GRPCRequestID(),
+		middleware.GRPCRequestLogger(),
+		middleware.GRPCRecovery(),
+	}, b.grpcInterceptors...)
 
 	if cfg.CircuitBreaker.Enabled {
 		b.ginMiddleware = append(b.ginMiddleware, middleware.HTTPCircuitBreaker(cfg.CircuitBreaker, m))
