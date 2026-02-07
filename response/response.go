@@ -1,9 +1,15 @@
 // Package response 提供了统一的 HTTP 响应封装，支持业务错误码映射、分页数据包装及 gRPC 状态码转换。
+// 生成摘要:
+// 1) Error 响应优先识别 xerrors 并输出规范化消息与详情字段。
+// 假设:
+// 1) xerrors.Message 为对外可读的业务错误描述。
 package response
 
 import (
 	"log/slog"
 	"net/http"
+
+	"github.com/wyfcoding/pkg/xerrors"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc/codes"
@@ -71,11 +77,20 @@ func Error(c *gin.Context, err error) {
 	msg := err.Error()
 	detail := ""
 
-	// 1. 优先尝试从业务错误接口获取状态码。
-	if provider, ok := err.(HTTPStatusProvider); ok {
+	// 1. 优先识别统一错误类型，避免直接暴露内部堆栈。
+	if xe, ok := xerrors.FromError(err); ok {
+		statusCode = xe.HTTPStatus()
+		if xe.Message != "" {
+			msg = xe.Message
+		}
+		if xe.Detail != "" {
+			detail = xe.Detail
+		}
+	} else if provider, ok := err.(HTTPStatusProvider); ok {
+		// 2. 兼容自定义 HTTP 状态码提供者。
 		statusCode = provider.HTTPStatus()
 	} else if st, ok := status.FromError(err); ok {
-		// 2. 处理 gRPC 返回的远程调用错误，映射为标准 HTTP 状态码。
+		// 3. 处理 gRPC 返回的远程调用错误，映射为标准 HTTP 状态码。
 		statusCode = grpcCodeToHTTP(st.Code())
 		msg = st.Message()
 	}

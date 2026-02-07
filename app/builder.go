@@ -1,6 +1,7 @@
 // Package app 提供了应用程序生命周期管理的基础设施.
 // 生成摘要:
-// 1) 默认接入 gRPC Request ID 与访问日志拦截器，统一链路字段输出。
+// 1) 默认接入 gRPC Request ID、访问日志与错误翻译拦截器，统一链路字段输出与错误码映射。
+// 2) 调整 gRPC 拦截器顺序，优先确保 Panic 可被统一恢复。
 // 假设:
 // 1) 业务侧沿用 builder 默认拦截器顺序即可满足观测需求。
 package app
@@ -287,9 +288,10 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		middleware.RequestLogger("/sys/health", "/metrics"),
 	}, b.ginMiddleware...)
 	b.grpcInterceptors = append([]grpc.UnaryServerInterceptor{
+		middleware.GRPCRecovery(),
+		middleware.GRPCErrorTranslator(),
 		middleware.GRPCRequestID(),
 		middleware.GRPCRequestLogger(),
-		middleware.GRPCRecovery(),
 	}, b.grpcInterceptors...)
 
 	if cfg.CircuitBreaker.Enabled {

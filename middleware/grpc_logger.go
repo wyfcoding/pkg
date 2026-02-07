@@ -1,6 +1,6 @@
 // Package middleware 提供了通用的 Gin 与 gRPC 中间件实现。
 // 生成摘要:
-// 1) 新增 gRPC 访问日志拦截器，输出统一的 duration/status 字段。
+// 1) gRPC 访问日志拦截器支持识别 xerrors 并映射正确状态码。
 // 假设:
 // 1) gRPC 状态码为 OK 时记录 Info，其余按严重度提升日志级别。
 package middleware
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wyfcoding/pkg/logging"
+	"github.com/wyfcoding/pkg/xerrors"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,11 +26,19 @@ func GRPCRequestLogger() grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 
 		duration := time.Since(start)
-		st, _ := status.FromError(err)
+		code := codes.OK
+		if err != nil {
+			if xe, ok := xerrors.FromError(err); ok {
+				code = xe.GRPCCode()
+			} else {
+				st, _ := status.FromError(err)
+				code = st.Code()
+			}
+		}
 
 		fields := []any{
 			"method", info.FullMethod,
-			"status", st.Code().String(),
+			"status", code.String(),
 			"duration", duration,
 		}
 
@@ -41,7 +50,7 @@ func GRPCRequestLogger() grpc.UnaryServerInterceptor {
 			fields = append(fields, "error", err)
 		}
 
-		switch st.Code() {
+		switch code {
 		case codes.OK:
 			logging.Info(ctx, "grpc request processed", fields...)
 		case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.FailedPrecondition, codes.PermissionDenied, codes.Unauthenticated:

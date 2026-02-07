@@ -1,4 +1,8 @@
 // Package middleware 提供了 Gin 与 gRPC 的通用中间件实现。
+// 生成摘要:
+// 1) gRPC 指标采集支持识别 xerrors 并映射正确状态码。
+// 假设:
+// 1) 业务侧优先使用 xerrors 作为统一错误类型。
 package middleware
 
 import (
@@ -6,9 +10,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/wyfcoding/pkg/metrics"
+	"github.com/wyfcoding/pkg/xerrors"
+
+	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -43,10 +50,18 @@ func GRPCMetricsInterceptor(m *metrics.Metrics) grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 
 		duration := time.Since(start).Seconds()
-		st, _ := status.FromError(err)
+		code := codes.OK
+		if err != nil {
+			if xe, ok := xerrors.FromError(err); ok {
+				code = xe.GRPCCode()
+			} else {
+				st, _ := status.FromError(err)
+				code = st.Code()
+			}
+		}
 
 		if m != nil {
-			m.GRPCRequestsTotal.WithLabelValues("server", info.FullMethod, st.Code().String()).Inc()
+			m.GRPCRequestsTotal.WithLabelValues("server", info.FullMethod, code.String()).Inc()
 			m.GRPCRequestDuration.WithLabelValues("server", info.FullMethod).Observe(duration)
 		}
 
