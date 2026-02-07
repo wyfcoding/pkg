@@ -2,6 +2,7 @@
 // 生成摘要:
 // 1) 访问日志字段统一使用 duration 作为耗时键。
 // 2) 支持慢请求阈值配置。
+// 3) 支持从上下文中自动透传 request_id/trace_id 等字段。
 // 假设:
 // 1) 上游日志处理按 duration 读取耗时字段。
 package middleware

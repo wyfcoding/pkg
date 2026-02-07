@@ -1,6 +1,7 @@
 // Package logging 提供了基于标准库 slog 深度定制的生产级日志系统.
 // 生成摘要:
 // 1) 支持远程日志写入 Hook，并提供关闭方法回收资源。
+// 2) 支持日志输出格式与输出目标配置。
 // 假设:
 // 1) 远程日志写入仅在配置启用且 endpoint 不为空时生效。
 package logging
@@ -42,6 +43,8 @@ type Config struct {
 	Service    string       `json:"service"`     // 服务名称。
 	Module     string       `json:"module"`      // 模块名称。
 	Level      string       `json:"level"`       // 日志级别。
+	Format     string       `json:"format"`      // 日志格式（json/text）。
+	Output     string       `json:"output"`      // 日志输出目标（stdout/stderr/file）。
 	File       string       `json:"file"`        // 日志文件路径。
 	MaxSize    int          `json:"max_size"`    // 单个文件最大大小 (MB)。
 	MaxBackups int          `json:"max_backups"` // 最大备份数。
@@ -134,6 +137,14 @@ func NewFromConfig(cfg *Config) *Logger {
 	}
 
 	var handler slog.Handler
+	output := cfg.Output
+	if output == "" {
+		output = "stdout"
+	}
+	format := cfg.Format
+	if format == "" {
+		format = "json"
+	}
 	var remoteCloser func() error
 
 	opts := &slog.HandlerOptions{
@@ -151,9 +162,25 @@ func NewFromConfig(cfg *Config) *Logger {
 			Compress:   cfg.Compress,
 			LocalTime:  true,
 		}
-		handler = slog.NewJSONHandler(fileWriter, opts)
+		if format == "text" {
+			handler = slog.NewTextHandler(fileWriter, opts)
+		} else {
+			handler = slog.NewJSONHandler(fileWriter, opts)
+		}
 	} else {
-		handler = slog.NewJSONHandler(os.Stdout, opts)
+		writer := os.Stdout
+		if output == "stderr" {
+			writer = os.Stderr
+		}
+		if format == "text" {
+			handler = slog.NewTextHandler(writer, opts)
+		} else {
+			handler = slog.NewJSONHandler(writer, opts)
+		}
+	}
+
+	if cfg.Remote.Enabled && cfg.Remote.Endpoint == "" {
+		slog.Warn("remote log enabled but endpoint is empty")
 	}
 
 	if cfg.Remote.Enabled && cfg.Remote.Endpoint != "" {

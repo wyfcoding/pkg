@@ -32,6 +32,10 @@ import (
 
 const grpcRequestIDKey = "x-request-id"
 const grpcTraceIDKey = "x-trace-id"
+const grpcTenantIDKey = "x-tenant-id"
+const grpcUserIDKey = "x-user-id"
+const grpcScopesKey = "x-scopes"
+const grpcRoleKey = "x-role"
 
 // ClientFactory 是一个生产级的 gRPC 客户端工厂，集成了治理能力（限流、熔断、重试、监控、追踪）。
 type ClientFactory struct {
@@ -124,6 +128,10 @@ func (f *ClientFactory) requestIDInterceptor() grpc.UnaryClientInterceptor {
 		}
 
 		traceID := tracing.GetTraceID(ctx)
+		tenantID := contextx.GetTenantID(ctx)
+		userID := contextx.GetUserID(ctx)
+		scopes := contextx.GetScopes(ctx)
+		role := contextx.GetRole(ctx)
 
 		if md, ok := metadata.FromOutgoingContext(ctx); ok {
 			if len(md.Get(grpcRequestIDKey)) == 0 {
@@ -132,12 +140,36 @@ func (f *ClientFactory) requestIDInterceptor() grpc.UnaryClientInterceptor {
 			if traceID != "" && len(md.Get(grpcTraceIDKey)) == 0 {
 				ctx = metadata.AppendToOutgoingContext(ctx, grpcTraceIDKey, traceID)
 			}
+			if tenantID != "" && len(md.Get(grpcTenantIDKey)) == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, grpcTenantIDKey, tenantID)
+			}
+			if userID != "" && len(md.Get(grpcUserIDKey)) == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, grpcUserIDKey, userID)
+			}
+			if scopes != "" && len(md.Get(grpcScopesKey)) == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, grpcScopesKey, scopes)
+			}
+			if role != "" && len(md.Get(grpcRoleKey)) == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, grpcRoleKey, role)
+			}
 			return invoker(ctx, method, req, reply, cc, opts...)
 		}
 
 		ctx = metadata.AppendToOutgoingContext(ctx, grpcRequestIDKey, requestID)
 		if traceID != "" {
 			ctx = metadata.AppendToOutgoingContext(ctx, grpcTraceIDKey, traceID)
+		}
+		if tenantID != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, grpcTenantIDKey, tenantID)
+		}
+		if userID != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, grpcUserIDKey, userID)
+		}
+		if scopes != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, grpcScopesKey, scopes)
+		}
+		if role != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, grpcRoleKey, role)
 		}
 
 		return invoker(ctx, method, req, reply, cc, opts...)

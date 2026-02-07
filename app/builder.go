@@ -1,7 +1,8 @@
 // Package app 提供了应用程序生命周期管理的基础设施.
 // 生成摘要:
 // 1) 默认接入 Trace ID 响应头、上下文增强、HTTP 错误处理、gRPC Request ID、访问日志与错误翻译拦截器，统一链路字段输出与错误码映射。
-// 2) 调整 gRPC 拦截器顺序，优先确保 Panic 可被统一恢复。
+// 2) 支持按配置启用 HTTP/gRPC 超时保护。
+// 3) 调整 gRPC 拦截器顺序，优先确保 Panic 可被统一恢复。
 // 假设:
 // 1) 业务侧沿用 builder 默认拦截器顺序即可满足观测需求。
 package app
@@ -216,6 +217,8 @@ func (b *Builder[C, S]) initLogger(cfg *config.Config) *logging.Logger {
 		Service:    b.serviceName,
 		Module:     "app",
 		Level:      cfg.Log.Level,
+		Format:     cfg.Log.Format,
+		Output:     cfg.Log.Output,
 		File:       cfg.Log.File,
 		MaxSize:    cfg.Log.MaxSize,
 		MaxBackups: cfg.Log.MaxBackups,
@@ -318,7 +321,10 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 			SlowThreshold: cfg.Log.SlowThreshold,
 			SkipPaths:     []string{"/sys/health", "/metrics"},
 		}),
-		middleware.HTTPMetricsMiddleware(m),
+		middleware.HTTPMetricsMiddlewareWithOptions(m, middleware.MetricsOptions{
+			SlowThreshold: cfg.Log.SlowThreshold,
+			SkipPaths:     []string{"/sys/health", "/metrics"},
+		}),
 		middleware.HTTPErrorHandler(),
 	)
 
@@ -343,8 +349,14 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		}),
 	)
 
+	if cfg.CircuitBreaker.Enabled {
+		grpcChain = append(grpcChain, middleware.GRPCCircuitBreaker(cfg.CircuitBreaker, m))
+	}
+
 	b.grpcInterceptors = append(grpcChain, b.grpcInterceptors...)
-	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptor(m))
+	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptorWithOptions(m, middleware.MetricsOptions{
+		SlowThreshold: cfg.Log.GRPCSlowThreshold,
+	}))
 }
 
 func (b *Builder[C, S]) assembleService(m *metrics.Metrics, logger *logging.Logger) (instance S, cleanup func()) {

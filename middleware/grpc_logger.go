@@ -2,6 +2,7 @@
 // 生成摘要:
 // 1) gRPC 访问日志拦截器支持识别 xerrors 并映射正确状态码。
 // 2) 支持慢请求阈值配置。
+// 3) 支持从上下文中自动透传 request_id/trace_id 等字段。
 // 假设:
 // 1) gRPC 状态码为 OK 时记录 Info，其余按严重度提升日志级别。
 package middleware

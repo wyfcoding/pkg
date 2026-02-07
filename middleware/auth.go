@@ -1,3 +1,8 @@
+// Package middleware 提供了 Gin 与 gRPC 的通用中间件实现。
+// 生成摘要:
+// 1) JWTAuth 注入用户 ID/角色/权限到 context，便于日志与链路追踪。
+// 假设:
+// 1) JWT Roles 可映射为 scopes，多个角色用逗号分隔。
 package middleware
 
 import (
@@ -8,8 +13,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/wyfcoding/pkg/contextx"
 	"github.com/wyfcoding/pkg/jwt"
 	"github.com/wyfcoding/pkg/response"
 
@@ -48,6 +55,14 @@ func JWTAuth(secret string) gin.HandlerFunc {
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
 		c.Set("roles", claims.Roles) // 假设 JWT 中包含角色列表
+
+		ctx := c.Request.Context()
+		ctx = contextx.WithUserID(ctx, strconv.FormatUint(claims.UserID, 10))
+		if len(claims.Roles) > 0 {
+			ctx = contextx.WithRole(ctx, claims.Roles[0])
+			ctx = contextx.WithScopes(ctx, strings.Join(claims.Roles, ","))
+		}
+		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
 }
