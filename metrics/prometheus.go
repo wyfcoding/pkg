@@ -1,4 +1,8 @@
 // Package metrics 提供了基于 Prometheus 的应用指标采集能力。
+// 生成摘要:
+// 1) 增加 HTTP/gRPC 在途请求指标。
+// 假设:
+// 1) 在途请求以 method+path / service+method 作为维度标签。
 package metrics
 
 import (
@@ -21,10 +25,14 @@ type Metrics struct {
 	HTTPRequestsTotal *prometheus.CounterVec
 	// HTTPRequestDuration HTTP 请求耗时分布。
 	HTTPRequestDuration *prometheus.HistogramVec
+	// HTTPInFlight HTTP 当前在途请求数。
+	HTTPInFlight *prometheus.GaugeVec
 	// GRPCRequestsTotal gRPC 请求总量 (维度: service, method, status)。
 	GRPCRequestsTotal *prometheus.CounterVec
 	// GRPCRequestDuration gRPC 请求耗时分布。
 	GRPCRequestDuration *prometheus.HistogramVec
+	// GRPCInFlight gRPC 当前在途请求数。
+	GRPCInFlight *prometheus.GaugeVec
 }
 
 // NewMetrics 初始化并返回一个新的指标采集器。
@@ -46,6 +54,11 @@ func NewMetrics(serviceName string) *Metrics {
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
+	m.HTTPInFlight = m.NewGaugeVec(&prometheus.GaugeOpts{
+		Name: "http_server_in_flight_requests",
+		Help: "Current number of HTTP in-flight requests",
+	}, []string{"method", "path"})
+
 	m.GRPCRequestsTotal = m.NewCounterVec(&prometheus.CounterOpts{
 		Name: "grpc_server_requests_total",
 		Help: "Total number of gRPC requests",
@@ -55,6 +68,11 @@ func NewMetrics(serviceName string) *Metrics {
 		Name:    "grpc_server_request_duration_seconds",
 		Help:    "gRPC request latency in seconds",
 		Buckets: prometheus.DefBuckets,
+	}, []string{"service", "method"})
+
+	m.GRPCInFlight = m.NewGaugeVec(&prometheus.GaugeOpts{
+		Name: "grpc_server_in_flight_requests",
+		Help: "Current number of gRPC in-flight requests",
 	}, []string{"service", "method"})
 
 	slog.Info("unified metrics registry initialized", "service", serviceName)

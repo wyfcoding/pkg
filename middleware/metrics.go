@@ -22,16 +22,24 @@ import (
 // HTTPMetricsMiddleware 返回一个用于采集 HTTP 请求指标的 Gin 中间件。
 func HTTPMetricsMiddleware(m *metrics.Metrics) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+		if path == "" {
+			path = "unknown"
+		}
+
+		if m != nil {
+			m.HTTPInFlight.WithLabelValues(c.Request.Method, path).Inc()
+			defer m.HTTPInFlight.WithLabelValues(c.Request.Method, path).Dec()
+		}
+
 		start := time.Now()
 
 		c.Next()
 
 		duration := time.Since(start).Seconds()
-		path := c.FullPath()
-
-		if path == "" {
-			path = "unknown"
-		}
 
 		statusStr := strconv.Itoa(c.Writer.Status())
 
@@ -45,6 +53,11 @@ func HTTPMetricsMiddleware(m *metrics.Metrics) gin.HandlerFunc {
 // GRPCMetricsInterceptor 返回一个用于采集 gRPC 请求指标的一元拦截器。
 func GRPCMetricsInterceptor(m *metrics.Metrics) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if m != nil {
+			m.GRPCInFlight.WithLabelValues("server", info.FullMethod).Inc()
+			defer m.GRPCInFlight.WithLabelValues("server", info.FullMethod).Dec()
+		}
+
 		start := time.Now()
 
 		resp, err := handler(ctx, req)

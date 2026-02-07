@@ -1,4 +1,8 @@
 // Package logging 提供了基于标准库 slog 深度定制的生产级日志系统.
+// 生成摘要:
+// 1) 支持远程日志写入 Hook，并提供关闭方法回收资源。
+// 假设:
+// 1) 远程日志写入仅在配置启用且 endpoint 不为空时生效。
 package logging
 
 import (
@@ -35,14 +39,15 @@ var (
 
 // Config 定义日志配置结构.
 type Config struct {
-	Service    string `json:"service"`     // 服务名称。
-	Module     string `json:"module"`      // 模块名称。
-	Level      string `json:"level"`       // 日志级别。
-	File       string `json:"file"`        // 日志文件路径。
-	MaxSize    int    `json:"max_size"`    // 单个文件最大大小 (MB)。
-	MaxBackups int    `json:"max_backups"` // 最大备份数。
-	MaxAge     int    `json:"max_age"`     // 最大保留天数。
-	Compress   bool   `json:"compress"`    // 是否启用压缩。
+	Service    string       `json:"service"`     // 服务名称。
+	Module     string       `json:"module"`      // 模块名称。
+	Level      string       `json:"level"`       // 日志级别。
+	File       string       `json:"file"`        // 日志文件路径。
+	MaxSize    int          `json:"max_size"`    // 单个文件最大大小 (MB)。
+	MaxBackups int          `json:"max_backups"` // 最大备份数。
+	MaxAge     int          `json:"max_age"`     // 最大保留天数。
+	Compress   bool         `json:"compress"`    // 是否启用压缩。
+	Remote     RemoteConfig `json:"remote"`
 }
 
 // Logger 结构体封装了原生的 *slog.Logger.
@@ -50,6 +55,7 @@ type Logger struct {
 	*slog.Logger
 	Service string
 	Module  string
+	close   func() error
 }
 
 // ContextExtractor 定义了从 context 中提取日志属性的函数原型.
@@ -128,6 +134,7 @@ func NewFromConfig(cfg *Config) *Logger {
 	}
 
 	var handler slog.Handler
+	var remoteCloser func() error
 
 	opts := &slog.HandlerOptions{
 		Level:       programLevel,
@@ -149,6 +156,13 @@ func NewFromConfig(cfg *Config) *Logger {
 		handler = slog.NewJSONHandler(os.Stdout, opts)
 	}
 
+	if cfg.Remote.Enabled && cfg.Remote.Endpoint != "" {
+		remoteWriter, closeFn := newRemoteWriter(cfg.Remote)
+		remoteHandler := slog.NewJSONHandler(remoteWriter, opts)
+		handler = newMultiHandler(handler, remoteHandler)
+		remoteCloser = closeFn
+	}
+
 	traceHandler := &TraceHandler{Handler: handler}
 
 	loggerInstance := slog.New(traceHandler).With(
@@ -160,6 +174,7 @@ func NewFromConfig(cfg *Config) *Logger {
 		Logger:  loggerInstance,
 		Service: cfg.Service,
 		Module:  cfg.Module,
+		close:   remoteCloser,
 	}
 }
 
@@ -179,6 +194,7 @@ func NewLogger(service, module string, level ...string) *Logger {
 		MaxBackups: 0,
 		MaxAge:     0,
 		Compress:   false,
+		Remote:     RemoteConfig{},
 	})
 }
 
@@ -199,6 +215,7 @@ func InitLogger(service, module string, level ...string) {
 			MaxBackups: 0,
 			MaxAge:     0,
 			Compress:   false,
+			Remote:     RemoteConfig{},
 		})
 
 		slog.SetDefault(defaultLogger.Logger)
@@ -217,6 +234,14 @@ func Default() *Logger {
 	EnsureDefaultLogger()
 
 	return defaultLogger
+}
+
+// Close 释放日志资源（如远程日志写入器）。
+func (l *Logger) Close() error {
+	if l == nil || l.close == nil {
+		return nil
+	}
+	return l.close()
 }
 
 // Info 记录 Info 级别日志.
@@ -287,6 +312,7 @@ func GetLogger() *Logger {
 			MaxBackups: 0,
 			MaxAge:     0,
 			Compress:   false,
+			Remote:     RemoteConfig{},
 		})
 	}
 

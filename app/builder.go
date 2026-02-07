@@ -1,6 +1,6 @@
 // Package app 提供了应用程序生命周期管理的基础设施.
 // 生成摘要:
-// 1) 默认接入 gRPC Request ID、访问日志与错误翻译拦截器，统一链路字段输出与错误码映射。
+// 1) 默认接入 HTTP 错误处理、gRPC Request ID、访问日志与错误翻译拦截器，统一链路字段输出与错误码映射。
 // 2) 调整 gRPC 拦截器顺序，优先确保 Panic 可被统一恢复。
 // 假设:
 // 1) 业务侧沿用 builder 默认拦截器顺序即可满足观测需求。
@@ -221,6 +221,16 @@ func (b *Builder[C, S]) initLogger(cfg *config.Config) *logging.Logger {
 		MaxBackups: cfg.Log.MaxBackups,
 		MaxAge:     cfg.Log.MaxAge,
 		Compress:   cfg.Log.Compress,
+		Remote: logging.RemoteConfig{
+			Enabled:       cfg.Log.Remote.Enabled,
+			Endpoint:      cfg.Log.Remote.Endpoint,
+			AuthToken:     cfg.Log.Remote.AuthToken,
+			Timeout:       cfg.Log.Remote.Timeout,
+			BatchSize:     cfg.Log.Remote.BatchSize,
+			BufferSize:    cfg.Log.Remote.BufferSize,
+			FlushInterval: cfg.Log.Remote.FlushInterval,
+			DropOnFull:    cfg.Log.Remote.DropOnFull,
+		},
 	}
 
 	if cfg.Log.Output != "file" {
@@ -229,6 +239,14 @@ func (b *Builder[C, S]) initLogger(cfg *config.Config) *logging.Logger {
 
 	loggerInstance := logging.NewFromConfig(&logConfig)
 	slog.SetDefault(loggerInstance.Logger)
+
+	if loggerInstance != nil {
+		b.appOpts = append(b.appOpts, WithCleanup(func() {
+			if err := loggerInstance.Close(); err != nil {
+				loggerInstance.Logger.Error("failed to close logger", "error", err)
+			}
+		}))
+	}
 
 	// 注册上下文提取器，将 contextx 中的业务字段自动注入日志
 	logging.RegisterContextExtractor(func(ctx context.Context) []slog.Attr {
@@ -260,8 +278,6 @@ func (b *Builder[C, S]) initTracing(cfg *config.Config, logger *logging.Logger) 
 			logger.Logger.Error("failed to shutdown tracer", "error", cleanupErr)
 		}
 	}))
-
-	b.ginMiddleware = append([]gin.HandlerFunc{middleware.TracingMiddleware(b.serviceName)}, b.ginMiddleware...)
 }
 
 func (b *Builder[C, S]) initMetrics(cfg *config.Config) *metrics.Metrics {
@@ -281,24 +297,31 @@ func (b *Builder[C, S]) initMetrics(cfg *config.Config) *metrics.Metrics {
 }
 
 func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) {
-	// 添加基础中间件
-	b.ginMiddleware = append([]gin.HandlerFunc{
-		middleware.RequestID(),
+	// 添加基础中间件 (顺序很重要)
+	baseGin := make([]gin.HandlerFunc, 0, 8)
+	baseGin = append(baseGin, middleware.RequestID())
+	if cfg.Tracing.Enabled {
+		baseGin = append(baseGin, middleware.TracingMiddleware(b.serviceName))
+	}
+	baseGin = append(baseGin,
 		middleware.Recovery(),
 		middleware.RequestLogger("/sys/health", "/metrics"),
-	}, b.ginMiddleware...)
+		middleware.HTTPMetricsMiddleware(m),
+		middleware.HTTPErrorHandler(),
+	)
+
+	if cfg.CircuitBreaker.Enabled {
+		baseGin = append(baseGin, middleware.HTTPCircuitBreaker(cfg.CircuitBreaker, m))
+	}
+
+	b.ginMiddleware = append(baseGin, b.ginMiddleware...)
+
 	b.grpcInterceptors = append([]grpc.UnaryServerInterceptor{
 		middleware.GRPCRecovery(),
 		middleware.GRPCErrorTranslator(),
 		middleware.GRPCRequestID(),
 		middleware.GRPCRequestLogger(),
 	}, b.grpcInterceptors...)
-
-	if cfg.CircuitBreaker.Enabled {
-		b.ginMiddleware = append(b.ginMiddleware, middleware.HTTPCircuitBreaker(cfg.CircuitBreaker, m))
-	}
-
-	b.ginMiddleware = append(b.ginMiddleware, middleware.HTTPMetricsMiddleware(m))
 	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptor(m))
 }
 

@@ -1,4 +1,8 @@
 // Package config 提供了统一 the 配置加载与管理能力.
+// 生成摘要:
+// 1) 增加远程日志配置结构体并挂载到 LogConfig。
+// 假设:
+// 1) 远程日志为可选配置，默认关闭。
 package config
 
 import (
@@ -9,10 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wyfcoding/pkg/logging"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
-	"github.com/wyfcoding/pkg/logging"
 	"gorm.io/gorm/logger"
 )
 
@@ -96,14 +101,27 @@ type RedisConfig struct {
 
 // LogConfig 定义日志输出、级别与切割策略.
 type LogConfig struct {
-	Level      string `mapstructure:"level"       toml:"level"`
-	Format     string `mapstructure:"format"      toml:"format"`
-	Output     string `mapstructure:"output"      toml:"output"`
-	File       string `mapstructure:"file"        toml:"file"`
-	MaxSize    int    `mapstructure:"max_size"    toml:"max_size"`
-	MaxBackups int    `mapstructure:"max_backups" toml:"max_backups"`
-	MaxAge     int    `mapstructure:"max_age"     toml:"max_age"`
-	Compress   bool   `mapstructure:"compress"    toml:"compress"`
+	Level      string          `mapstructure:"level"       toml:"level"`
+	Format     string          `mapstructure:"format"      toml:"format"`
+	Output     string          `mapstructure:"output"      toml:"output"`
+	File       string          `mapstructure:"file"        toml:"file"`
+	MaxSize    int             `mapstructure:"max_size"    toml:"max_size"`
+	MaxBackups int             `mapstructure:"max_backups" toml:"max_backups"`
+	MaxAge     int             `mapstructure:"max_age"     toml:"max_age"`
+	Compress   bool            `mapstructure:"compress"    toml:"compress"`
+	Remote     RemoteLogConfig `mapstructure:"remote" toml:"remote"`
+}
+
+// RemoteLogConfig 定义远程日志写入配置。
+type RemoteLogConfig struct {
+	Enabled       bool          `mapstructure:"enabled"        toml:"enabled"`
+	Endpoint      string        `mapstructure:"endpoint"       toml:"endpoint"`
+	AuthToken     string        `mapstructure:"auth_token"     toml:"auth_token"`
+	Timeout       time.Duration `mapstructure:"timeout"        toml:"timeout"`
+	BatchSize     int           `mapstructure:"batch_size"     toml:"batch_size"`
+	BufferSize    int           `mapstructure:"buffer_size"    toml:"buffer_size"`
+	FlushInterval time.Duration `mapstructure:"flush_interval" toml:"flush_interval"`
+	DropOnFull    bool          `mapstructure:"drop_on_full"   toml:"drop_on_full"`
 }
 
 // JWTConfig 身份认证令牌相关配置.
