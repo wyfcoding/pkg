@@ -1,14 +1,18 @@
 // Package response 提供了统一的 HTTP 响应封装，支持业务错误码映射、分页数据包装及 gRPC 状态码转换。
 // 生成摘要:
 // 1) Error 响应优先识别 xerrors 并输出规范化消息与详情字段。
+// 2) 错误响应附带 request_id 与 trace_id，便于链路定位。
 // 假设:
 // 1) xerrors.Message 为对外可读的业务错误描述。
 package response
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
+	"github.com/wyfcoding/pkg/contextx"
+	"github.com/wyfcoding/pkg/tracing"
 	"github.com/wyfcoding/pkg/xerrors"
 
 	"github.com/gin-gonic/gin"
@@ -105,19 +109,27 @@ func Error(c *gin.Context, err error) {
 	}
 
 	c.JSON(statusCode, gin.H{
-		"code":   statusCode,
-		"msg":    msg,
-		"detail": detail,
+		"code":       statusCode,
+		"msg":        msg,
+		"detail":     detail,
+		"request_id": contextx.GetRequestID(c.Request.Context()),
+		"trace_id":   xerrorsTraceID(c.Request.Context()),
 	})
 }
 
 // ErrorWithStatus 发送一个带有指定 HTTP 状态码、消息和详情的错误响应。
 func ErrorWithStatus(c *gin.Context, statusVal int, msg, detail string) {
 	c.JSON(statusVal, gin.H{
-		"code":   statusVal,
-		"msg":    msg,
-		"detail": detail,
+		"code":       statusVal,
+		"msg":        msg,
+		"detail":     detail,
+		"request_id": contextx.GetRequestID(c.Request.Context()),
+		"trace_id":   xerrorsTraceID(c.Request.Context()),
 	})
+}
+
+func xerrorsTraceID(ctx context.Context) string {
+	return tracing.GetTraceID(ctx)
 }
 
 func grpcCodeToHTTP(code codes.Code) int {

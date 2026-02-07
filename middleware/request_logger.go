@@ -1,6 +1,7 @@
 // Package middleware 提供了通用的 Gin 中间件。
 // 生成摘要:
 // 1) 访问日志字段统一使用 duration 作为耗时键。
+// 2) 支持慢请求阈值配置。
 // 假设:
 // 1) 上游日志处理按 duration 读取耗时字段。
 package middleware
@@ -13,15 +14,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// RequestLoggerOptions 定义 HTTP 访问日志中间件的参数。
+type RequestLoggerOptions struct {
+	SlowThreshold time.Duration
+	SkipPaths     []string
+}
+
+const defaultHTTPSlowThreshold = 500 * time.Millisecond
+
 // RequestLogger 返回一个用于记录 HTTP 请求详情的 Gin 中间件。
 // 优化：支持排除路径（如健康检查）以减少无效日志，并针对慢请求和错误请求自动提升关注度。
 func RequestLogger(skipPaths ...string) gin.HandlerFunc {
+	return RequestLoggerWithOptions(RequestLoggerOptions{
+		SlowThreshold: defaultHTTPSlowThreshold,
+		SkipPaths:     skipPaths,
+	})
+}
+
+// RequestLoggerWithOptions 返回一个可配置的 HTTP 请求日志中间件。
+func RequestLoggerWithOptions(opts RequestLoggerOptions) gin.HandlerFunc {
 	skip := make(map[string]struct{})
-	for _, path := range skipPaths {
+	for _, path := range opts.SkipPaths {
 		skip[path] = struct{}{}
 	}
 
-	const slowThreshold = 500 * time.Millisecond
+	slowThreshold := opts.SlowThreshold
+	if slowThreshold <= 0 {
+		slowThreshold = defaultHTTPSlowThreshold
+	}
 
 	return func(c *gin.Context) {
 		start := time.Now()

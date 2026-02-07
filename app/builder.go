@@ -1,6 +1,6 @@
 // Package app 提供了应用程序生命周期管理的基础设施.
 // 生成摘要:
-// 1) 默认接入 HTTP 错误处理、gRPC Request ID、访问日志与错误翻译拦截器，统一链路字段输出与错误码映射。
+// 1) 默认接入 Trace ID 响应头、上下文增强、HTTP 错误处理、gRPC Request ID、访问日志与错误翻译拦截器，统一链路字段输出与错误码映射。
 // 2) 调整 gRPC 拦截器顺序，优先确保 Panic 可被统一恢复。
 // 假设:
 // 1) 业务侧沿用 builder 默认拦截器顺序即可满足观测需求。
@@ -303,9 +303,21 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 	if cfg.Tracing.Enabled {
 		baseGin = append(baseGin, middleware.TracingMiddleware(b.serviceName))
 	}
+	baseGin = append(baseGin, middleware.TraceIDHeader())
+	baseGin = append(baseGin,
+		middleware.RequestContextEnricher(),
+	)
+
+	if cfg.Server.HTTP.Timeout > 0 {
+		baseGin = append(baseGin, middleware.TimeoutMiddleware(cfg.Server.HTTP.Timeout))
+	}
+
 	baseGin = append(baseGin,
 		middleware.Recovery(),
-		middleware.RequestLogger("/sys/health", "/metrics"),
+		middleware.RequestLoggerWithOptions(middleware.RequestLoggerOptions{
+			SlowThreshold: cfg.Log.SlowThreshold,
+			SkipPaths:     []string{"/sys/health", "/metrics"},
+		}),
 		middleware.HTTPMetricsMiddleware(m),
 		middleware.HTTPErrorHandler(),
 	)
@@ -316,12 +328,22 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 
 	b.ginMiddleware = append(baseGin, b.ginMiddleware...)
 
-	b.grpcInterceptors = append([]grpc.UnaryServerInterceptor{
+	grpcChain := make([]grpc.UnaryServerInterceptor, 0, 8)
+	if cfg.Server.GRPC.Timeout > 0 {
+		grpcChain = append(grpcChain, middleware.GRPCTimeoutInterceptor(cfg.Server.GRPC.Timeout))
+	}
+
+	grpcChain = append(grpcChain,
 		middleware.GRPCRecovery(),
 		middleware.GRPCErrorTranslator(),
 		middleware.GRPCRequestID(),
-		middleware.GRPCRequestLogger(),
-	}, b.grpcInterceptors...)
+		middleware.GRPCContextEnricher(),
+		middleware.GRPCRequestLoggerWithOptions(middleware.GRPCRequestLoggerOptions{
+			SlowThreshold: cfg.Log.GRPCSlowThreshold,
+		}),
+	)
+
+	b.grpcInterceptors = append(grpcChain, b.grpcInterceptors...)
 	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptor(m))
 }
 

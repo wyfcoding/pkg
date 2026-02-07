@@ -1,6 +1,6 @@
 // Package grpcclient 提供了统一治理能力的 gRPC 客户端工厂。
 // 生成摘要:
-// 1) 增加 Request ID 自动传递拦截器，确保跨服务链路一致。
+// 1) 增加 Request/Trace ID 自动传递拦截器，确保跨服务链路一致。
 // 2) metrics 为空时自动降级，避免空指针。
 // 假设:
 // 1) Request ID 通过 metadata 键 "x-request-id" 传递。
@@ -18,6 +18,7 @@ import (
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/retry"
+	"github.com/wyfcoding/pkg/tracing"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/time/rate"
@@ -30,6 +31,7 @@ import (
 )
 
 const grpcRequestIDKey = "x-request-id"
+const grpcTraceIDKey = "x-trace-id"
 
 // ClientFactory 是一个生产级的 gRPC 客户端工厂，集成了治理能力（限流、熔断、重试、监控、追踪）。
 type ClientFactory struct {
@@ -116,18 +118,27 @@ func (f *ClientFactory) metricsInterceptor(target string) grpc.UnaryClientInterc
 
 func (f *ClientFactory) requestIDInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if md, ok := metadata.FromOutgoingContext(ctx); ok {
-			if len(md.Get(grpcRequestIDKey)) > 0 {
-				return invoker(ctx, method, req, reply, cc, opts...)
-			}
-		}
-
 		requestID := contextx.GetRequestID(ctx)
 		if requestID == "" {
 			requestID = idgen.GenIDString()
 		}
 
+		traceID := tracing.GetTraceID(ctx)
+
+		if md, ok := metadata.FromOutgoingContext(ctx); ok {
+			if len(md.Get(grpcRequestIDKey)) == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, grpcRequestIDKey, requestID)
+			}
+			if traceID != "" && len(md.Get(grpcTraceIDKey)) == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, grpcTraceIDKey, traceID)
+			}
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
+
 		ctx = metadata.AppendToOutgoingContext(ctx, grpcRequestIDKey, requestID)
+		if traceID != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, grpcTraceIDKey, traceID)
+		}
 
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
