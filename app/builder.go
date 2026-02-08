@@ -400,6 +400,13 @@ func (b *Builder[C, S]) initLogger(cfg *config.Config) *logging.Logger {
 		}))
 	}
 
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		logging.SetLevel(updated.Log.Level)
+	})
+
 	// 注册上下文提取器，将 contextx 中的业务字段自动注入日志
 	logging.RegisterContextExtractor(func(ctx context.Context) []slog.Attr {
 		var attrs []slog.Attr
@@ -609,6 +616,17 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 	grpcWaitTimeout.Store(time.Duration(0))
 	httpBreaker := breaker.NewDynamicBreaker("HTTP-Inbound", m, 0, 0)
 	grpcBreaker := breaker.NewDynamicBreaker("GRPC-Inbound", m, 0, 0)
+	corsHandler := middleware.NewDynamicHandler(nil)
+	securityHandler := middleware.NewDynamicHandler(nil)
+	ipAllowlistHandler := middleware.NewDynamicHandler(nil)
+	maintenanceHandler := middleware.NewDynamicHandler(nil)
+	maxBodyHandler := middleware.NewDynamicHandler(nil)
+	httpTimeoutHandler := middleware.NewDynamicHandler(nil)
+	httpLoggerHandler := middleware.NewDynamicHandler(nil)
+	httpMetricsHandler := middleware.NewDynamicHandler(nil)
+	grpcTimeoutInterceptor := middleware.NewDynamicUnaryInterceptor(nil)
+	grpcLoggerInterceptor := middleware.NewDynamicUnaryInterceptor(nil)
+	grpcMetricsInterceptor := middleware.NewDynamicUnaryInterceptor(nil)
 
 	applyGovernance := func(updated *config.Config) {
 		if updated == nil {
@@ -649,6 +667,79 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 	applyGovernance(cfg)
 	config.RegisterReloadHook(applyGovernance)
 
+	applyRuntimeMiddleware := func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+
+		if updated.CORS.Enabled {
+			corsHandler.Update(middleware.CORSWithOptions(middleware.CORSOptions{
+				AllowOrigins:     updated.CORS.AllowOrigins,
+				AllowMethods:     updated.CORS.AllowMethods,
+				AllowHeaders:     updated.CORS.AllowHeaders,
+				ExposeHeaders:    updated.CORS.ExposeHeaders,
+				AllowCredentials: updated.CORS.AllowCredentials,
+				MaxAge:           updated.CORS.MaxAge,
+			}))
+		} else {
+			corsHandler.Update(nil)
+		}
+
+		if updated.Security.Enabled {
+			securityHandler.Update(middleware.SecurityHeadersWithConfig(updated.Security))
+		} else {
+			securityHandler.Update(nil)
+		}
+
+		if len(updated.Security.IPAllowlist) > 0 {
+			ipAllowlistHandler.Update(security.IPAllowlistMiddleware(updated.Security.IPAllowlist))
+		} else {
+			ipAllowlistHandler.Update(nil)
+		}
+
+		if updated.Maintenance.Enabled {
+			maintenanceHandler.Update(middleware.MaintenanceMiddleware(updated.Maintenance))
+		} else {
+			maintenanceHandler.Update(nil)
+		}
+
+		if updated.Server.HTTP.MaxBodyBytes > 0 {
+			maxBodyHandler.Update(middleware.MaxBodyBytes(updated.Server.HTTP.MaxBodyBytes))
+		} else {
+			maxBodyHandler.Update(nil)
+		}
+
+		if updated.Server.HTTP.Timeout > 0 {
+			httpTimeoutHandler.Update(middleware.TimeoutMiddleware(updated.Server.HTTP.Timeout))
+		} else {
+			httpTimeoutHandler.Update(nil)
+		}
+
+		httpLoggerHandler.Update(middleware.RequestLoggerWithOptions(middleware.RequestLoggerOptions{
+			SlowThreshold: updated.Log.SlowThreshold,
+			SkipPaths:     []string{"/sys/health", "/metrics"},
+		}))
+		httpMetricsHandler.Update(middleware.HTTPMetricsMiddlewareWithOptions(m, middleware.MetricsOptions{
+			SlowThreshold: updated.Log.SlowThreshold,
+			SkipPaths:     []string{"/sys/health", "/metrics"},
+		}))
+
+		if updated.Server.GRPC.Timeout > 0 {
+			grpcTimeoutInterceptor.Update(middleware.GRPCTimeoutInterceptor(updated.Server.GRPC.Timeout))
+		} else {
+			grpcTimeoutInterceptor.Update(nil)
+		}
+
+		grpcLoggerInterceptor.Update(middleware.GRPCRequestLoggerWithOptions(middleware.GRPCRequestLoggerOptions{
+			SlowThreshold: updated.Log.GRPCSlowThreshold,
+		}))
+		grpcMetricsInterceptor.Update(middleware.GRPCMetricsInterceptorWithOptions(m, middleware.MetricsOptions{
+			SlowThreshold: updated.Log.GRPCSlowThreshold,
+		}))
+	}
+	applyRuntimeMiddleware(cfg)
+	config.RegisterReloadHook(applyRuntimeMiddleware)
+
 	getWaitTimeout := func(v *atomic.Value) time.Duration {
 		if v == nil {
 			return 0
@@ -671,31 +762,14 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		baseGin = append(baseGin, middleware.TracingMiddleware(b.serviceName))
 	}
 	baseGin = append(baseGin, middleware.TraceIDHeader())
-	if cfg.CORS.Enabled {
-		baseGin = append(baseGin, middleware.CORSWithOptions(middleware.CORSOptions{
-			AllowOrigins:     cfg.CORS.AllowOrigins,
-			AllowMethods:     cfg.CORS.AllowMethods,
-			AllowHeaders:     cfg.CORS.AllowHeaders,
-			ExposeHeaders:    cfg.CORS.ExposeHeaders,
-			AllowCredentials: cfg.CORS.AllowCredentials,
-			MaxAge:           cfg.CORS.MaxAge,
-		}))
-	}
-	if cfg.Security.Enabled {
-		baseGin = append(baseGin, middleware.SecurityHeadersWithConfig(cfg.Security))
-	}
-	if len(cfg.Security.IPAllowlist) > 0 {
-		baseGin = append(baseGin, security.IPAllowlistMiddleware(cfg.Security.IPAllowlist))
-	}
-	if cfg.Maintenance.Enabled {
-		baseGin = append(baseGin, middleware.MaintenanceMiddleware(cfg.Maintenance))
-	}
+	baseGin = append(baseGin, corsHandler.Handler())
+	baseGin = append(baseGin, securityHandler.Handler())
+	baseGin = append(baseGin, ipAllowlistHandler.Handler())
+	baseGin = append(baseGin, maintenanceHandler.Handler())
 	baseGin = append(baseGin,
 		middleware.RequestContextEnricher(),
 	)
-	if cfg.Server.HTTP.MaxBodyBytes > 0 {
-		baseGin = append(baseGin, middleware.MaxBodyBytes(cfg.Server.HTTP.MaxBodyBytes))
-	}
+	baseGin = append(baseGin, maxBodyHandler.Handler())
 	baseGin = append(baseGin, middleware.RateLimitWithLimiterAndMetrics(httpRateLimiter, m))
 	baseGin = append(baseGin, middleware.ConcurrencyLimitWithDynamicOptions(httpConcurrencyLimiter, middleware.DynamicConcurrencyOptions{
 		WaitTimeout: func() time.Duration {
@@ -703,20 +777,12 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		},
 	}))
 
-	if cfg.Server.HTTP.Timeout > 0 {
-		baseGin = append(baseGin, middleware.TimeoutMiddleware(cfg.Server.HTTP.Timeout))
-	}
+	baseGin = append(baseGin, httpTimeoutHandler.Handler())
 
 	baseGin = append(baseGin,
 		middleware.Recovery(),
-		middleware.RequestLoggerWithOptions(middleware.RequestLoggerOptions{
-			SlowThreshold: cfg.Log.SlowThreshold,
-			SkipPaths:     []string{"/sys/health", "/metrics"},
-		}),
-		middleware.HTTPMetricsMiddlewareWithOptions(m, middleware.MetricsOptions{
-			SlowThreshold: cfg.Log.SlowThreshold,
-			SkipPaths:     []string{"/sys/health", "/metrics"},
-		}),
+		httpLoggerHandler.Handler(),
+		httpMetricsHandler.Handler(),
 		middleware.HTTPRequestSizeMiddleware(m),
 		middleware.HTTPResponseSizeMiddleware(m),
 		middleware.HTTPErrorHandler(),
@@ -727,9 +793,7 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 	b.ginMiddleware = append(baseGin, b.ginMiddleware...)
 
 	grpcChain := make([]grpc.UnaryServerInterceptor, 0, 8)
-	if cfg.Server.GRPC.Timeout > 0 {
-		grpcChain = append(grpcChain, middleware.GRPCTimeoutInterceptor(cfg.Server.GRPC.Timeout))
-	}
+	grpcChain = append(grpcChain, grpcTimeoutInterceptor.Interceptor())
 
 	grpcChain = append(grpcChain,
 		middleware.GRPCRecovery(),
@@ -744,16 +808,12 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		},
 	}))
 
-	grpcChain = append(grpcChain, middleware.GRPCRequestLoggerWithOptions(middleware.GRPCRequestLoggerOptions{
-		SlowThreshold: cfg.Log.GRPCSlowThreshold,
-	}))
+	grpcChain = append(grpcChain, grpcLoggerInterceptor.Interceptor())
 
 	grpcChain = append(grpcChain, middleware.DynamicGRPCCircuitBreaker(grpcBreaker))
 
 	b.grpcInterceptors = append(grpcChain, b.grpcInterceptors...)
-	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptorWithOptions(m, middleware.MetricsOptions{
-		SlowThreshold: cfg.Log.GRPCSlowThreshold,
-	}))
+	b.grpcInterceptors = append(b.grpcInterceptors, grpcMetricsInterceptor.Interceptor())
 }
 
 func (b *Builder[C, S]) assembleService(m *metrics.Metrics, logger *logging.Logger) (instance S, cleanup func()) {
