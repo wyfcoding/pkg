@@ -6,16 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	kafkago "github.com/segmentio/kafka-go"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/idempotency"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/retry"
 	"github.com/wyfcoding/pkg/tracing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	kafkago "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -66,6 +68,7 @@ type ConsumerOptions struct {
 
 // Producer 封装了 Kafka 消息生产者.
 type Producer struct {
+	mu            sync.RWMutex
 	writer        *kafkago.Writer
 	dlqWriter     *kafkago.Writer
 	logger        *logging.Logger
@@ -76,40 +79,7 @@ type Producer struct {
 
 // NewProducer 初始化并返回一个功能增强的 Kafka 生产者.
 func NewProducer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Producer {
-	maxAttempts := cfg.MaxAttempts
-	if maxAttempts <= 0 {
-		maxAttempts = defaultProducerMaxAttempts
-	}
-	requiredAcks := kafkago.RequireAll
-	if cfg.RequiredAcks != 0 {
-		requiredAcks = kafkago.RequiredAcks(cfg.RequiredAcks)
-	}
-
-	transport := buildTransport(cfg)
-	w := &kafkago.Writer{
-		Addr:         kafkago.TCP(cfg.Brokers...),
-		Topic:        cfg.Topic,
-		Balancer:     &kafkago.Hash{Hasher: nil},
-		Transport:    transport,
-		WriteTimeout: cfg.WriteTimeout,
-		ReadTimeout:  cfg.ReadTimeout,
-		MaxAttempts:  maxAttempts,
-		RequiredAcks: requiredAcks,
-		Async:        cfg.Async,
-	}
-
-	dlqTopic := cfg.Topic
-	if dlqTopic == "" {
-		dlqTopic = "default"
-	}
-
-	dlqWriter := &kafkago.Writer{
-		Addr:         kafkago.TCP(cfg.Brokers...),
-		Topic:        dlqTopic + ".dlq",
-		Balancer:     &kafkago.LeastBytes{},
-		Transport:    transport,
-		RequiredAcks: kafkago.RequireOne,
-	}
+	w, dlqWriter := buildProducerWriters(cfg)
 
 	producedTotal := newCounterVec(m, &prometheus.CounterOpts{
 		Namespace: "pkg",
@@ -138,7 +108,16 @@ func NewProducer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Met
 
 // Publish 将消息发送至默认配置的主题.
 func (p *Producer) Publish(ctx context.Context, key, value []byte) error {
-	return p.PublishToTopic(ctx, p.writer.Topic, key, value)
+	if p == nil {
+		return errors.New("producer is nil")
+	}
+	p.mu.RLock()
+	writer := p.writer
+	p.mu.RUnlock()
+	if writer == nil {
+		return errors.New("producer not initialized")
+	}
+	return p.PublishToTopic(ctx, writer.Topic, key, value)
 }
 
 // PublishJSON 将对象序列化为 JSON 并发送至指定主题.
@@ -152,6 +131,9 @@ func (p *Producer) PublishJSON(ctx context.Context, topic, key string, value any
 
 // PublishToTopic 将消息发送至指定主题.
 func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value []byte) error {
+	if p == nil {
+		return errors.New("producer is nil")
+	}
 	start := time.Now()
 	ctx, span := tracing.Tracer().Start(ctx, "kafka.publish", trace.WithSpanKind(trace.SpanKindProducer))
 	defer span.End()
@@ -171,22 +153,86 @@ func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value 
 		Time:    time.Now(),
 	}
 
-	err := p.writer.WriteMessages(ctx, msg)
-	p.duration.WithLabelValues(topic).Observe(time.Since(start).Seconds())
+	p.mu.RLock()
+	writer := p.writer
+	dlqWriter := p.dlqWriter
+	logger := p.logger
+	producedTotal := p.producedTotal
+	duration := p.duration
+
+	if logger == nil {
+		logger = logging.Default()
+	}
+	if writer == nil {
+		p.mu.RUnlock()
+		return errors.New("producer not initialized")
+	}
+
+	err := writer.WriteMessages(ctx, msg)
+	if duration != nil {
+		duration.WithLabelValues(topic).Observe(time.Since(start).Seconds())
+	}
 
 	if err != nil {
-		p.producedTotal.WithLabelValues(topic, "failed").Inc()
+		if producedTotal != nil {
+			producedTotal.WithLabelValues(topic, "failed").Inc()
+		}
 		tracing.SetError(ctx, err)
-		p.logger.ErrorContext(ctx, "failed to publish message", "topic", topic, "error", err)
+		logger.ErrorContext(ctx, "failed to publish message", "topic", topic, "error", err)
 
-		if dlqErr := p.dlqWriter.WriteMessages(ctx, msg); dlqErr != nil {
-			p.logger.ErrorContext(ctx, "failed to write to dlq", "error", dlqErr)
+		if dlqWriter != nil {
+			if dlqErr := dlqWriter.WriteMessages(ctx, msg); dlqErr != nil {
+				logger.ErrorContext(ctx, "failed to write to dlq", "error", dlqErr)
+			}
 		}
 
+		p.mu.RUnlock()
 		return fmt.Errorf("failed to write messages: %w", err)
 	}
 
-	p.producedTotal.WithLabelValues(topic, "success").Inc()
+	if producedTotal != nil {
+		producedTotal.WithLabelValues(topic, "success").Inc()
+	}
+
+	p.mu.RUnlock()
+	return nil
+}
+
+// UpdateConfig 使用最新配置刷新生产者连接。
+func (p *Producer) UpdateConfig(cfg *config.KafkaConfig) error {
+	if p == nil {
+		return errors.New("producer is nil")
+	}
+	if cfg == nil {
+		return errors.New("kafka config is nil")
+	}
+
+	writer, dlqWriter := buildProducerWriters(cfg)
+
+	p.mu.Lock()
+	oldWriter := p.writer
+	oldDLQ := p.dlqWriter
+	p.writer = writer
+	p.dlqWriter = dlqWriter
+	logger := p.logger
+	p.mu.Unlock()
+
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	if oldDLQ != nil {
+		if err := oldDLQ.Close(); err != nil {
+			logger.Error("failed to close old dlq writer", "error", err)
+		}
+	}
+	if oldWriter != nil {
+		if err := oldWriter.Close(); err != nil {
+			logger.Error("failed to close old kafka writer", "error", err)
+		}
+	}
+
+	logger.Info("kafka producer updated", "topic", cfg.Topic, "brokers", cfg.Brokers)
 
 	return nil
 }
@@ -194,14 +240,34 @@ func (p *Producer) PublishToTopic(ctx context.Context, topic string, key, value 
 // Close 优雅关闭主写入器及死信队列写入器.
 func (p *Producer) Close() error {
 	var errs []error
-	if dlqErr := p.dlqWriter.Close(); dlqErr != nil {
-		p.logger.Error("failed to close dlq writer", "error", dlqErr)
-		errs = append(errs, dlqErr)
+	if p == nil {
+		return nil
 	}
 
-	if wErr := p.writer.Close(); wErr != nil {
-		p.logger.Error("failed to close writer", "error", wErr)
-		errs = append(errs, wErr)
+	p.mu.Lock()
+	dlqWriter := p.dlqWriter
+	writer := p.writer
+	p.dlqWriter = nil
+	p.writer = nil
+	logger := p.logger
+	p.mu.Unlock()
+
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	if dlqWriter != nil {
+		if dlqErr := dlqWriter.Close(); dlqErr != nil {
+			logger.Error("failed to close dlq writer", "error", dlqErr)
+			errs = append(errs, dlqErr)
+		}
+	}
+
+	if writer != nil {
+		if wErr := writer.Close(); wErr != nil {
+			logger.Error("failed to close writer", "error", wErr)
+			errs = append(errs, wErr)
+		}
 	}
 
 	if len(errs) > 0 {
@@ -591,6 +657,44 @@ func buildTransport(cfg *config.KafkaConfig) kafkago.RoundTripper {
 	return &kafkago.Transport{
 		DialTimeout: cfg.DialTimeout,
 	}
+}
+
+func buildProducerWriters(cfg *config.KafkaConfig) (*kafkago.Writer, *kafkago.Writer) {
+	maxAttempts := cfg.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = defaultProducerMaxAttempts
+	}
+	requiredAcks := kafkago.RequireAll
+	if cfg.RequiredAcks != 0 {
+		requiredAcks = kafkago.RequiredAcks(cfg.RequiredAcks)
+	}
+
+	transport := buildTransport(cfg)
+	writer := &kafkago.Writer{
+		Addr:         kafkago.TCP(cfg.Brokers...),
+		Topic:        cfg.Topic,
+		Balancer:     &kafkago.Hash{Hasher: nil},
+		Transport:    transport,
+		WriteTimeout: cfg.WriteTimeout,
+		ReadTimeout:  cfg.ReadTimeout,
+		MaxAttempts:  maxAttempts,
+		RequiredAcks: requiredAcks,
+		Async:        cfg.Async,
+	}
+
+	dlqTopic := cfg.Topic
+	if dlqTopic == "" {
+		dlqTopic = "default"
+	}
+	dlqWriter := &kafkago.Writer{
+		Addr:         kafkago.TCP(cfg.Brokers...),
+		Topic:        dlqTopic + ".dlq",
+		Balancer:     &kafkago.LeastBytes{},
+		Transport:    transport,
+		RequiredAcks: kafkago.RequireOne,
+	}
+
+	return writer, dlqWriter
 }
 
 func newCounterVec(m *metrics.Metrics, opts *prometheus.CounterOpts, labels []string) *prometheus.CounterVec {
