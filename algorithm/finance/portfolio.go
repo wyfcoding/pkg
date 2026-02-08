@@ -97,3 +97,55 @@ func (o *PortfolioOptimizer) CalculatePortfolioRisk(weights map[string]decimal.D
 	}
 	return decimal.NewFromFloat(math.Sqrt(variance))
 }
+
+// CalculateReturns 计算收益率序列 (辅助函数)
+func CalculateReturns(prices []decimal.Decimal) []decimal.Decimal {
+	if len(prices) < 2 {
+		return nil
+	}
+	returns := make([]decimal.Decimal, len(prices)-1)
+	for i := 1; i < len(prices); i++ {
+		if !prices[i-1].IsZero() {
+			returns[i-1] = prices[i].Sub(prices[i-1]).Div(prices[i-1])
+		}
+	}
+	return returns
+}
+
+// CalculateCovariance 计算多个资产收益率之间的协方差矩阵
+func CalculateCovariance(assetsReturns [][]decimal.Decimal) [][]decimal.Decimal {
+	n := len(assetsReturns)
+	if n == 0 {
+		return nil
+	}
+	m := len(assetsReturns[0])
+	cov := make([][]decimal.Decimal, n)
+	for i := range n {
+		cov[i] = make([]decimal.Decimal, n)
+	}
+
+	means := make([]float64, n)
+	for i := range n {
+		var sum float64
+		for _, r := range assetsReturns[i] {
+			sum += r.InexactFloat64()
+		}
+		means[i] = sum / float64(m)
+	}
+
+	for i := range n {
+		for j := range i + 1 {
+			var sum float64
+			for k := range m {
+				diffI := assetsReturns[i][k].InexactFloat64() - means[i]
+				diffJ := assetsReturns[j][k].InexactFloat64() - means[j]
+				sum += diffI * diffJ
+			}
+			val := decimal.NewFromFloat(sum / float64(m-1))
+			cov[i][j] = val
+			cov[j][i] = val
+		}
+	}
+
+	return cov
+}

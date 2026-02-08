@@ -22,14 +22,22 @@ import (
 type Metrics struct {
 	registry *prometheus.Registry
 
+	// BuildInfo 版本构建信息指标。
+	BuildInfo *prometheus.GaugeVec
 	// HTTPRequestsTotal HTTP 请求总量 (维度: method, path, status)。
 	HTTPRequestsTotal *prometheus.CounterVec
 	// HTTPRequestDuration HTTP 请求耗时分布。
 	HTTPRequestDuration *prometheus.HistogramVec
+	// HTTPRequestSizeBytes HTTP 请求体大小分布。
+	HTTPRequestSizeBytes *prometheus.HistogramVec
+	// HTTPResponseSizeBytes HTTP 响应体大小分布。
+	HTTPResponseSizeBytes *prometheus.HistogramVec
 	// HTTPInFlight HTTP 当前在途请求数。
 	HTTPInFlight *prometheus.GaugeVec
 	// HTTPSlowRequestsTotal HTTP 慢请求总量。
 	HTTPSlowRequestsTotal *prometheus.CounterVec
+	// HTTPRateLimitTotal HTTP 限流触发次数。
+	HTTPRateLimitTotal *prometheus.CounterVec
 	// GRPCRequestsTotal gRPC 请求总量 (维度: service, method, status)。
 	GRPCRequestsTotal *prometheus.CounterVec
 	// GRPCRequestDuration gRPC 请求耗时分布。
@@ -38,6 +46,8 @@ type Metrics struct {
 	GRPCInFlight *prometheus.GaugeVec
 	// GRPCSlowRequestsTotal gRPC 慢请求总量。
 	GRPCSlowRequestsTotal *prometheus.CounterVec
+	// GRPCRateLimitTotal gRPC 限流触发次数。
+	GRPCRateLimitTotal *prometheus.CounterVec
 }
 
 // NewMetrics 初始化并返回一个新的指标采集器。
@@ -69,6 +79,11 @@ func NewMetrics(serviceName string) *Metrics {
 		Help: "Total number of slow HTTP requests",
 	}, []string{"method", "path"})
 
+	m.HTTPRateLimitTotal = m.NewCounterVec(&prometheus.CounterOpts{
+		Name: "http_server_rate_limit_total",
+		Help: "Total number of rate limited HTTP requests",
+	}, []string{"method", "path"})
+
 	m.GRPCRequestsTotal = m.NewCounterVec(&prometheus.CounterOpts{
 		Name: "grpc_server_requests_total",
 		Help: "Total number of gRPC requests",
@@ -89,6 +104,14 @@ func NewMetrics(serviceName string) *Metrics {
 		Name: "grpc_server_slow_requests_total",
 		Help: "Total number of slow gRPC requests",
 	}, []string{"service", "method"})
+
+	m.GRPCRateLimitTotal = m.NewCounterVec(&prometheus.CounterOpts{
+		Name: "grpc_server_rate_limit_total",
+		Help: "Total number of rate limited gRPC requests",
+	}, []string{"service", "method"})
+
+	m.RegisterRequestSizeMetrics()
+	m.RegisterResponseSizeMetrics()
 
 	slog.Info("unified metrics registry initialized", "service", serviceName)
 

@@ -11,25 +11,22 @@ import (
 	"google.golang.org/grpc"
 )
 
-// TimeoutMiddleware 设置请求的强制硬超时保护。
+// TimeoutMiddleware 设置请求的上下文超时保护。
 func TimeoutMiddleware(duration time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if duration <= 0 {
+			c.Next()
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(c.Request.Context(), duration)
 		defer cancel()
 
 		c.Request = c.Request.WithContext(ctx)
 
-		done := make(chan struct{}, 1)
+		c.Next()
 
-		go func() {
-			c.Next()
-			done <- struct{}{}
-		}()
-
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded && !c.Writer.Written() {
 			response.ErrorWithStatus(c, http.StatusGatewayTimeout, "Request Timeout", "")
 			c.Abort()
 		}
@@ -39,6 +36,9 @@ func TimeoutMiddleware(duration time.Duration) gin.HandlerFunc {
 // GRPCTimeoutInterceptor 为 gRPC 提供一元调用的超时拦截器。
 func GRPCTimeoutInterceptor(timeout time.Duration) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if timeout <= 0 {
+			return handler(ctx, req)
+		}
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return handler(ctx, req)

@@ -63,8 +63,14 @@ func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger 
 		return nil, xerrors.New(xerrors.ErrInvalidArg, errBadRequest, "unsupported database driver", cfg.Driver, nil)
 	}
 
+	slowThreshold := cfg.SlowThreshold
+	if slowThreshold <= 0 {
+		slowThreshold = defaultSlowThreshold
+	}
+	gormLogger := logging.NewGormLogger(logger, slowThreshold).LogMode(cfg.LogLevel)
+
 	gormDB, err := gorm.Open(dialer, &gorm.Config{
-		Logger:      logging.NewGormLogger(logger, defaultSlowThreshold),
+		Logger:      gormLogger,
 		PrepareStmt: true,
 	})
 	if err != nil {

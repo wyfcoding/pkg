@@ -12,15 +12,17 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"reflect"
 	"time"
 
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/contextx"
+	"github.com/wyfcoding/pkg/httpclient"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/middleware"
-	"github.com/wyfcoding/pkg/response"
+	"github.com/wyfcoding/pkg/security"
 	"github.com/wyfcoding/pkg/server"
 	"github.com/wyfcoding/pkg/tracing"
 
@@ -156,6 +158,10 @@ func (b *Builder[C, S]) Build() *App {
 	}
 
 	metricsInstance := b.initMetrics(&cfg)
+	if metricsInstance != nil {
+		metricsInstance.RegisterBuildInfo(b.serviceName, cfg.Version)
+	}
+	httpclient.SetDefault(httpclient.NewFromConfig(cfg.HTTPClient, loggerInstance, metricsInstance))
 
 	b.setupMiddleware(&cfg, metricsInstance)
 
@@ -317,6 +323,15 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 			MaxAge:           cfg.CORS.MaxAge,
 		}))
 	}
+	if cfg.Security.Enabled {
+		baseGin = append(baseGin, middleware.SecurityHeadersWithConfig(cfg.Security))
+	}
+	if len(cfg.Security.IPAllowlist) > 0 {
+		baseGin = append(baseGin, security.IPAllowlistMiddleware(cfg.Security.IPAllowlist))
+	}
+	if cfg.Maintenance.Enabled {
+		baseGin = append(baseGin, middleware.MaintenanceMiddleware(cfg.Maintenance))
+	}
 	baseGin = append(baseGin,
 		middleware.RequestContextEnricher(),
 	)
@@ -328,7 +343,7 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		if burst <= 0 {
 			burst = cfg.RateLimit.Rate
 		}
-		baseGin = append(baseGin, middleware.NewLocalRateLimitMiddleware(cfg.RateLimit.Rate, burst))
+		baseGin = append(baseGin, middleware.NewLocalRateLimitMiddlewareWithMetrics(cfg.RateLimit.Rate, burst, m))
 	}
 	if cfg.Concurrency.HTTP.Enabled && cfg.Concurrency.HTTP.Max > 0 {
 		baseGin = append(baseGin, middleware.NewConcurrencyLimitMiddleware(cfg.Concurrency.HTTP.Max, cfg.Concurrency.HTTP.WaitTimeout))
@@ -348,6 +363,8 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 			SlowThreshold: cfg.Log.SlowThreshold,
 			SkipPaths:     []string{"/sys/health", "/metrics"},
 		}),
+		middleware.HTTPRequestSizeMiddleware(m),
+		middleware.HTTPResponseSizeMiddleware(m),
 		middleware.HTTPErrorHandler(),
 	)
 
@@ -373,7 +390,7 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		if burst <= 0 {
 			burst = cfg.RateLimit.Rate
 		}
-		grpcChain = append(grpcChain, middleware.NewGRPCLocalRateLimitInterceptor(cfg.RateLimit.Rate, burst))
+		grpcChain = append(grpcChain, middleware.NewGRPCLocalRateLimitInterceptorWithMetrics(cfg.RateLimit.Rate, burst, m))
 	}
 	if cfg.Concurrency.GRPC.Enabled && cfg.Concurrency.GRPC.Max > 0 {
 		grpcChain = append(grpcChain, middleware.NewGRPCConcurrencyLimitInterceptor(cfg.Concurrency.GRPC.Max, cfg.Concurrency.GRPC.WaitTimeout))
@@ -421,6 +438,7 @@ func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Me
 			GRPCMaxRecvMsgSize:       cfg.Server.GRPC.MaxRecvMsgSize,
 			GRPCMaxSendMsgSize:       cfg.Server.GRPC.MaxSendMsgSize,
 			GRPCMaxConcurrentStreams: maxStreams,
+			GRPCKeepalive:            cfg.Server.GRPC.Keepalive,
 		}
 		srv := server.NewGRPCServer(addr, logger.Logger, func(s *grpc.Server) {
 			b.registerGRPC(s, svc)
@@ -431,12 +449,27 @@ func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Me
 
 	if b.registerGin != nil {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.HTTP.Addr, cfg.Server.HTTP.Port)
+		switch cfg.Server.Environment {
+		case "prod":
+			gin.SetMode(gin.ReleaseMode)
+		case "test":
+			gin.SetMode(gin.TestMode)
+		default:
+			gin.SetMode(gin.DebugMode)
+		}
 		engine := server.NewDefaultGinEngine(b.ginMiddleware...)
+		if len(cfg.Server.HTTP.TrustedProxies) > 0 {
+			if err := engine.SetTrustedProxies(cfg.Server.HTTP.TrustedProxies); err != nil {
+				logger.Logger.Warn("failed to set trusted proxies", "error", err)
+			}
+		}
 		httpOptions := server.Options{
-			ShutdownTimeout: server.DefaultShutdownTimeout,
-			ReadTimeout:     cfg.Server.HTTP.ReadTimeout,
-			WriteTimeout:    cfg.Server.HTTP.WriteTimeout,
-			IdleTimeout:     cfg.Server.HTTP.IdleTimeout,
+			ShutdownTimeout:   server.DefaultShutdownTimeout,
+			ReadTimeout:       cfg.Server.HTTP.ReadTimeout,
+			ReadHeaderTimeout: cfg.Server.HTTP.ReadHeaderTimeout,
+			WriteTimeout:      cfg.Server.HTTP.WriteTimeout,
+			IdleTimeout:       cfg.Server.HTTP.IdleTimeout,
+			MaxHeaderBytes:    cfg.Server.HTTP.MaxHeaderBytes,
 		}
 
 		b.registerAdminRoutes(engine, cfg, m)
@@ -451,11 +484,63 @@ func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Me
 
 func (b *Builder[C, S]) registerAdminRoutes(engine *gin.Engine, cfg *config.Config, m *metrics.Metrics) {
 	sys := engine.Group("/sys")
-	sys.GET("/health", func(c *gin.Context) {
-		response.SuccessWithRawData(c, gin.H{
+	healthChecks := func() (string, []gin.H) {
+		status := "UP"
+		checks := make([]gin.H, 0, len(b.healthCheckers))
+		for idx, checker := range b.healthCheckers {
+			start := time.Now()
+			err := checker()
+			item := gin.H{
+				"name":        fmt.Sprintf("checker_%d", idx),
+				"duration_ms": time.Since(start).Milliseconds(),
+				"status":      "UP",
+				"checked_at":  time.Now().Unix(),
+			}
+			if err != nil {
+				item["status"] = "DOWN"
+				item["error"] = err.Error()
+				status = "DOWN"
+			}
+			checks = append(checks, item)
+		}
+		return status, checks
+	}
+
+	sys.GET("/live", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
 			"status":    "UP",
 			"service":   b.serviceName,
 			"timestamp": time.Now().Unix(),
+		})
+	})
+	sys.GET("/health", func(c *gin.Context) {
+		status, checks := healthChecks()
+
+		code := http.StatusOK
+		if status != "UP" {
+			code = http.StatusServiceUnavailable
+		}
+
+		c.JSON(code, gin.H{
+			"status":    status,
+			"service":   b.serviceName,
+			"timestamp": time.Now().Unix(),
+			"checks":    checks,
+		})
+	})
+	sys.GET("/ready", func(c *gin.Context) {
+		status, checks := healthChecks()
+
+		code := http.StatusOK
+		if status != "UP" {
+			code = http.StatusServiceUnavailable
+		}
+
+		c.JSON(code, gin.H{
+			"status":    status,
+			"service":   b.serviceName,
+			"timestamp": time.Now().Unix(),
+			"checks":    checks,
 		})
 	})
 

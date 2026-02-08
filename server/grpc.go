@@ -43,6 +43,10 @@ func NewGRPCServer(addr string, logger *slog.Logger, register func(*grpc.Server)
 	if opts.GRPCMaxConcurrentStreams > 0 {
 		grpcOpts = append(grpcOpts, grpc.MaxConcurrentStreams(opts.GRPCMaxConcurrentStreams))
 	}
+	if opts.GRPCKeepalive.Enabled {
+		grpcOpts = append(grpcOpts, grpc.KeepaliveParams(toServerParams(opts.GRPCKeepalive)))
+		grpcOpts = append(grpcOpts, grpc.KeepaliveEnforcementPolicy(toEnforcement(opts.GRPCKeepalive)))
+	}
 
 	s := grpc.NewServer(grpcOpts...)
 	register(s)

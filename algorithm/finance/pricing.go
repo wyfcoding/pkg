@@ -120,6 +120,59 @@ func (bsc *BlackScholesCalculator) CalculateTheta(optionType string, spot, strik
 	return decimal.NewFromFloat(theta / 365), nil // 每日 theta。
 }
 
+// BlackScholesResult 包含计算出的期权价格及其希腊字母。
+type BlackScholesResult struct {
+	Price decimal.Decimal
+	Delta decimal.Decimal
+	Gamma decimal.Decimal
+	Vega  decimal.Decimal
+	Theta decimal.Decimal
+	Rho   decimal.Decimal
+}
+
+// Calculate 一次性计算期权价格及所有希腊字母。
+func (bsc *BlackScholesCalculator) Calculate(optionType string, spot, strike, expiry, rate, vol, div decimal.Decimal) (*BlackScholesResult, error) {
+	if spot.LessThanOrEqual(decimal.Zero) || strike.LessThanOrEqual(decimal.Zero) || expiry.LessThanOrEqual(decimal.Zero) || vol.LessThanOrEqual(decimal.Zero) {
+		return nil, xerrors.ErrInvalidInput
+	}
+
+	s := spot.InexactFloat64()
+	k := strike.InexactFloat64()
+	t := expiry.InexactFloat64()
+	r := rate.InexactFloat64()
+	sigma := vol.InexactFloat64()
+	q := div.InexactFloat64()
+
+	d1 := (math.Log(s/k) + (r-q+0.5*sigma*sigma)*t) / (sigma * math.Sqrt(t))
+	d2 := d1 - sigma*math.Sqrt(t)
+
+	n_d1 := normCDF(d1)
+	n_d2 := normCDF(d2)
+	exp_rt := math.Exp(-r * t)
+	exp_qt := math.Exp(-q * t)
+	phi_d1 := normPDF(d1)
+
+	res := &BlackScholesResult{}
+
+	isCall := types.OptionType(optionType) == types.OptionTypeCall
+	if isCall {
+		res.Price = decimal.NewFromFloat(s*exp_qt*n_d1 - k*exp_rt*n_d2)
+		res.Delta = decimal.NewFromFloat(exp_qt * n_d1)
+		res.Theta = decimal.NewFromFloat((-s*exp_qt*phi_d1*sigma/(2*math.Sqrt(t)) - r*k*exp_rt*n_d2 + q*s*exp_qt*n_d1) / 365)
+		res.Rho = decimal.NewFromFloat(k * t * exp_rt * n_d2 / 100)
+	} else {
+		res.Price = decimal.NewFromFloat(k*exp_rt*normCDF(-d2) - s*exp_qt*normCDF(-d1))
+		res.Delta = decimal.NewFromFloat(exp_qt * (n_d1 - 1))
+		res.Theta = decimal.NewFromFloat((-s*exp_qt*phi_d1*sigma/(2*math.Sqrt(t)) + r*k*exp_rt*normCDF(-d2) - q*s*exp_qt*normCDF(-d1)) / 365)
+		res.Rho = decimal.NewFromFloat(-k * t * exp_rt * normCDF(-d2) / 100)
+	}
+
+	res.Gamma = decimal.NewFromFloat(exp_qt * phi_d1 / (s * sigma * math.Sqrt(t)))
+	res.Vega = decimal.NewFromFloat(s * exp_qt * phi_d1 * math.Sqrt(t) / 100)
+
+	return res, nil
+}
+
 // CalculateRho 计算 Rho。
 func (bsc *BlackScholesCalculator) CalculateRho(optionType string, spot, strike, expiry, rate, vol, div decimal.Decimal) (decimal.Decimal, error) {
 	sFloat := spot.InexactFloat64()

@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/wyfcoding/pkg/config"
+	"github.com/wyfcoding/pkg/idempotency"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
+	"github.com/wyfcoding/pkg/retry"
 	"github.com/wyfcoding/pkg/tracing"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -19,6 +22,22 @@ import (
 )
 
 var defaultProducer *Producer
+
+const (
+	defaultProducerMaxAttempts = 5
+	defaultMinBytes            = 10e3
+	defaultMaxBytes            = 10e6
+	defaultMaxWait             = time.Second
+	defaultIdempotencyTTL      = 24 * time.Hour
+)
+
+const (
+	headerIdempotencyKey    = "x-idempotency-key"
+	headerOriginalTopic     = "x-original-topic"
+	headerOriginalPartition = "x-original-partition"
+	headerOriginalOffset    = "x-original-offset"
+	headerError             = "x-error"
+)
 
 // DefaultProducer 返回全局默认生产者实例.
 func DefaultProducer() *Producer {
@@ -33,6 +52,18 @@ func SetDefaultProducer(producer *Producer) {
 // Handler 定义了消息处理函数的原型.
 type Handler func(ctx context.Context, msg kafkago.Message) error
 
+// ConsumerOptions 定义 Kafka 消费者的可选治理能力。
+type ConsumerOptions struct {
+	RetryConfig        retry.Config                     // 重试策略配置。
+	Retryable          func(error) bool                 // 判断是否可重试的函数。
+	CommitOnError      bool                             // 失败时是否直接提交 offset。
+	DLQEnabled         bool                             // 是否开启死信队列投递。
+	DLQTopic           string                           // 自定义死信队列主题。
+	IdempotencyManager idempotency.Manager              // 幂等管理器。
+	IdempotencyTTL     time.Duration                    // 幂等 Key 过期时间。
+	IdempotencyKeyFunc func(msg kafkago.Message) string // 自定义幂等 Key 构造逻辑。
+}
+
 // Producer 封装了 Kafka 消息生产者.
 type Producer struct {
 	writer        *kafkago.Writer
@@ -45,14 +76,25 @@ type Producer struct {
 
 // NewProducer 初始化并返回一个功能增强的 Kafka 生产者.
 func NewProducer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Producer {
+	maxAttempts := cfg.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = defaultProducerMaxAttempts
+	}
+	requiredAcks := kafkago.RequireAll
+	if cfg.RequiredAcks != 0 {
+		requiredAcks = kafkago.RequiredAcks(cfg.RequiredAcks)
+	}
+
+	transport := buildTransport(cfg)
 	w := &kafkago.Writer{
 		Addr:         kafkago.TCP(cfg.Brokers...),
 		Topic:        cfg.Topic,
 		Balancer:     &kafkago.Hash{Hasher: nil},
+		Transport:    transport,
 		WriteTimeout: cfg.WriteTimeout,
 		ReadTimeout:  cfg.ReadTimeout,
-		MaxAttempts:  5,
-		RequiredAcks: kafkago.RequireAll,
+		MaxAttempts:  maxAttempts,
+		RequiredAcks: requiredAcks,
 		Async:        cfg.Async,
 	}
 
@@ -65,17 +107,18 @@ func NewProducer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Met
 		Addr:         kafkago.TCP(cfg.Brokers...),
 		Topic:        dlqTopic + ".dlq",
 		Balancer:     &kafkago.LeastBytes{},
+		Transport:    transport,
 		RequiredAcks: kafkago.RequireOne,
 	}
 
-	producedTotal := m.NewCounterVec(&prometheus.CounterOpts{
+	producedTotal := newCounterVec(m, &prometheus.CounterOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "produced_total",
 		Help:      "Total number of messages produced",
 	}, []string{"topic", "status"})
 
-	duration := m.NewHistogramVec(&prometheus.HistogramOpts{
+	duration := newHistogramVec(m, &prometheus.HistogramOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "producer_duration_seconds",
@@ -173,30 +216,59 @@ type Consumer struct {
 	reader        *kafkago.Reader
 	logger        *logging.Logger
 	metrics       *metrics.Metrics
+	dlqWriter     *kafkago.Writer
+	opts          ConsumerOptions
 	consumedTotal *prometheus.CounterVec
 	consumeLag    *prometheus.HistogramVec
+	retryTotal    *prometheus.CounterVec
+	dlqTotal      *prometheus.CounterVec
 }
 
 // NewConsumer 初始化并返回一个功能增强的 Kafka 消费者.
 func NewConsumer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics) *Consumer {
+	return NewConsumerWithOptions(cfg, logger, m, nil)
+}
+
+// NewConsumerWithOptions 创建带自定义选项的 Kafka 消费者。
+func NewConsumerWithOptions(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics, opts *ConsumerOptions) *Consumer {
+	normalized := normalizeConsumerOptions(cfg, opts)
+
+	dialer := buildDialer(cfg)
 	r := kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers:        cfg.Brokers,
 		GroupID:        cfg.GroupID,
 		Topic:          cfg.Topic,
-		MinBytes:       10e3,
-		MaxBytes:       10e6,
-		MaxWait:        time.Second,
+		MinBytes:       normalizeMinBytes(cfg.MinBytes),
+		MaxBytes:       normalizeMaxBytes(cfg.MaxBytes),
+		MaxWait:        normalizeMaxWait(cfg.MaxWait),
+		Dialer:         dialer,
 		CommitInterval: 0,
 	})
 
-	consumedTotal := m.NewCounterVec(&prometheus.CounterOpts{
+	var dlqWriter *kafkago.Writer
+	if normalized.DLQEnabled {
+		dlqTopic := normalized.DLQTopic
+		if dlqTopic == "" {
+			dlqTopic = defaultDLQTopic(cfg.Topic)
+		}
+		transport := buildTransport(cfg)
+		dlqWriter = &kafkago.Writer{
+			Addr:         kafkago.TCP(cfg.Brokers...),
+			Topic:        dlqTopic,
+			Balancer:     &kafkago.LeastBytes{},
+			Transport:    transport,
+			RequiredAcks: kafkago.RequireAll,
+		}
+	}
+
+	consumedTotal := newCounterVec(m, &prometheus.CounterOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "consumed_total",
 		Help:      "Total number of messages consumed",
 	}, []string{"topic", "status"})
 
-	consumeLag := m.NewHistogramVec(&prometheus.HistogramOpts{
+	consumeLag := newHistogramVec(m, &prometheus.HistogramOpts{
 		Namespace: "pkg",
 		Subsystem: "mq",
 		Name:      "consume_lag_seconds",
@@ -204,12 +276,30 @@ func NewConsumer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Met
 		Buckets:   []float64{0.1, 0.5, 1, 5, 10},
 	}, []string{"topic"})
 
+	retryTotal := newCounterVec(m, &prometheus.CounterOpts{
+		Namespace: "pkg",
+		Subsystem: "mq",
+		Name:      "consume_retry_total",
+		Help:      "Total number of message retries",
+	}, []string{"topic"})
+
+	dlqTotal := newCounterVec(m, &prometheus.CounterOpts{
+		Namespace: "pkg",
+		Subsystem: "mq",
+		Name:      "dlq_total",
+		Help:      "Total number of messages sent to DLQ",
+	}, []string{"topic"})
+
 	return &Consumer{
 		reader:        r,
 		logger:        logger,
 		metrics:       m,
+		dlqWriter:     dlqWriter,
+		opts:          normalized,
 		consumedTotal: consumedTotal,
 		consumeLag:    consumeLag,
+		retryTotal:    retryTotal,
+		dlqTotal:      dlqTotal,
 	}
 }
 
@@ -226,39 +316,142 @@ func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
 
 			continue
 		}
-
-		carrier := propagation.MapCarrier{}
-		for _, h := range msg.Headers {
-			carrier[h.Key] = string(h.Value)
+		if err := c.processMessage(ctx, msg, handler); err != nil {
+			c.logger.ErrorContext(ctx, "message processing failed", "error", err, "topic", msg.Topic)
 		}
-
-		extractedCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
-		spanCtx, span := tracing.Tracer().Start(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
-
-		handleErr := handler(spanCtx, msg)
-		c.consumeLag.WithLabelValues(msg.Topic).Observe(time.Since(msg.Time).Seconds())
-
-		if handleErr != nil {
-			c.consumedTotal.WithLabelValues(msg.Topic, "failed").Inc()
-			tracing.SetError(spanCtx, handleErr)
-			c.logger.ErrorContext(spanCtx, "message handler failed", "error", handleErr, "topic", msg.Topic)
-			span.End()
-
-			continue
-		}
-
-		if errCommit := c.reader.CommitMessages(ctx, msg); errCommit != nil {
-			c.logger.ErrorContext(spanCtx, "commit failed", "error", errCommit)
-		}
-
-		c.consumedTotal.WithLabelValues(msg.Topic, "success").Inc()
-		span.End()
 	}
+}
+
+func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message, handler Handler) error {
+	carrier := propagation.MapCarrier{}
+	for _, h := range msg.Headers {
+		carrier[h.Key] = string(h.Value)
+	}
+
+	extractedCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
+	spanCtx, span := tracing.Tracer().Start(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
+	defer span.End()
+
+	idempotencyKey, idempotencyEnabled := c.prepareIdempotency(spanCtx, msg)
+	if idempotencyEnabled && idempotencyKey != "" {
+		ok, _, err := c.opts.IdempotencyManager.TryStart(spanCtx, idempotencyKey, c.opts.IdempotencyTTL)
+		if err != nil {
+			c.logger.ErrorContext(spanCtx, "idempotency check failed, continue processing", "error", err, "key", idempotencyKey)
+		} else if !ok {
+			c.logger.InfoContext(spanCtx, "duplicate message skipped", "key", idempotencyKey, "topic", msg.Topic)
+			return c.commitMessage(spanCtx, msg)
+		}
+	}
+
+	retryable := c.opts.Retryable
+	if retryable == nil {
+		retryable = func(error) bool { return true }
+	}
+
+	attempt := 0
+	handleErr := retry.If(spanCtx, func() error {
+		attempt++
+		if attempt > 1 {
+			c.retryTotal.WithLabelValues(msg.Topic).Inc()
+		}
+		return handler(spanCtx, msg)
+	}, retryable, c.opts.RetryConfig)
+
+	c.consumeLag.WithLabelValues(msg.Topic).Observe(time.Since(msg.Time).Seconds())
+
+	if handleErr != nil {
+		c.consumedTotal.WithLabelValues(msg.Topic, "failed").Inc()
+		tracing.SetError(spanCtx, handleErr)
+		c.logger.ErrorContext(spanCtx, "message handler failed", "error", handleErr, "topic", msg.Topic)
+
+		if c.opts.DLQEnabled {
+			if err := c.publishDLQ(spanCtx, msg, handleErr); err != nil {
+				return err
+			}
+			c.dlqTotal.WithLabelValues(msg.Topic).Inc()
+			return c.commitMessage(spanCtx, msg)
+		}
+
+		if c.opts.CommitOnError {
+			return c.commitMessage(spanCtx, msg)
+		}
+
+		return nil
+	}
+
+	if idempotencyEnabled && idempotencyKey != "" {
+		finishErr := c.opts.IdempotencyManager.Finish(spanCtx, idempotencyKey, &idempotency.Response{
+			Header:     map[string]string{"source": "kafka"},
+			Body:       "OK",
+			StatusCode: 200,
+		}, c.opts.IdempotencyTTL)
+		if finishErr != nil {
+			c.logger.ErrorContext(spanCtx, "idempotency finish failed", "error", finishErr, "key", idempotencyKey)
+		}
+	}
+
+	if err := c.commitMessage(spanCtx, msg); err != nil {
+		return err
+	}
+
+	c.consumedTotal.WithLabelValues(msg.Topic, "success").Inc()
+	return nil
+}
+
+func (c *Consumer) prepareIdempotency(ctx context.Context, msg kafkago.Message) (string, bool) {
+	if c.opts.IdempotencyManager == nil {
+		return "", false
+	}
+	key := c.opts.IdempotencyKeyFunc(msg)
+	if key == "" {
+		c.logger.WarnContext(ctx, "idempotency key is empty, skip", "topic", msg.Topic)
+		return "", false
+	}
+	return key, true
+}
+
+func (c *Consumer) publishDLQ(ctx context.Context, msg kafkago.Message, err error) error {
+	if c.dlqWriter == nil {
+		return fmt.Errorf("dlq writer is not configured")
+	}
+
+	headers := make([]kafkago.Header, 0, len(msg.Headers)+4)
+	headers = append(headers, msg.Headers...)
+	headers = append(headers,
+		kafkago.Header{Key: headerOriginalTopic, Value: []byte(msg.Topic)},
+		kafkago.Header{Key: headerOriginalPartition, Value: []byte(fmt.Sprintf("%d", msg.Partition))},
+		kafkago.Header{Key: headerOriginalOffset, Value: []byte(fmt.Sprintf("%d", msg.Offset))},
+		kafkago.Header{Key: headerError, Value: []byte(err.Error())},
+	)
+
+	dlqMsg := kafkago.Message{
+		Topic:   c.dlqWriter.Topic,
+		Key:     msg.Key,
+		Value:   msg.Value,
+		Headers: headers,
+		Time:    time.Now(),
+	}
+
+	if writeErr := c.dlqWriter.WriteMessages(ctx, dlqMsg); writeErr != nil {
+		c.logger.ErrorContext(ctx, "failed to write to dlq", "error", writeErr, "topic", c.dlqWriter.Topic)
+		return writeErr
+	}
+
+	return nil
+}
+
+func (c *Consumer) commitMessage(ctx context.Context, msg kafkago.Message) error {
+	if err := c.reader.CommitMessages(ctx, msg); err != nil {
+		c.logger.ErrorContext(ctx, "commit failed", "error", err, "topic", msg.Topic)
+		return err
+	}
+
+	return nil
 }
 
 // Start 并发启动多个消费者协程.
 func (c *Consumer) Start(ctx context.Context, workers int, handler Handler) {
-	for range workers {
+	for i := 0; i < workers; i++ {
 		go func() {
 			if err := c.Consume(ctx, handler); err != nil && !errors.Is(err, context.Canceled) {
 				c.logger.Error("consumer stopped", "error", err)
@@ -269,9 +462,147 @@ func (c *Consumer) Start(ctx context.Context, workers int, handler Handler) {
 
 // Close 关闭消费者.
 func (c *Consumer) Close() error {
+	if c.dlqWriter != nil {
+		if err := c.dlqWriter.Close(); err != nil {
+			c.logger.Error("failed to close dlq writer", "error", err)
+		}
+	}
 	if err := c.reader.Close(); err != nil {
 		return fmt.Errorf("failed to close kafka reader: %w", err)
 	}
 
 	return nil
+}
+
+func normalizeConsumerOptions(cfg *config.KafkaConfig, opts *ConsumerOptions) ConsumerOptions {
+	if opts == nil {
+		return ConsumerOptions{
+			RetryConfig:        buildRetryConfig(cfg),
+			DLQEnabled:         cfg.DLQEnabled,
+			DLQTopic:           cfg.DLQTopic,
+			CommitOnError:      cfg.CommitOnError,
+			IdempotencyTTL:     defaultIdempotencyTTL,
+			IdempotencyKeyFunc: defaultIdempotencyKey,
+		}
+	}
+
+	normalized := *opts
+	if normalized.RetryConfig == (retry.Config{}) {
+		normalized.RetryConfig = retry.Config{MaxRetries: 0}
+	}
+	if normalized.IdempotencyTTL <= 0 {
+		normalized.IdempotencyTTL = defaultIdempotencyTTL
+	}
+	if normalized.IdempotencyKeyFunc == nil {
+		normalized.IdempotencyKeyFunc = defaultIdempotencyKey
+	}
+	if normalized.DLQEnabled && normalized.DLQTopic == "" {
+		normalized.DLQTopic = defaultDLQTopic(cfg.Topic)
+	}
+
+	return normalized
+}
+
+func buildRetryConfig(cfg *config.KafkaConfig) retry.Config {
+	if cfg.RetryMax == 0 && cfg.RetryInitial == 0 && cfg.RetryMaxBackoff == 0 && cfg.RetryMultiplier == 0 && cfg.RetryJitter == 0 {
+		return retry.Config{MaxRetries: 0}
+	}
+
+	base := retry.DefaultRetryConfig()
+	if cfg.RetryMax != 0 {
+		base.MaxRetries = cfg.RetryMax
+	}
+	if cfg.RetryInitial != 0 {
+		base.InitialBackoff = cfg.RetryInitial
+	}
+	if cfg.RetryMaxBackoff != 0 {
+		base.MaxBackoff = cfg.RetryMaxBackoff
+	}
+	if cfg.RetryMultiplier != 0 {
+		base.Multiplier = cfg.RetryMultiplier
+	}
+	if cfg.RetryJitter != 0 {
+		base.Jitter = cfg.RetryJitter
+	}
+
+	return base
+}
+
+func defaultIdempotencyKey(msg kafkago.Message) string {
+	if value := headerValue(msg, headerIdempotencyKey); value != "" {
+		return value
+	}
+	if len(msg.Key) > 0 {
+		return string(msg.Key)
+	}
+	return fmt.Sprintf("%s:%d:%d", msg.Topic, msg.Partition, msg.Offset)
+}
+
+func headerValue(msg kafkago.Message, key string) string {
+	for _, header := range msg.Headers {
+		if strings.EqualFold(header.Key, key) {
+			return string(header.Value)
+		}
+	}
+	return ""
+}
+
+func defaultDLQTopic(topic string) string {
+	if topic == "" {
+		topic = "default"
+	}
+	return topic + ".dlq"
+}
+
+func normalizeMinBytes(value int) int {
+	if value <= 0 {
+		return defaultMinBytes
+	}
+	return value
+}
+
+func normalizeMaxBytes(value int) int {
+	if value <= 0 {
+		return defaultMaxBytes
+	}
+	return value
+}
+
+func normalizeMaxWait(value time.Duration) time.Duration {
+	if value <= 0 {
+		return defaultMaxWait
+	}
+	return value
+}
+
+func buildDialer(cfg *config.KafkaConfig) *kafkago.Dialer {
+	if cfg.DialTimeout <= 0 {
+		return nil
+	}
+	return &kafkago.Dialer{
+		Timeout: cfg.DialTimeout,
+	}
+}
+
+func buildTransport(cfg *config.KafkaConfig) kafkago.RoundTripper {
+	if cfg.DialTimeout <= 0 {
+		return nil
+	}
+	return &kafkago.Transport{
+		DialTimeout: cfg.DialTimeout,
+	}
+}
+
+func newCounterVec(m *metrics.Metrics, opts *prometheus.CounterOpts, labels []string) *prometheus.CounterVec {
+	if m == nil {
+		return prometheus.NewCounterVec(*opts, labels)
+	}
+	return m.NewCounterVec(opts, labels)
+}
+
+func newHistogramVec(m *metrics.Metrics, opts *prometheus.HistogramOpts, labels []string) *prometheus.HistogramVec {
+	if m == nil {
+		return prometheus.NewHistogramVec(*opts, labels)
+	}
+	return m.NewHistogramVec(opts, labels)
 }

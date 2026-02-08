@@ -45,6 +45,9 @@ type Config struct {
 	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuitbreaker" toml:"circuitbreaker"`
 	Concurrency    ConcurrencyConfig    `mapstructure:"concurrency"    toml:"concurrency"`
 	CORS           CORSConfig           `mapstructure:"cors"           toml:"cors"`
+	Security       SecurityConfig       `mapstructure:"security"       toml:"security"`
+	HTTPClient     HTTPClientConfig     `mapstructure:"httpclient"     toml:"httpclient"`
+	Maintenance    MaintenanceConfig    `mapstructure:"maintenance"    toml:"maintenance"`
 }
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
@@ -52,21 +55,25 @@ type ServerConfig struct {
 	Name        string `mapstructure:"name"        toml:"name"        validate:"required"`
 	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
 	HTTP        struct {
-		Addr         string        `mapstructure:"addr"          toml:"addr"`
-		Timeout      time.Duration `mapstructure:"timeout"       toml:"timeout"`
-		ReadTimeout  time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
-		WriteTimeout time.Duration `mapstructure:"write_timeout" toml:"write_timeout"`
-		IdleTimeout  time.Duration `mapstructure:"idle_timeout"  toml:"idle_timeout"`
-		MaxBodyBytes int64         `mapstructure:"max_body_bytes" toml:"max_body_bytes"`
-		Port         int           `mapstructure:"port"          toml:"port"          validate:"required,min=1,max=65535"`
+		Addr              string        `mapstructure:"addr"          toml:"addr"`
+		Timeout           time.Duration `mapstructure:"timeout"       toml:"timeout"`
+		ReadTimeout       time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
+		ReadHeaderTimeout time.Duration `mapstructure:"read_header_timeout" toml:"read_header_timeout"`
+		WriteTimeout      time.Duration `mapstructure:"write_timeout" toml:"write_timeout"`
+		IdleTimeout       time.Duration `mapstructure:"idle_timeout"  toml:"idle_timeout"`
+		MaxHeaderBytes    int           `mapstructure:"max_header_bytes" toml:"max_header_bytes"`
+		MaxBodyBytes      int64         `mapstructure:"max_body_bytes" toml:"max_body_bytes"`
+		TrustedProxies    []string      `mapstructure:"trusted_proxies" toml:"trusted_proxies"`
+		Port              int           `mapstructure:"port"          toml:"port"          validate:"required,min=1,max=65535"`
 	} `mapstructure:"http" toml:"http"`
 	GRPC struct {
-		Addr                 string        `mapstructure:"addr"                   toml:"addr"`
-		Timeout              time.Duration `mapstructure:"timeout"                toml:"timeout"`
-		Port                 int           `mapstructure:"port"                   toml:"port"                   validate:"required,min=1,max=65535"`
-		MaxRecvMsgSize       int           `mapstructure:"max_recv_msg_size"      toml:"max_recv_msg_size"`
-		MaxSendMsgSize       int           `mapstructure:"max_send_msg_size"      toml:"max_send_msg_size"`
-		MaxConcurrentStreams int           `mapstructure:"max_concurrent_streams" toml:"max_concurrent_streams"`
+		Addr                 string              `mapstructure:"addr"                   toml:"addr"`
+		Timeout              time.Duration       `mapstructure:"timeout"                toml:"timeout"`
+		Port                 int                 `mapstructure:"port"                   toml:"port"                   validate:"required,min=1,max=65535"`
+		MaxRecvMsgSize       int                 `mapstructure:"max_recv_msg_size"      toml:"max_recv_msg_size"`
+		MaxSendMsgSize       int                 `mapstructure:"max_send_msg_size"      toml:"max_send_msg_size"`
+		MaxConcurrentStreams int                 `mapstructure:"max_concurrent_streams" toml:"max_concurrent_streams"`
+		Keepalive            GRPCKeepaliveConfig `mapstructure:"keepalive"          toml:"keepalive"`
 	} `mapstructure:"grpc" toml:"grpc"`
 }
 
@@ -153,19 +160,27 @@ type MessageQueueConfig struct {
 
 // KafkaConfig 定义 Kafka 生产者与消费者参数.
 type KafkaConfig struct {
-	Topic          string        `mapstructure:"topic"           toml:"topic"`
-	GroupID        string        `mapstructure:"group_id"        toml:"group_id"`
-	Brokers        []string      `mapstructure:"brokers"         toml:"brokers"`
-	DialTimeout    time.Duration `mapstructure:"dial_timeout"    toml:"dial_timeout"`
-	ReadTimeout    time.Duration `mapstructure:"read_timeout"    toml:"read_timeout"`
-	WriteTimeout   time.Duration `mapstructure:"write_timeout"   toml:"write_timeout"`
-	MaxWait        time.Duration `mapstructure:"max_wait"        toml:"max_wait"`
-	CommitInterval time.Duration `mapstructure:"commit_interval" toml:"commit_interval"`
-	MinBytes       int           `mapstructure:"min_bytes"       toml:"min_bytes"`
-	MaxBytes       int           `mapstructure:"max_bytes"       toml:"max_bytes"`
-	MaxAttempts    int           `mapstructure:"max_attempts"    toml:"max_attempts"`
-	RequiredAcks   int           `mapstructure:"required_acks"   toml:"required_acks"`
-	Async          bool          `mapstructure:"async"           toml:"async"`
+	Topic           string        `mapstructure:"topic"           toml:"topic"`
+	GroupID         string        `mapstructure:"group_id"        toml:"group_id"`
+	Brokers         []string      `mapstructure:"brokers"         toml:"brokers"`
+	DialTimeout     time.Duration `mapstructure:"dial_timeout"    toml:"dial_timeout"`
+	ReadTimeout     time.Duration `mapstructure:"read_timeout"    toml:"read_timeout"`
+	WriteTimeout    time.Duration `mapstructure:"write_timeout"   toml:"write_timeout"`
+	MaxWait         time.Duration `mapstructure:"max_wait"        toml:"max_wait"`
+	CommitInterval  time.Duration `mapstructure:"commit_interval" toml:"commit_interval"`
+	MinBytes        int           `mapstructure:"min_bytes"       toml:"min_bytes"`
+	MaxBytes        int           `mapstructure:"max_bytes"       toml:"max_bytes"`
+	MaxAttempts     int           `mapstructure:"max_attempts"    toml:"max_attempts"`
+	RequiredAcks    int           `mapstructure:"required_acks"   toml:"required_acks"`
+	Async           bool          `mapstructure:"async"           toml:"async"`
+	RetryMax        int           `mapstructure:"retry_max"        toml:"retry_max"`
+	RetryInitial    time.Duration `mapstructure:"retry_initial"    toml:"retry_initial"`
+	RetryMaxBackoff time.Duration `mapstructure:"retry_max_backoff" toml:"retry_max_backoff"`
+	RetryMultiplier float64       `mapstructure:"retry_multiplier" toml:"retry_multiplier"`
+	RetryJitter     float64       `mapstructure:"retry_jitter"     toml:"retry_jitter"`
+	DLQEnabled      bool          `mapstructure:"dlq_enabled"      toml:"dlq_enabled"`
+	DLQTopic        string        `mapstructure:"dlq_topic"        toml:"dlq_topic"`
+	CommitOnError   bool          `mapstructure:"commit_on_error"  toml:"commit_on_error"`
 }
 
 // MinioConfig 定义 S3 兼容对象存储 MinIO 的连接参数.
@@ -218,6 +233,47 @@ type CORSConfig struct {
 	MaxAge           time.Duration `mapstructure:"max_age"            toml:"max_age"`
 }
 
+// SecurityConfig 定义 HTTP 安全响应头配置。
+type SecurityConfig struct {
+	Enabled                   bool     `mapstructure:"enabled"                        toml:"enabled"`
+	FrameOptions              string   `mapstructure:"frame_options"                   toml:"frame_options"`
+	ContentTypeOptions        string   `mapstructure:"content_type_options"            toml:"content_type_options"`
+	XSSProtection             string   `mapstructure:"xss_protection"                  toml:"xss_protection"`
+	ReferrerPolicy            string   `mapstructure:"referrer_policy"                 toml:"referrer_policy"`
+	ContentSecurityPolicy     string   `mapstructure:"content_security_policy"         toml:"content_security_policy"`
+	PermissionsPolicy         string   `mapstructure:"permissions_policy"              toml:"permissions_policy"`
+	HSTSMaxAge                int      `mapstructure:"hsts_max_age"                    toml:"hsts_max_age"`
+	HSTSIncludeSubdomains     bool     `mapstructure:"hsts_include_subdomains"         toml:"hsts_include_subdomains"`
+	HSTSPreload               bool     `mapstructure:"hsts_preload"                    toml:"hsts_preload"`
+	AdditionalHeaders         []string `mapstructure:"additional_headers"              toml:"additional_headers"`
+	AdditionalHeaderSeparator string   `mapstructure:"additional_header_separator"     toml:"additional_header_separator"`
+	IPAllowlist               []string `mapstructure:"ip_allowlist"                    toml:"ip_allowlist"`
+}
+
+// HTTPClientConfig 定义统一 HTTP 客户端配置。
+type HTTPClientConfig struct {
+	Timeout         time.Duration        `mapstructure:"timeout"             toml:"timeout"`
+	RateLimit       int                  `mapstructure:"rate_limit"          toml:"rate_limit"`
+	RateBurst       int                  `mapstructure:"rate_burst"          toml:"rate_burst"`
+	MaxConcurrency  int                  `mapstructure:"max_concurrency"     toml:"max_concurrency"`
+	SlowThreshold   time.Duration        `mapstructure:"slow_threshold"      toml:"slow_threshold"`
+	RetryMax        int                  `mapstructure:"retry_max"           toml:"retry_max"`
+	RetryInitial    time.Duration        `mapstructure:"retry_initial"       toml:"retry_initial"`
+	RetryMaxBackoff time.Duration        `mapstructure:"retry_max_backoff"   toml:"retry_max_backoff"`
+	RetryMultiplier float64              `mapstructure:"retry_multiplier"    toml:"retry_multiplier"`
+	RetryJitter     float64              `mapstructure:"retry_jitter"        toml:"retry_jitter"`
+	RetryStatus     []int                `mapstructure:"retry_status"        toml:"retry_status"`
+	RetryMethods    []string             `mapstructure:"retry_methods"       toml:"retry_methods"`
+	Breaker         CircuitBreakerConfig `mapstructure:"breaker"             toml:"breaker"`
+}
+
+// MaintenanceConfig 定义服务维护模式配置。
+type MaintenanceConfig struct {
+	Enabled    bool     `mapstructure:"enabled"     toml:"enabled"`
+	Message    string   `mapstructure:"message"     toml:"message"`
+	AllowPaths []string `mapstructure:"allow_paths" toml:"allow_paths"`
+}
+
 // ConcurrencyConfig 定义 HTTP/gRPC 并发限制配置。
 type ConcurrencyConfig struct {
 	HTTP struct {
@@ -230,6 +286,18 @@ type ConcurrencyConfig struct {
 		Max         int           `mapstructure:"max"          toml:"max"`
 		WaitTimeout time.Duration `mapstructure:"wait_timeout" toml:"wait_timeout"`
 	} `mapstructure:"grpc" toml:"grpc"`
+}
+
+// GRPCKeepaliveConfig 定义 gRPC Keepalive 参数。
+type GRPCKeepaliveConfig struct {
+	Enabled               bool          `mapstructure:"enabled"                toml:"enabled"`
+	Time                  time.Duration `mapstructure:"time"                   toml:"time"`
+	Timeout               time.Duration `mapstructure:"timeout"                toml:"timeout"`
+	PermitWithoutStream   bool          `mapstructure:"permit_without_stream"  toml:"permit_without_stream"`
+	MinTime               time.Duration `mapstructure:"min_time"               toml:"min_time"`
+	MaxConnectionIdle     time.Duration `mapstructure:"max_connection_idle"    toml:"max_connection_idle"`
+	MaxConnectionAge      time.Duration `mapstructure:"max_connection_age"     toml:"max_connection_age"`
+	MaxConnectionAgeGrace time.Duration `mapstructure:"max_connection_age_grace" toml:"max_connection_age_grace"`
 }
 
 // CacheConfig 通用缓存策略配置.
