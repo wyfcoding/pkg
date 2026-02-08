@@ -14,8 +14,10 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"sync/atomic"
 	"time"
 
+	"github.com/wyfcoding/pkg/breaker"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/configcenter"
 	"github.com/wyfcoding/pkg/contextx"
@@ -24,6 +26,7 @@ import (
 	"github.com/wyfcoding/pkg/grpcclient"
 	"github.com/wyfcoding/pkg/health"
 	"github.com/wyfcoding/pkg/httpclient"
+	"github.com/wyfcoding/pkg/limiter"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/middleware"
@@ -561,6 +564,71 @@ func (b *Builder[C, S]) initRegistry(cfg *config.Config, logger *logging.Logger,
 }
 
 func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) {
+	httpRateLimiter := limiter.NewDynamicLimiter(nil)
+	grpcRateLimiter := limiter.NewDynamicLimiter(nil)
+	httpConcurrencyLimiter := limiter.NewDynamicConcurrencyLimiter(nil)
+	grpcConcurrencyLimiter := limiter.NewDynamicConcurrencyLimiter(nil)
+	httpWaitTimeout := atomic.Value{}
+	httpWaitTimeout.Store(time.Duration(0))
+	grpcWaitTimeout := atomic.Value{}
+	grpcWaitTimeout.Store(time.Duration(0))
+	httpBreaker := breaker.NewDynamicBreaker("HTTP-Inbound", m, 0, 0)
+	grpcBreaker := breaker.NewDynamicBreaker("GRPC-Inbound", m, 0, 0)
+
+	applyGovernance := func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+
+		if updated.RateLimit.Enabled && updated.RateLimit.Rate > 0 {
+			burst := updated.RateLimit.Burst
+			if burst <= 0 {
+				burst = updated.RateLimit.Rate
+			}
+			httpRateLimiter.UpdateLocal(updated.RateLimit.Rate, burst)
+			grpcRateLimiter.UpdateLocal(updated.RateLimit.Rate, burst)
+		} else {
+			httpRateLimiter.Update(nil)
+			grpcRateLimiter.Update(nil)
+		}
+
+		if updated.Concurrency.HTTP.Enabled && updated.Concurrency.HTTP.Max > 0 {
+			httpConcurrencyLimiter.UpdateSemaphore(updated.Concurrency.HTTP.Max)
+			httpWaitTimeout.Store(updated.Concurrency.HTTP.WaitTimeout)
+		} else {
+			httpConcurrencyLimiter.Update(nil)
+			httpWaitTimeout.Store(time.Duration(0))
+		}
+
+		if updated.Concurrency.GRPC.Enabled && updated.Concurrency.GRPC.Max > 0 {
+			grpcConcurrencyLimiter.UpdateSemaphore(updated.Concurrency.GRPC.Max)
+			grpcWaitTimeout.Store(updated.Concurrency.GRPC.WaitTimeout)
+		} else {
+			grpcConcurrencyLimiter.Update(nil)
+			grpcWaitTimeout.Store(time.Duration(0))
+		}
+
+		httpBreaker.Update(updated.CircuitBreaker)
+		grpcBreaker.Update(updated.CircuitBreaker)
+	}
+	applyGovernance(cfg)
+	config.RegisterReloadHook(applyGovernance)
+
+	getWaitTimeout := func(v *atomic.Value) time.Duration {
+		if v == nil {
+			return 0
+		}
+		val := v.Load()
+		if val == nil {
+			return 0
+		}
+		timeout, ok := val.(time.Duration)
+		if !ok {
+			return 0
+		}
+		return timeout
+	}
+
 	// 添加基础中间件 (顺序很重要)
 	baseGin := make([]gin.HandlerFunc, 0, 8)
 	baseGin = append(baseGin, middleware.RequestID())
@@ -593,16 +661,12 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 	if cfg.Server.HTTP.MaxBodyBytes > 0 {
 		baseGin = append(baseGin, middleware.MaxBodyBytes(cfg.Server.HTTP.MaxBodyBytes))
 	}
-	if cfg.RateLimit.Enabled && cfg.RateLimit.Rate > 0 {
-		burst := cfg.RateLimit.Burst
-		if burst <= 0 {
-			burst = cfg.RateLimit.Rate
-		}
-		baseGin = append(baseGin, middleware.NewLocalRateLimitMiddlewareWithMetrics(cfg.RateLimit.Rate, burst, m))
-	}
-	if cfg.Concurrency.HTTP.Enabled && cfg.Concurrency.HTTP.Max > 0 {
-		baseGin = append(baseGin, middleware.NewConcurrencyLimitMiddleware(cfg.Concurrency.HTTP.Max, cfg.Concurrency.HTTP.WaitTimeout))
-	}
+	baseGin = append(baseGin, middleware.RateLimitWithLimiterAndMetrics(httpRateLimiter, m))
+	baseGin = append(baseGin, middleware.ConcurrencyLimitWithDynamicOptions(httpConcurrencyLimiter, middleware.DynamicConcurrencyOptions{
+		WaitTimeout: func() time.Duration {
+			return getWaitTimeout(&httpWaitTimeout)
+		},
+	}))
 
 	if cfg.Server.HTTP.Timeout > 0 {
 		baseGin = append(baseGin, middleware.TimeoutMiddleware(cfg.Server.HTTP.Timeout))
@@ -623,9 +687,7 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		middleware.HTTPErrorHandler(),
 	)
 
-	if cfg.CircuitBreaker.Enabled {
-		baseGin = append(baseGin, middleware.HTTPCircuitBreaker(cfg.CircuitBreaker, m))
-	}
+	baseGin = append(baseGin, middleware.DynamicHTTPCircuitBreaker(httpBreaker))
 
 	b.ginMiddleware = append(baseGin, b.ginMiddleware...)
 
@@ -640,24 +702,18 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		middleware.GRPCRequestID(),
 		middleware.GRPCContextEnricher(),
 	)
-	if cfg.RateLimit.Enabled && cfg.RateLimit.Rate > 0 {
-		burst := cfg.RateLimit.Burst
-		if burst <= 0 {
-			burst = cfg.RateLimit.Rate
-		}
-		grpcChain = append(grpcChain, middleware.NewGRPCLocalRateLimitInterceptorWithMetrics(cfg.RateLimit.Rate, burst, m))
-	}
-	if cfg.Concurrency.GRPC.Enabled && cfg.Concurrency.GRPC.Max > 0 {
-		grpcChain = append(grpcChain, middleware.NewGRPCConcurrencyLimitInterceptor(cfg.Concurrency.GRPC.Max, cfg.Concurrency.GRPC.WaitTimeout))
-	}
+	grpcChain = append(grpcChain, middleware.GRPCRateLimitWithLimiterAndMetrics(grpcRateLimiter, m))
+	grpcChain = append(grpcChain, middleware.GRPCConcurrencyLimitWithDynamicOptions(grpcConcurrencyLimiter, middleware.DynamicGRPCConcurrencyOptions{
+		WaitTimeout: func() time.Duration {
+			return getWaitTimeout(&grpcWaitTimeout)
+		},
+	}))
 
 	grpcChain = append(grpcChain, middleware.GRPCRequestLoggerWithOptions(middleware.GRPCRequestLoggerOptions{
 		SlowThreshold: cfg.Log.GRPCSlowThreshold,
 	}))
 
-	if cfg.CircuitBreaker.Enabled {
-		grpcChain = append(grpcChain, middleware.GRPCCircuitBreaker(cfg.CircuitBreaker, m))
-	}
+	grpcChain = append(grpcChain, middleware.DynamicGRPCCircuitBreaker(grpcBreaker))
 
 	b.grpcInterceptors = append(grpcChain, b.grpcInterceptors...)
 	b.grpcInterceptors = append(b.grpcInterceptors, middleware.GRPCMetricsInterceptorWithOptions(m, middleware.MetricsOptions{

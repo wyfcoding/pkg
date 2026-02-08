@@ -63,3 +63,49 @@ func GRPCCircuitBreaker(cfg config.CircuitBreakerConfig, m *metrics.Metrics) grp
 		return resp, err
 	}
 }
+
+// DynamicHTTPCircuitBreaker 构造支持动态配置的 HTTP 熔断中间件。
+func DynamicHTTPCircuitBreaker(dynamicBreaker *breaker.DynamicBreaker) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if dynamicBreaker == nil {
+			c.Next()
+			return
+		}
+
+		_, err := dynamicBreaker.Execute(func() (any, error) {
+			c.Next()
+
+			const failureStatusCodeThreshold = 500
+			if c.Writer.Status() >= failureStatusCodeThreshold {
+				return nil, http.ErrHandlerTimeout
+			}
+
+			return nil, nil
+		})
+
+		if err != nil && errors.Is(err, breaker.ErrServiceUnavailable) {
+			slog.WarnContext(c.Request.Context(), "http request rejected by inbound circuit breaker", "path", c.Request.URL.Path)
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "circuit breaker open"})
+		}
+	}
+}
+
+// DynamicGRPCCircuitBreaker 构造支持动态配置的 gRPC 熔断拦截器。
+func DynamicGRPCCircuitBreaker(dynamicBreaker *breaker.DynamicBreaker) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if dynamicBreaker == nil {
+			return handler(ctx, req)
+		}
+
+		resp, err := dynamicBreaker.Execute(func() (any, error) {
+			return handler(ctx, req)
+		})
+
+		if err != nil && errors.Is(err, breaker.ErrServiceUnavailable) {
+			slog.WarnContext(ctx, "grpc call rejected by inbound circuit breaker", "method", info.FullMethod)
+			return nil, status.Error(codes.Unavailable, "circuit breaker open")
+		}
+
+		return resp, err
+	}
+}

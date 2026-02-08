@@ -44,10 +44,13 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 		minRequests = 5
 	}
 
-	metricsVec := m.NewGaugeVec(&prometheus.GaugeOpts{
-		Name: "circuit_breaker_state",
-		Help: "Circuit breaker state (1: Closed, 2: Open, 3: Half-Open)",
-	}, []string{"name"})
+	var metricsVec *prometheus.GaugeVec
+	if m != nil {
+		metricsVec = m.NewGaugeVec(&prometheus.GaugeOpts{
+			Name: "circuit_breaker_state",
+			Help: "Circuit breaker state (1: Closed, 2: Open, 3: Half-Open)",
+		}, []string{"name"})
+	}
 
 	gs := gobreaker.Settings{
 		Name:        st.Name,
@@ -65,7 +68,9 @@ func NewBreaker(st Settings, m *metrics.Metrics) *Breaker {
 				"from", from.String(),
 				"to", to.String(),
 			)
-			metricsVec.WithLabelValues(name).Set(float64(to))
+			if metricsVec != nil {
+				metricsVec.WithLabelValues(name).Set(float64(to))
+			}
 		},
 	}
 
