@@ -18,6 +18,7 @@ import (
 
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/contextx"
+	"github.com/wyfcoding/pkg/health"
 	"github.com/wyfcoding/pkg/httpclient"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
@@ -441,6 +442,11 @@ func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Me
 			GRPCKeepalive:            cfg.Server.GRPC.Keepalive,
 		}
 		srv := server.NewGRPCServer(addr, logger.Logger, func(s *grpc.Server) {
+			healthCheckers := make([]health.Checker, 0, len(b.healthCheckers))
+			for _, checker := range b.healthCheckers {
+				healthCheckers = append(healthCheckers, health.Checker(checker))
+			}
+			health.RegisterGRPCHealthServer(s, b.serviceName, healthCheckers)
 			b.registerGRPC(s, svc)
 		}, b.grpcInterceptors, grpcOptions)
 

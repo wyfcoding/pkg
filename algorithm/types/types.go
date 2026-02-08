@@ -12,6 +12,16 @@ const (
 	SideSell Side = "SELL"
 )
 
+// InstrumentType 定义交易品种类型。
+type InstrumentType string
+
+const (
+	InstSpot   InstrumentType = "SPOT"
+	InstPerp   InstrumentType = "PERPETUAL" // 永续合约
+	InstOption InstrumentType = "OPTION"    // 期权
+	InstFuture InstrumentType = "FUTURE"    // 交割合约
+)
+
 // Order 订单结构，表示一个限价单或高级策略单。
 type Order struct {
 	ResultChan chan any
@@ -25,10 +35,16 @@ type Order struct {
 	UserID     string
 	PegType    string // "MID", "BEST_BID", "BEST_ASK"
 	Side       Side
+	InstType   InstrumentType
 	Timestamp  int64
 	IsIceberg  bool
 	PostOnly   bool
 	IsPegged   bool
+	// 期权/衍生品特有
+	Strike     decimal.Decimal
+	Expiry     int64
+	OptionType OptionType
+	Leverage   decimal.Decimal
 }
 
 // OrderBookLevel 订单簿档位，聚合了同一价格下的委托总量。
@@ -48,6 +64,7 @@ type Trade struct {
 	SellOrderID string
 	BuyUserID   string
 	SellUserID  string
+	InstType    InstrumentType
 	Timestamp   int64
 }
 
@@ -55,8 +72,6 @@ type Trade struct {
 type OptionType string
 
 const (
-	// OptionTypeCall 看涨期权。
 	OptionTypeCall OptionType = "CALL"
-	// OptionTypePut 看跌期权。
-	OptionTypePut OptionType = "PUT"
+	OptionTypePut  OptionType = "PUT"
 )
