@@ -3,6 +3,7 @@
 // 1) 增加远程日志配置结构体并挂载到 LogConfig。
 // 2) 增加 HTTP/gRPC 慢请求阈值配置。
 // 3) 增加 HTTP/gRPC 并发限制配置结构。
+// 4) 增加 HTTP 请求体大小限制配置。
 // 假设:
 // 1) 远程日志为可选配置，默认关闭。
 package config
@@ -55,6 +56,7 @@ type ServerConfig struct {
 		ReadTimeout  time.Duration `mapstructure:"read_timeout"  toml:"read_timeout"`
 		WriteTimeout time.Duration `mapstructure:"write_timeout" toml:"write_timeout"`
 		IdleTimeout  time.Duration `mapstructure:"idle_timeout"  toml:"idle_timeout"`
+		MaxBodyBytes int64         `mapstructure:"max_body_bytes" toml:"max_body_bytes"`
 		Port         int           `mapstructure:"port"          toml:"port"          validate:"required,min=1,max=65535"`
 	} `mapstructure:"http" toml:"http"`
 	GRPC struct {

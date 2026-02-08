@@ -310,6 +310,9 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 	baseGin = append(baseGin,
 		middleware.RequestContextEnricher(),
 	)
+	if cfg.Server.HTTP.MaxBodyBytes > 0 {
+		baseGin = append(baseGin, middleware.MaxBodyBytes(cfg.Server.HTTP.MaxBodyBytes))
+	}
 	if cfg.RateLimit.Enabled && cfg.RateLimit.Rate > 0 {
 		burst := cfg.RateLimit.Burst
 		if burst <= 0 {

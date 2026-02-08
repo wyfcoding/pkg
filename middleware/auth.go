@@ -1,20 +1,24 @@
 // Package middleware 提供了 Gin 与 gRPC 的通用中间件实现。
 // 生成摘要:
 // 1) JWTAuth 注入用户 ID/角色/权限到 context，便于日志与链路追踪。
+// 2) APIKeyAuth 增加可配置时间戳校验与常量时间签名比对。
 // 假设:
 // 1) JWT Roles 可映射为 scopes，多个角色用逗号分隔。
+// 2) 时间戳校验仅在 MaxSkew > 0 时启用。
 package middleware
 
 import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wyfcoding/pkg/contextx"
 	"github.com/wyfcoding/pkg/jwt"
@@ -25,6 +29,19 @@ import (
 
 type APIKeyProvider interface {
 	GetSecret(ctx context.Context, apiKey string) (string, error)
+}
+
+const (
+	apiKeyHeader     = "X-API-KEY"
+	signatureHeader  = "X-SIGNATURE"
+	timestampHeader  = "X-TIMESTAMP"
+	defaultMaxSkew   = 0
+	unixMillisDigits = 13
+)
+
+// APIKeyAuthOptions 定义 API Key 认证的可配置参数。
+type APIKeyAuthOptions struct {
+	MaxSkew time.Duration // 允许的时间偏差，<=0 表示不校验。
 }
 
 // JWTAuth 增强版：支持基础认证并注入用户信息
@@ -70,10 +87,16 @@ func JWTAuth(secret string) gin.HandlerFunc {
 // APIKeyAuth 提供基于 HMAC-SHA256 签名的 API Key 认证器。
 // 鉴权公式: HMAC-SHA256(secret, method + path + timestamp + body)
 func APIKeyAuth(provider APIKeyProvider) gin.HandlerFunc {
+	return APIKeyAuthWithOptions(provider, APIKeyAuthOptions{MaxSkew: defaultMaxSkew})
+}
+
+// APIKeyAuthWithOptions 提供带可配置项的 API Key 认证器。
+// 鉴权公式: HMAC-SHA256(secret, method + path + timestamp + body)
+func APIKeyAuthWithOptions(provider APIKeyProvider, opts APIKeyAuthOptions) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		apiKey := c.GetHeader("X-API-KEY")
-		signature := c.GetHeader("X-SIGNATURE")
-		timestamp := c.GetHeader("X-TIMESTAMP")
+		apiKey := c.GetHeader(apiKeyHeader)
+		signature := c.GetHeader(signatureHeader)
+		timestamp := c.GetHeader(timestampHeader)
 
 		if apiKey == "" || signature == "" || timestamp == "" {
 			response.ErrorWithStatus(c, http.StatusUnauthorized, "missing security headers (APIKEY/SIGN/TS)", "")
@@ -88,6 +111,20 @@ func APIKeyAuth(provider APIKeyProvider) gin.HandlerFunc {
 			return
 		}
 
+		if opts.MaxSkew > 0 {
+			ts, err := parseTimestamp(timestamp)
+			if err != nil {
+				response.ErrorWithStatus(c, http.StatusUnauthorized, "invalid timestamp", "")
+				c.Abort()
+				return
+			}
+			if !withinSkew(ts, time.Now(), opts.MaxSkew) {
+				response.ErrorWithStatus(c, http.StatusUnauthorized, "timestamp skew too large", "")
+				c.Abort()
+				return
+			}
+		}
+
 		// 验证签名
 		body, _ := io.ReadAll(c.Request.Body)
 		c.Request.Body = io.NopCloser(strings.NewReader(string(body))) // 重置 body 以供后续使用
@@ -97,7 +134,7 @@ func APIKeyAuth(provider APIKeyProvider) gin.HandlerFunc {
 		mac.Write([]byte(payload))
 		expectedSign := hex.EncodeToString(mac.Sum(nil))
 
-		if signature != expectedSign {
+		if subtle.ConstantTimeCompare([]byte(signature), []byte(expectedSign)) != 1 {
 			response.ErrorWithStatus(c, http.StatusUnauthorized, "invalid signature", "")
 			c.Abort()
 			return
@@ -147,4 +184,44 @@ func GetUserID(c *gin.Context) (uint64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func parseTimestamp(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+
+	if isDigits(raw) {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if len(raw) >= unixMillisDigits {
+			return time.UnixMilli(value), nil
+		}
+		return time.Unix(value, 0), nil
+	}
+
+	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+		return ts, nil
+	}
+
+	return time.Time{}, fmt.Errorf("unsupported timestamp format")
+}
+
+func withinSkew(ts, now time.Time, skew time.Duration) bool {
+	if ts.After(now) {
+		return ts.Sub(now) <= skew
+	}
+	return now.Sub(ts) <= skew
+}
+
+func isDigits(val string) bool {
+	for _, ch := range val {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 }
