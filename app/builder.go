@@ -1,7 +1,7 @@
 // Package app 提供了应用程序生命周期管理的基础设施.
 // 生成摘要:
 // 1) 默认接入 Trace ID 响应头、上下文增强、HTTP 错误处理、gRPC Request ID、访问日志与错误翻译拦截器，统一链路字段输出与错误码映射。
-// 2) 支持按配置启用 HTTP/gRPC 超时保护。
+// 2) 支持按配置启用 HTTP/gRPC 超时、限流与并发保护。
 // 3) 调整 gRPC 拦截器顺序，优先确保 Panic 可被统一恢复。
 // 假设:
 // 1) 业务侧沿用 builder 默认拦截器顺序即可满足观测需求。
@@ -310,6 +310,16 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 	baseGin = append(baseGin,
 		middleware.RequestContextEnricher(),
 	)
+	if cfg.RateLimit.Enabled && cfg.RateLimit.Rate > 0 {
+		burst := cfg.RateLimit.Burst
+		if burst <= 0 {
+			burst = cfg.RateLimit.Rate
+		}
+		baseGin = append(baseGin, middleware.NewLocalRateLimitMiddleware(cfg.RateLimit.Rate, burst))
+	}
+	if cfg.Concurrency.HTTP.Enabled && cfg.Concurrency.HTTP.Max > 0 {
+		baseGin = append(baseGin, middleware.NewConcurrencyLimitMiddleware(cfg.Concurrency.HTTP.Max, cfg.Concurrency.HTTP.WaitTimeout))
+	}
 
 	if cfg.Server.HTTP.Timeout > 0 {
 		baseGin = append(baseGin, middleware.TimeoutMiddleware(cfg.Server.HTTP.Timeout))
@@ -344,10 +354,21 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		middleware.GRPCErrorTranslator(),
 		middleware.GRPCRequestID(),
 		middleware.GRPCContextEnricher(),
-		middleware.GRPCRequestLoggerWithOptions(middleware.GRPCRequestLoggerOptions{
-			SlowThreshold: cfg.Log.GRPCSlowThreshold,
-		}),
 	)
+	if cfg.RateLimit.Enabled && cfg.RateLimit.Rate > 0 {
+		burst := cfg.RateLimit.Burst
+		if burst <= 0 {
+			burst = cfg.RateLimit.Rate
+		}
+		grpcChain = append(grpcChain, middleware.NewGRPCLocalRateLimitInterceptor(cfg.RateLimit.Rate, burst))
+	}
+	if cfg.Concurrency.GRPC.Enabled && cfg.Concurrency.GRPC.Max > 0 {
+		grpcChain = append(grpcChain, middleware.NewGRPCConcurrencyLimitInterceptor(cfg.Concurrency.GRPC.Max, cfg.Concurrency.GRPC.WaitTimeout))
+	}
+
+	grpcChain = append(grpcChain, middleware.GRPCRequestLoggerWithOptions(middleware.GRPCRequestLoggerOptions{
+		SlowThreshold: cfg.Log.GRPCSlowThreshold,
+	}))
 
 	if cfg.CircuitBreaker.Enabled {
 		grpcChain = append(grpcChain, middleware.GRPCCircuitBreaker(cfg.CircuitBreaker, m))

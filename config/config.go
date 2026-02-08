@@ -2,6 +2,7 @@
 // 生成摘要:
 // 1) 增加远程日志配置结构体并挂载到 LogConfig。
 // 2) 增加 HTTP/gRPC 慢请求阈值配置。
+// 3) 增加 HTTP/gRPC 并发限制配置结构。
 // 假设:
 // 1) 远程日志为可选配置，默认关闭。
 package config
@@ -41,6 +42,7 @@ type Config struct {
 	Data           DataConfig           `mapstructure:"data"           toml:"data"`
 	RateLimit      RateLimitConfig      `mapstructure:"ratelimit"      toml:"ratelimit"`
 	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuitbreaker" toml:"circuitbreaker"`
+	Concurrency    ConcurrencyConfig    `mapstructure:"concurrency"    toml:"concurrency"`
 }
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
@@ -200,6 +202,20 @@ type CircuitBreakerConfig struct {
 	Timeout     time.Duration `mapstructure:"timeout"      toml:"timeout"`
 	MaxRequests uint32        `mapstructure:"max_requests" toml:"max_requests"`
 	Enabled     bool          `mapstructure:"enabled"      toml:"enabled"`
+}
+
+// ConcurrencyConfig 定义 HTTP/gRPC 并发限制配置。
+type ConcurrencyConfig struct {
+	HTTP struct {
+		Enabled     bool          `mapstructure:"enabled"      toml:"enabled"`
+		Max         int           `mapstructure:"max"          toml:"max"`
+		WaitTimeout time.Duration `mapstructure:"wait_timeout" toml:"wait_timeout"`
+	} `mapstructure:"http" toml:"http"`
+	GRPC struct {
+		Enabled     bool          `mapstructure:"enabled"      toml:"enabled"`
+		Max         int           `mapstructure:"max"          toml:"max"`
+		WaitTimeout time.Duration `mapstructure:"wait_timeout" toml:"wait_timeout"`
+	} `mapstructure:"grpc" toml:"grpc"`
 }
 
 // CacheConfig 通用缓存策略配置.
