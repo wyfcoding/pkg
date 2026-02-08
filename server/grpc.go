@@ -34,6 +34,15 @@ func NewGRPCServer(addr string, logger *slog.Logger, register func(*grpc.Server)
 	if len(interceptors) > 0 {
 		grpcOpts = append(grpcOpts, grpc.ChainUnaryInterceptor(interceptors...))
 	}
+	if opts.GRPCMaxRecvMsgSize > 0 {
+		grpcOpts = append(grpcOpts, grpc.MaxRecvMsgSize(opts.GRPCMaxRecvMsgSize))
+	}
+	if opts.GRPCMaxSendMsgSize > 0 {
+		grpcOpts = append(grpcOpts, grpc.MaxSendMsgSize(opts.GRPCMaxSendMsgSize))
+	}
+	if opts.GRPCMaxConcurrentStreams > 0 {
+		grpcOpts = append(grpcOpts, grpc.MaxConcurrentStreams(opts.GRPCMaxConcurrentStreams))
+	}
 
 	s := grpc.NewServer(grpcOpts...)
 	register(s)

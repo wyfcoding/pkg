@@ -307,6 +307,16 @@ func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) 
 		baseGin = append(baseGin, middleware.TracingMiddleware(b.serviceName))
 	}
 	baseGin = append(baseGin, middleware.TraceIDHeader())
+	if cfg.CORS.Enabled {
+		baseGin = append(baseGin, middleware.CORSWithOptions(middleware.CORSOptions{
+			AllowOrigins:     cfg.CORS.AllowOrigins,
+			AllowMethods:     cfg.CORS.AllowMethods,
+			AllowHeaders:     cfg.CORS.AllowHeaders,
+			ExposeHeaders:    cfg.CORS.ExposeHeaders,
+			AllowCredentials: cfg.CORS.AllowCredentials,
+			MaxAge:           cfg.CORS.MaxAge,
+		}))
+	}
 	baseGin = append(baseGin,
 		middleware.RequestContextEnricher(),
 	)
@@ -402,9 +412,19 @@ func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Me
 
 	if b.registerGRPC != nil {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.GRPC.Addr, cfg.Server.GRPC.Port)
+		var maxStreams uint32
+		if cfg.Server.GRPC.MaxConcurrentStreams > 0 {
+			maxStreams = uint32(cfg.Server.GRPC.MaxConcurrentStreams)
+		}
+		grpcOptions := server.Options{
+			ShutdownTimeout:          server.DefaultShutdownTimeout,
+			GRPCMaxRecvMsgSize:       cfg.Server.GRPC.MaxRecvMsgSize,
+			GRPCMaxSendMsgSize:       cfg.Server.GRPC.MaxSendMsgSize,
+			GRPCMaxConcurrentStreams: maxStreams,
+		}
 		srv := server.NewGRPCServer(addr, logger.Logger, func(s *grpc.Server) {
 			b.registerGRPC(s, svc)
-		}, b.grpcInterceptors)
+		}, b.grpcInterceptors, grpcOptions)
 
 		servers = append(servers, srv)
 	}
@@ -412,12 +432,18 @@ func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Me
 	if b.registerGin != nil {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.HTTP.Addr, cfg.Server.HTTP.Port)
 		engine := server.NewDefaultGinEngine(b.ginMiddleware...)
+		httpOptions := server.Options{
+			ShutdownTimeout: server.DefaultShutdownTimeout,
+			ReadTimeout:     cfg.Server.HTTP.ReadTimeout,
+			WriteTimeout:    cfg.Server.HTTP.WriteTimeout,
+			IdleTimeout:     cfg.Server.HTTP.IdleTimeout,
+		}
 
 		b.registerAdminRoutes(engine, cfg, m)
 
 		b.registerGin(engine, svc)
 
-		servers = append(servers, server.NewGinServer(engine, addr, logger.Logger))
+		servers = append(servers, server.NewGinServer(engine, addr, logger.Logger, httpOptions))
 	}
 
 	b.appOpts = append(b.appOpts, WithServer(servers...))

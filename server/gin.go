@@ -17,7 +17,15 @@ const (
 
 // Options 定义服务器选项。
 type Options struct {
-	ShutdownTimeout time.Duration
+	ShutdownTimeout          time.Duration // 服务器优雅关停超时时间。
+	ReadTimeout              time.Duration // HTTP 读取请求体超时时间。
+	WriteTimeout             time.Duration // HTTP 写入响应超时时间。
+	IdleTimeout              time.Duration // HTTP 空闲连接超时时间。
+	ReadHeaderTimeout        time.Duration // HTTP 读取请求头超时时间。
+	MaxHeaderBytes           int           // HTTP 请求头最大字节数。
+	GRPCMaxRecvMsgSize       int           // gRPC 单条消息最大接收大小。
+	GRPCMaxSendMsgSize       int           // gRPC 单条消息最大发送大小。
+	GRPCMaxConcurrentStreams uint32        // gRPC 最大并发流数。
 }
 
 // GinServer 封装了标准的 http.Server，专用于承载 Gin 引擎并提供优雅启停能力。
@@ -39,12 +47,23 @@ func NewGinServer(engine *gin.Engine, addr string, logger *slog.Logger, options 
 		server: &http.Server{
 			Addr:              addr,
 			Handler:           engine,
-			ReadHeaderTimeout: 5 * time.Second,
+			ReadHeaderTimeout: readHeaderTimeout(opts.ReadHeaderTimeout),
+			ReadTimeout:       opts.ReadTimeout,
+			WriteTimeout:      opts.WriteTimeout,
+			IdleTimeout:       opts.IdleTimeout,
+			MaxHeaderBytes:    opts.MaxHeaderBytes,
 		},
 		addr:   addr,
 		logger: logger,
 		opts:   opts,
 	}
+}
+
+func readHeaderTimeout(value time.Duration) time.Duration {
+	if value <= 0 {
+		return 5 * time.Second
+	}
+	return value
 }
 
 // Start 启动 HTTP 服务器并阻塞直到收到退出信号或发生错误。

@@ -44,6 +44,7 @@ type Config struct {
 	RateLimit      RateLimitConfig      `mapstructure:"ratelimit"      toml:"ratelimit"`
 	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuitbreaker" toml:"circuitbreaker"`
 	Concurrency    ConcurrencyConfig    `mapstructure:"concurrency"    toml:"concurrency"`
+	CORS           CORSConfig           `mapstructure:"cors"           toml:"cors"`
 }
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
@@ -204,6 +205,17 @@ type CircuitBreakerConfig struct {
 	Timeout     time.Duration `mapstructure:"timeout"      toml:"timeout"`
 	MaxRequests uint32        `mapstructure:"max_requests" toml:"max_requests"`
 	Enabled     bool          `mapstructure:"enabled"      toml:"enabled"`
+}
+
+// CORSConfig 定义跨域配置。
+type CORSConfig struct {
+	Enabled          bool          `mapstructure:"enabled"           toml:"enabled"`
+	AllowOrigins     []string      `mapstructure:"allow_origins"      toml:"allow_origins"`
+	AllowMethods     []string      `mapstructure:"allow_methods"      toml:"allow_methods"`
+	AllowHeaders     []string      `mapstructure:"allow_headers"      toml:"allow_headers"`
+	ExposeHeaders    []string      `mapstructure:"expose_headers"     toml:"expose_headers"`
+	AllowCredentials bool          `mapstructure:"allow_credentials"  toml:"allow_credentials"`
+	MaxAge           time.Duration `mapstructure:"max_age"            toml:"max_age"`
 }
 
 // ConcurrencyConfig 定义 HTTP/gRPC 并发限制配置。
