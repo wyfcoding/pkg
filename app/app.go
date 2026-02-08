@@ -59,6 +59,20 @@ func New(name string, logger *slog.Logger, opts ...Option) *App {
 		})
 	}
 
+	// 注册中心注销
+	for _, cleanup := range o.registrations {
+		if cleanup == nil {
+			continue
+		}
+		l.Append(Hook{
+			Name: "Registry",
+			OnStop: func(_ context.Context) error {
+				cleanup()
+				return nil
+			},
+		})
+	}
+
 	// 注册调度器
 	for _, sched := range o.schedulers {
 		if sched == nil {

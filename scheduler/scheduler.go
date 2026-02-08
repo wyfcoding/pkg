@@ -8,7 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/wyfcoding/pkg/logging"
+	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/retry"
 )
 
@@ -40,11 +42,12 @@ type JobConfig struct {
 
 // Scheduler 负责任务的统一调度与生命周期管理。
 type Scheduler struct {
-	logger *slog.Logger
-	mu     sync.Mutex
-	jobs   map[string]*jobRunner
-	stop   chan struct{}
-	wg     sync.WaitGroup
+	logger  *slog.Logger
+	mu      sync.Mutex
+	jobs    map[string]*jobRunner
+	stop    chan struct{}
+	wg      sync.WaitGroup
+	metrics *schedulerMetrics
 }
 
 type jobRunner struct {
@@ -53,16 +56,53 @@ type jobRunner struct {
 	running int32
 }
 
+type schedulerMetrics struct {
+	jobRuns     *prometheus.CounterVec
+	jobDuration *prometheus.HistogramVec
+	jobRunning  *prometheus.GaugeVec
+}
+
 // NewScheduler 创建任务调度器。
 func NewScheduler(logger *logging.Logger) *Scheduler {
+	return NewSchedulerWithMetrics(logger, nil)
+}
+
+// NewSchedulerWithMetrics 创建带指标采集的任务调度器。
+func NewSchedulerWithMetrics(logger *logging.Logger, m *metrics.Metrics) *Scheduler {
 	if logger == nil {
 		logger = logging.Default()
 	}
 
+	var schedMetrics *schedulerMetrics
+	if m != nil {
+		schedMetrics = &schedulerMetrics{
+			jobRuns: m.NewCounterVec(&prometheus.CounterOpts{
+				Namespace: "pkg",
+				Subsystem: "scheduler",
+				Name:      "job_runs_total",
+				Help:      "Total number of scheduled job runs",
+			}, []string{"job", "status"}),
+			jobDuration: m.NewHistogramVec(&prometheus.HistogramOpts{
+				Namespace: "pkg",
+				Subsystem: "scheduler",
+				Name:      "job_duration_seconds",
+				Help:      "Scheduled job execution duration",
+				Buckets:   prometheus.DefBuckets,
+			}, []string{"job", "status"}),
+			jobRunning: m.NewGaugeVec(&prometheus.GaugeOpts{
+				Namespace: "pkg",
+				Subsystem: "scheduler",
+				Name:      "job_running",
+				Help:      "Current running jobs",
+			}, []string{"job"}),
+		}
+	}
+
 	return &Scheduler{
-		logger: logger.Logger,
-		jobs:   make(map[string]*jobRunner),
-		stop:   make(chan struct{}),
+		logger:  logger.Logger,
+		jobs:    make(map[string]*jobRunner),
+		stop:    make(chan struct{}),
+		metrics: schedMetrics,
 	}
 }
 
@@ -161,6 +201,9 @@ func (s *Scheduler) execute(ctx context.Context, runner *jobRunner) {
 	if !runner.cfg.AllowConcurrent {
 		if !atomic.CompareAndSwapInt32(&runner.running, 0, 1) {
 			s.logger.Warn("scheduler job skipped (already running)", "job", runner.cfg.Name)
+			if s.metrics != nil {
+				s.metrics.jobRuns.WithLabelValues(runner.cfg.Name, "skipped").Inc()
+			}
 			return
 		}
 		defer atomic.StoreInt32(&runner.running, 0)
@@ -173,17 +216,32 @@ func (s *Scheduler) execute(ctx context.Context, runner *jobRunner) {
 		defer cancel()
 	}
 
+	start := time.Now()
+	if s.metrics != nil {
+		s.metrics.jobRunning.WithLabelValues(runner.cfg.Name).Inc()
+	}
 	err := retry.If(execCtx, func() error {
 		return runner.handler(execCtx)
 	}, func(err error) bool {
 		return err != nil
 	}, runner.cfg.RetryConfig)
+	if s.metrics != nil {
+		s.metrics.jobRunning.WithLabelValues(runner.cfg.Name).Dec()
+	}
 
 	if err != nil {
+		if s.metrics != nil {
+			s.metrics.jobRuns.WithLabelValues(runner.cfg.Name, "failed").Inc()
+			s.metrics.jobDuration.WithLabelValues(runner.cfg.Name, "failed").Observe(time.Since(start).Seconds())
+		}
 		s.logger.Error("scheduler job failed", "job", runner.cfg.Name, "error", err)
 		return
 	}
 
+	if s.metrics != nil {
+		s.metrics.jobRuns.WithLabelValues(runner.cfg.Name, "success").Inc()
+		s.metrics.jobDuration.WithLabelValues(runner.cfg.Name, "success").Observe(time.Since(start).Seconds())
+	}
 	s.logger.Debug("scheduler job succeeded", "job", runner.cfg.Name)
 }
 

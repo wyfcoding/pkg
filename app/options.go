@@ -11,6 +11,7 @@ type options struct {
 	cleanups       []func()
 	healthCheckers []func() error // 自定义健康检查探测器列表。
 	schedulers     []*scheduler.Scheduler
+	registrations  []func() // 服务注册清理函数。
 }
 
 // Option 定义配置 App 的函数原型。
@@ -44,5 +45,15 @@ func WithScheduler(s *scheduler.Scheduler) Option {
 			return
 		}
 		o.schedulers = append(o.schedulers, s)
+	}
+}
+
+// WithRegistration 注册服务注册清理函数。
+func WithRegistration(cleanup func()) Option {
+	return func(o *options) {
+		if cleanup == nil {
+			return
+		}
+		o.registrations = append(o.registrations, cleanup)
 	}
 }

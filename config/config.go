@@ -48,6 +48,7 @@ type Config struct {
 	Security       SecurityConfig       `mapstructure:"security"       toml:"security"`
 	HTTPClient     HTTPClientConfig     `mapstructure:"httpclient"     toml:"httpclient"`
 	Maintenance    MaintenanceConfig    `mapstructure:"maintenance"    toml:"maintenance"`
+	FeatureFlags   FeatureFlagConfig    `mapstructure:"feature_flags"  toml:"feature_flags"`
 }
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
@@ -83,6 +84,7 @@ type DataConfig struct {
 	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch" toml:"elasticsearch"`
 	Neo4j         Neo4jConfig         `mapstructure:"neo4j"         toml:"neo4j"`
 	MongoDB       MongoDBConfig       `mapstructure:"mongodb"       toml:"mongodb"`
+	Etcd          EtcdConfig          `mapstructure:"etcd"          toml:"etcd"`
 	Shards        []DatabaseConfig    `mapstructure:"shards"        toml:"shards"`
 	Database      DatabaseConfig      `mapstructure:"database"      toml:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"         toml:"redis"`
@@ -274,6 +276,33 @@ type MaintenanceConfig struct {
 	AllowPaths []string `mapstructure:"allow_paths" toml:"allow_paths"`
 }
 
+// FeatureFlagConfig 定义功能开关配置。
+type FeatureFlagConfig struct {
+	Enabled        bool          `mapstructure:"enabled"         toml:"enabled"`
+	DefaultEnabled bool          `mapstructure:"default_enabled" toml:"default_enabled"`
+	Flags          []FeatureFlag `mapstructure:"flags"           toml:"flags"`
+}
+
+// FeatureFlag 定义单个功能开关。
+type FeatureFlag struct {
+	Name           string    `mapstructure:"name"             toml:"name"`
+	Enabled        bool      `mapstructure:"enabled"          toml:"enabled"`
+	Rollout        int       `mapstructure:"rollout"          toml:"rollout"`
+	StartAt        time.Time `mapstructure:"start_at"         toml:"start_at"`
+	EndAt          time.Time `mapstructure:"end_at"           toml:"end_at"`
+	AllowUsers     []string  `mapstructure:"allow_users"      toml:"allow_users"`
+	DenyUsers      []string  `mapstructure:"deny_users"       toml:"deny_users"`
+	AllowTenants   []string  `mapstructure:"allow_tenants"    toml:"allow_tenants"`
+	DenyTenants    []string  `mapstructure:"deny_tenants"     toml:"deny_tenants"`
+	AllowRoles     []string  `mapstructure:"allow_roles"      toml:"allow_roles"`
+	DenyRoles      []string  `mapstructure:"deny_roles"       toml:"deny_roles"`
+	AllowIPs       []string  `mapstructure:"allow_ips"        toml:"allow_ips"`
+	DenyIPs        []string  `mapstructure:"deny_ips"         toml:"deny_ips"`
+	RequiredScopes []string  `mapstructure:"required_scopes"  toml:"required_scopes"`
+	ScopeMode      string    `mapstructure:"scope_mode"       toml:"scope_mode"`
+	Description    string    `mapstructure:"description"      toml:"description"`
+}
+
 // ConcurrencyConfig 定义 HTTP/gRPC 并发限制配置。
 type ConcurrencyConfig struct {
 	HTTP struct {
@@ -362,6 +391,15 @@ type MongoDBConfig struct {
 	Database string `mapstructure:"database" toml:"database"`
 }
 
+// EtcdConfig 定义 Etcd 客户端连接参数.
+type EtcdConfig struct {
+	Endpoints   []string      `mapstructure:"endpoints"    toml:"endpoints"`
+	Username    string        `mapstructure:"username"     toml:"username"`
+	Password    string        `mapstructure:"password"     toml:"password"`
+	DialTimeout time.Duration `mapstructure:"dial_timeout" toml:"dial_timeout"`
+	AutoSync    time.Duration `mapstructure:"auto_sync"    toml:"auto_sync"`
+}
+
 // ClickHouseConfig 定义 ClickHouse 列式存储的连接参数.
 type ClickHouseConfig struct {
 	Addr     string `mapstructure:"addr"     toml:"addr"`
@@ -385,6 +423,15 @@ type ElasticsearchConfig struct {
 }
 
 var vInstance = viper.New()
+var onReload []func(*Config)
+
+// RegisterReloadHook 注册配置热更新回调。
+func RegisterReloadHook(hook func(*Config)) {
+	if hook == nil {
+		return
+	}
+	onReload = append(onReload, hook)
+}
 
 // Load 全生产级的配置加载逻辑.
 func Load(path string, conf any) error {
@@ -442,6 +489,12 @@ func Load(path string, conf any) error {
 			slog.Error("reload config validation failed", "error", validateErr)
 		} else {
 			slog.Info("config hot-reloaded and validated successfully")
+		}
+
+		if cfg, ok := conf.(*Config); ok {
+			for _, hook := range onReload {
+				hook(cfg)
+			}
 		}
 	})
 

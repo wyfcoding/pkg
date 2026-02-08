@@ -18,11 +18,15 @@ import (
 
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/contextx"
+	"github.com/wyfcoding/pkg/etcd"
+	"github.com/wyfcoding/pkg/featureflag"
+	"github.com/wyfcoding/pkg/grpcclient"
 	"github.com/wyfcoding/pkg/health"
 	"github.com/wyfcoding/pkg/httpclient"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/middleware"
+	"github.com/wyfcoding/pkg/registry"
 	"github.com/wyfcoding/pkg/scheduler"
 	"github.com/wyfcoding/pkg/security"
 	"github.com/wyfcoding/pkg/server"
@@ -173,6 +177,8 @@ func (b *Builder[C, S]) Build() *App {
 		metricsInstance.RegisterBuildInfo(b.serviceName, cfg.Version)
 	}
 	httpclient.SetDefault(httpclient.NewFromConfig(cfg.HTTPClient, loggerInstance, metricsInstance))
+	b.initFeatureFlags(&cfg, loggerInstance, metricsInstance)
+	b.initRegistry(&cfg, loggerInstance, metricsInstance)
 
 	b.setupMiddleware(&cfg, metricsInstance)
 
@@ -314,6 +320,122 @@ func (b *Builder[C, S]) initMetrics(cfg *config.Config) *metrics.Metrics {
 	}
 
 	return metricsInstance
+}
+
+func (b *Builder[C, S]) initFeatureFlags(cfg *config.Config, logger *logging.Logger, m *metrics.Metrics) {
+	manager := featureflag.NewManager(
+		featureflag.WithLogger(logger),
+		featureflag.WithMetrics(m),
+		featureflag.WithDefaultEnabled(cfg.FeatureFlags.DefaultEnabled),
+		featureflag.WithEnabled(cfg.FeatureFlags.Enabled),
+	)
+
+	flags := make([]featureflag.Flag, 0, len(cfg.FeatureFlags.Flags))
+	for _, flag := range cfg.FeatureFlags.Flags {
+		flags = append(flags, featureflag.Flag{
+			Name:           flag.Name,
+			Enabled:        flag.Enabled,
+			Rollout:        flag.Rollout,
+			StartAt:        flag.StartAt,
+			EndAt:          flag.EndAt,
+			AllowUsers:     flag.AllowUsers,
+			DenyUsers:      flag.DenyUsers,
+			AllowTenants:   flag.AllowTenants,
+			DenyTenants:    flag.DenyTenants,
+			AllowRoles:     flag.AllowRoles,
+			DenyRoles:      flag.DenyRoles,
+			AllowIPs:       flag.AllowIPs,
+			DenyIPs:        flag.DenyIPs,
+			RequiredScopes: flag.RequiredScopes,
+			ScopeMode:      flag.ScopeMode,
+			Description:    flag.Description,
+		})
+	}
+	manager.Load(flags)
+	featureflag.SetDefault(manager)
+
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		manager.SetEnabled(updated.FeatureFlags.Enabled)
+		manager.Load(convertFlags(updated.FeatureFlags.Flags))
+	})
+}
+
+func convertFlags(flags []config.FeatureFlag) []featureflag.Flag {
+	items := make([]featureflag.Flag, 0, len(flags))
+	for _, flag := range flags {
+		items = append(items, featureflag.Flag{
+			Name:           flag.Name,
+			Enabled:        flag.Enabled,
+			Rollout:        flag.Rollout,
+			StartAt:        flag.StartAt,
+			EndAt:          flag.EndAt,
+			AllowUsers:     flag.AllowUsers,
+			DenyUsers:      flag.DenyUsers,
+			AllowTenants:   flag.AllowTenants,
+			DenyTenants:    flag.DenyTenants,
+			AllowRoles:     flag.AllowRoles,
+			DenyRoles:      flag.DenyRoles,
+			AllowIPs:       flag.AllowIPs,
+			DenyIPs:        flag.DenyIPs,
+			RequiredScopes: flag.RequiredScopes,
+			ScopeMode:      flag.ScopeMode,
+			Description:    flag.Description,
+		})
+	}
+	return items
+}
+
+func (b *Builder[C, S]) initRegistry(cfg *config.Config, logger *logging.Logger, m *metrics.Metrics) {
+	if len(cfg.Data.Etcd.Endpoints) == 0 {
+		return
+	}
+	if b.registerGRPC == nil || cfg.Server.GRPC.Port <= 0 {
+		logger.Warn("skip registry register: grpc server not enabled", "service", b.serviceName)
+		return
+	}
+
+	client, cleanup, err := etcd.NewClient(cfg.Data.Etcd, cfg.CircuitBreaker, logger, m)
+	if err != nil {
+		logger.Error("failed to initialize etcd client for registry", "error", err)
+		return
+	}
+
+	reg, err := registry.NewEtcdRegistry(client, logger, registry.WithMetrics(m))
+	if err != nil {
+		logger.Error("failed to initialize etcd registry", "error", err)
+		cleanup()
+		return
+	}
+	registry.SetDefault(reg)
+	grpcclient.RegisterRegistryResolver(reg, logger)
+
+	instance := registry.ServiceInstance{
+		ID:        fmt.Sprintf("%s-%d", b.serviceName, time.Now().UnixNano()),
+		Name:      b.serviceName,
+		Address:   fmt.Sprintf("%s:%d", cfg.Server.GRPC.Addr, cfg.Server.GRPC.Port),
+		Tags:      []string{cfg.Server.Environment},
+		Metadata:  map[string]string{"version": cfg.Version},
+		Weight:    1,
+		UpdatedAt: time.Now(),
+	}
+
+	regCleanup, err := reg.Register(context.Background(), instance)
+	if err != nil {
+		logger.Error("failed to register service instance", "service", b.serviceName, "error", err)
+		cleanup()
+		return
+	}
+
+	b.appOpts = append(b.appOpts, WithRegistration(func() {
+		if regCleanup != nil {
+			regCleanup()
+		}
+		_ = reg.Deregister(context.Background(), instance)
+		cleanup()
+	}))
 }
 
 func (b *Builder[C, S]) setupMiddleware(cfg *config.Config, m *metrics.Metrics) {
