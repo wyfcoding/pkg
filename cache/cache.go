@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -48,6 +49,7 @@ type Cache interface {
 
 // RedisCache 是基于 Redis 实现的具体缓存结构
 type RedisCache struct {
+	mu       sync.RWMutex
 	client   redis.UniversalClient    // Redis 原生客户端 (通用接口)
 	sfg      singleflight.Group       // 用于合并并发回源请求，防止击穿
 	cleanup  func()                   // 资源清理回调函数
@@ -61,6 +63,9 @@ type RedisCache struct {
 
 // NewRedisCache 初始化并返回一个具备熔断和监控能力的 Redis 缓存实例。
 func NewRedisCache(cfg *config.RedisConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*RedisCache, error) {
+	if logger == nil {
+		logger = logging.Default()
+	}
 	client, cleanup, err := pkgredis.NewClient(cfg, logger)
 	if err != nil {
 		return nil, err
@@ -108,6 +113,15 @@ func (c *RedisCache) buildKey(key string) string {
 }
 
 func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
+	if c == nil {
+		return errors.New("cache is nil")
+	}
+	c.mu.RLock()
+	client := c.client
+	defer c.mu.RUnlock()
+	if client == nil {
+		return errors.New("redis client is nil")
+	}
 	start := time.Now()
 	defer func() {
 		c.duration.WithLabelValues(c.prefix, "get").Observe(time.Since(start).Seconds())
@@ -115,7 +129,7 @@ func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
 
 	// 这里的 Execute 提供了熔断保护，防止 Redis 故障拖垮服务
 	_, err := c.cb.Execute(func() (any, error) {
-		val, err := c.client.Get(ctx, c.buildKey(key)).Bytes()
+		val, err := client.Get(ctx, c.buildKey(key)).Bytes()
 		if errors.Is(err, redis.Nil) {
 			c.misses.WithLabelValues(c.prefix).Inc()
 			return nil, ErrCacheMiss
@@ -131,6 +145,15 @@ func (c *RedisCache) Get(ctx context.Context, key string, value any) error {
 }
 
 func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
+	if c == nil {
+		return errors.New("cache is nil")
+	}
+	c.mu.RLock()
+	client := c.client
+	defer c.mu.RUnlock()
+	if client == nil {
+		return errors.New("redis client is nil")
+	}
 	start := time.Now()
 	defer func() {
 		c.duration.WithLabelValues(c.prefix, "set").Observe(time.Since(start).Seconds())
@@ -156,7 +179,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value any, expiration 
 		}
 	}
 
-	return c.client.Set(ctx, c.buildKey(key), data, expiration).Err()
+	return client.Set(ctx, c.buildKey(key), data, expiration).Err()
 }
 
 func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expiration time.Duration, fn func() (any, error)) error {
@@ -224,6 +247,15 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 }
 
 func (c *RedisCache) Delete(ctx context.Context, keys ...string) error {
+	if c == nil {
+		return errors.New("cache is nil")
+	}
+	c.mu.RLock()
+	client := c.client
+	defer c.mu.RUnlock()
+	if client == nil {
+		return errors.New("redis client is nil")
+	}
 	if len(keys) == 0 {
 		return nil
 	}
@@ -231,21 +263,97 @@ func (c *RedisCache) Delete(ctx context.Context, keys ...string) error {
 	for i, k := range keys {
 		fullKeys[i] = c.buildKey(k)
 	}
-	return c.client.Del(ctx, fullKeys...).Err()
+	return client.Del(ctx, fullKeys...).Err()
 }
 
 func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
-	n, err := c.client.Exists(ctx, key).Result()
+	if c == nil {
+		return false, errors.New("cache is nil")
+	}
+	c.mu.RLock()
+	client := c.client
+	defer c.mu.RUnlock()
+	if client == nil {
+		return false, errors.New("redis client is nil")
+	}
+	n, err := client.Exists(ctx, key).Result()
 	return n > 0, err
 }
 
+// UpdateConfig 使用最新配置刷新 Redis 连接。
+func (c *RedisCache) UpdateConfig(cfg *config.RedisConfig) error {
+	if c == nil {
+		return errors.New("cache is nil")
+	}
+	if cfg == nil {
+		return errors.New("redis config is nil")
+	}
+	logger := c.logger
+	if logger == nil {
+		logger = logging.Default()
+	}
+	client, cleanup, err := pkgredis.NewClient(cfg, logger)
+	if err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	oldCleanup := c.cleanup
+	c.client = client
+	c.cleanup = cleanup
+	c.mu.Unlock()
+
+	if oldCleanup != nil {
+		oldCleanup()
+	}
+
+	logger.Info("redis cache updated", "addrs", cfg.Addrs)
+
+	return nil
+}
+
 func (c *RedisCache) Close() error {
-	if c.cleanup != nil {
-		c.cleanup()
+	if c == nil {
+		return nil
+	}
+
+	c.mu.Lock()
+	cleanup := c.cleanup
+	c.client = nil
+	c.cleanup = nil
+	c.mu.Unlock()
+
+	if cleanup != nil {
+		cleanup()
 	}
 	return nil
 }
 
 func (c *RedisCache) GetClient() redis.UniversalClient {
-	return c.client
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+	return client
+}
+
+// RegisterReloadHook 注册缓存热更新回调。
+func RegisterReloadHook(cache *RedisCache) {
+	if cache == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		if err := cache.UpdateConfig(&updated.Data.Redis); err != nil {
+			logger := cache.logger
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("redis cache reload failed", "error", err)
+		}
+	})
 }

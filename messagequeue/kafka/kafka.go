@@ -51,6 +51,44 @@ func SetDefaultProducer(producer *Producer) {
 	defaultProducer = producer
 }
 
+// RegisterProducerReloadHook 注册生产者热更新回调。
+func RegisterProducerReloadHook(producer *Producer) {
+	if producer == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		if err := producer.UpdateConfig(&updated.MessageQueue.Kafka); err != nil {
+			logger := producer.logger
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("kafka producer reload failed", "error", err)
+		}
+	})
+}
+
+// RegisterConsumerReloadHook 注册消费者热更新回调。
+func RegisterConsumerReloadHook(consumer *Consumer, opts *ConsumerOptions) {
+	if consumer == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		if err := consumer.UpdateConfig(&updated.MessageQueue.Kafka, opts); err != nil {
+			logger := consumer.logger
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("kafka consumer reload failed", "error", err)
+		}
+	})
+}
+
 // Handler 定义了消息处理函数的原型.
 type Handler func(ctx context.Context, msg kafkago.Message) error
 
