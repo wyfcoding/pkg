@@ -87,7 +87,7 @@ func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc
 
 	defaultOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"round_robin":{}}]}`),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"weighted_rr":{}}]}`),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time: 20 * time.Second,
 		}),

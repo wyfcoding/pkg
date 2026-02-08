@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/registry"
@@ -16,11 +18,29 @@ import (
 )
 
 const registryScheme = "registry"
+const (
+	tagModeAny = "any"
+	tagModeAll = "all"
+)
 
 var (
 	registryResolverOnce sync.Once
 	defaultRegistry      atomic.Value
+	defaultSelector      atomic.Value
 )
+
+// RegistrySelector 定义注册中心解析的筛选策略。
+type RegistrySelector struct {
+	PreferredZone string
+	RequiredTags  []string
+	TagMode       string
+}
+
+// SetRegistrySelector 设置解析器筛选策略。
+func SetRegistrySelector(selector RegistrySelector) {
+	normalized := normalizeSelector(selector)
+	defaultSelector.Store(normalized)
+}
 
 // RegisterRegistryResolver 注册基于注册中心的 gRPC 名称解析器。
 // 注意：建议在应用启动阶段调用。
@@ -65,6 +85,8 @@ func (b *registryResolverBuilder) Build(target resolver.Target, cc resolver.Clie
 		serviceName: serviceName,
 		cc:          cc,
 		logger:      b.logger,
+		backoff:     time.Second,
+		maxBackoff:  30 * time.Second,
 	}
 	r.ctx, r.cancel = context.WithCancel(context.Background())
 
@@ -84,6 +106,8 @@ type registryResolver struct {
 	logger      *logging.Logger
 	ctx         context.Context
 	cancel      context.CancelFunc
+	backoff     time.Duration
+	maxBackoff  time.Duration
 }
 
 func (r *registryResolver) ResolveNow(_ resolver.ResolveNowOptions) {
@@ -108,15 +132,20 @@ func (r *registryResolver) resolve() error {
 }
 
 func (r *registryResolver) watch() {
-	err := r.registry.Watch(r.ctx, r.serviceName, func(instances []registry.ServiceInstance) {
-		r.update(instances)
-	})
-	if err != nil && r.ctx.Err() == nil {
-		r.logger.Error("registry watch failed", "service", r.serviceName, "error", err)
+	for {
+		err := r.registry.Watch(r.ctx, r.serviceName, func(instances []registry.ServiceInstance) {
+			r.update(instances)
+		})
+		if err == nil || r.ctx.Err() != nil {
+			return
+		}
+		r.logger.Error("registry watch failed, retrying", "service", r.serviceName, "error", err)
+		sleepWithBackoff(r.ctx, r.nextBackoff())
 	}
 }
 
 func (r *registryResolver) update(instances []registry.ServiceInstance) {
+	instances = applySelector(instances, getSelector())
 	addresses := make([]resolver.Address, 0, len(instances))
 	seen := make(map[string]struct{})
 	for _, instance := range instances {
@@ -129,6 +158,9 @@ func (r *registryResolver) update(instances []registry.ServiceInstance) {
 		seen[instance.Address] = struct{}{}
 		attrs := attributes.New("id", instance.ID)
 		attrs = attrs.WithValue("weight", instance.Weight)
+		if instance.Zone != "" {
+			attrs = attrs.WithValue("zone", instance.Zone)
+		}
 		if len(instance.Tags) > 0 {
 			attrs = attrs.WithValue("tags", strings.Join(instance.Tags, ","))
 		}
@@ -146,5 +178,130 @@ func (r *registryResolver) update(instances []registry.ServiceInstance) {
 	_ = r.cc.UpdateState(resolver.State{Addresses: addresses})
 	if len(addresses) == 0 {
 		r.cc.ReportError(errors.New("no available instances"))
+	}
+}
+
+func getSelector() RegistrySelector {
+	selector, ok := defaultSelector.Load().(RegistrySelector)
+	if !ok {
+		return RegistrySelector{}
+	}
+	return selector
+}
+
+func normalizeSelector(selector RegistrySelector) RegistrySelector {
+	selector.PreferredZone = strings.TrimSpace(selector.PreferredZone)
+	selector.RequiredTags = normalizeTags(selector.RequiredTags)
+	switch strings.ToLower(strings.TrimSpace(selector.TagMode)) {
+	case tagModeAll:
+		selector.TagMode = tagModeAll
+	case tagModeAny:
+		selector.TagMode = tagModeAny
+	default:
+		selector.TagMode = tagModeAny
+	}
+	return selector
+}
+
+func normalizeTags(tags []string) []string {
+	result := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		t := strings.TrimSpace(tag)
+		if t == "" {
+			continue
+		}
+		result = append(result, t)
+	}
+	return result
+}
+
+func applySelector(instances []registry.ServiceInstance, selector RegistrySelector) []registry.ServiceInstance {
+	if len(instances) == 0 {
+		return instances
+	}
+
+	candidates := instances
+	if selector.PreferredZone != "" {
+		zoneMatches := filterByZone(candidates, selector.PreferredZone)
+		if len(zoneMatches) > 0 {
+			candidates = zoneMatches
+		}
+	}
+
+	if len(selector.RequiredTags) == 0 {
+		return candidates
+	}
+
+	tagMatches := filterByTags(candidates, selector.RequiredTags, selector.TagMode)
+	if len(tagMatches) == 0 {
+		return nil
+	}
+	return tagMatches
+}
+
+func filterByZone(instances []registry.ServiceInstance, zone string) []registry.ServiceInstance {
+	result := make([]registry.ServiceInstance, 0, len(instances))
+	for _, instance := range instances {
+		if instance.Zone == zone {
+			result = append(result, instance)
+		}
+	}
+	return result
+}
+
+func filterByTags(instances []registry.ServiceInstance, tags []string, mode string) []registry.ServiceInstance {
+	result := make([]registry.ServiceInstance, 0, len(instances))
+	for _, instance := range instances {
+		if matchTags(instance.Tags, tags, mode) {
+			result = append(result, instance)
+		}
+	}
+	return result
+}
+
+func matchTags(instanceTags []string, required []string, mode string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	tagSet := make(map[string]struct{}, len(instanceTags))
+	for _, tag := range instanceTags {
+		tagSet[tag] = struct{}{}
+	}
+
+	if mode == tagModeAll {
+		for _, tag := range required {
+			if _, ok := tagSet[tag]; !ok {
+				return false
+			}
+		}
+		return true
+	}
+
+	for _, tag := range required {
+		if _, ok := tagSet[tag]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *registryResolver) nextBackoff() time.Duration {
+	if r.backoff <= 0 {
+		r.backoff = time.Second
+	}
+	value := r.backoff
+	next := time.Duration(math.Min(float64(r.maxBackoff), float64(r.backoff)*2))
+	r.backoff = next
+	return value
+}
+
+func sleepWithBackoff(ctx context.Context, d time.Duration) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+		return
 	}
 }

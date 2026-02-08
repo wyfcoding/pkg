@@ -6,10 +6,15 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -387,38 +392,314 @@ func (h *HTTPHandler) Execute(ctx *ExecutionContext) (*ExecutionResult, error) {
 		return nil, errors.New("HTTP handler requires config")
 	}
 
-	method, _ := config["method"].(string)
-	url, _ := config["url"].(string)
+	method := strings.ToUpper(getStringConfig(config, "method"))
+	urlStr := getStringConfig(config, "url")
 
-	if method == "" || url == "" {
+	if method == "" || urlStr == "" {
 		return nil, errors.New("HTTP handler requires method and url in config")
 	}
 
-	// 替换 URL 中的变量
-	for k, v := range ctx.Input {
-		url = strings.ReplaceAll(url, fmt.Sprintf("${%s}", k), fmt.Sprintf("%v", v))
+	logger := h.logger
+	if ctx.Logger != nil {
+		logger = ctx.Logger
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
-	h.logger.InfoContext(ctx.Context, "HTTP request",
+	urlStr = replaceVariables(urlStr, ctx.Input)
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
+	}
+
+	// 处理 query 参数
+	if query := getMapConfig(config, "query"); len(query) > 0 {
+		values := parsedURL.Query()
+		for k, v := range query {
+			values.Set(k, replaceVariables(fmt.Sprintf("%v", v), ctx.Input))
+		}
+		parsedURL.RawQuery = values.Encode()
+	}
+
+	// 处理 headers
+	headers := http.Header{}
+	if headerConfig := getMapConfig(config, "headers"); len(headerConfig) > 0 {
+		for k, v := range headerConfig {
+			headers.Set(k, replaceVariables(fmt.Sprintf("%v", v), ctx.Input))
+		}
+	}
+
+	contentType := getStringConfig(config, "content_type")
+	bodyReader, err := buildRequestBody(config["body"], ctx.Input, &contentType)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx.Context, method, parsedURL.String(), bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if contentType != "" && headers.Get("Content-Type") == "" {
+		headers.Set("Content-Type", contentType)
+	}
+	req.Header = headers
+
+	timeout := 15 * time.Second
+	if d, ok := parseDuration(config["timeout"]); ok {
+		timeout = d
+	}
+	client := &http.Client{Timeout: timeout}
+
+	logger.InfoContext(ctx.Context, "HTTP request",
 		"method", method,
-		"url", url,
+		"url", parsedURL.String(),
+		"timeout", timeout.String(),
 		"node_id", ctx.Node.ID)
 
-	// 简化实现：实际需要真正的 HTTP 调用
-	// TODO: 实现实际的 HTTP 调用
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
 
-	return &ExecutionResult{
-		Output: map[string]any{
-			"status_code": 200,
-			"response":    "OK",
-		},
-	}, nil
+	maxResponseBytes := int64(1024 * 1024)
+	if limit, ok := parseInt64(config["max_response_bytes"]); ok && limit > 0 {
+		maxResponseBytes = limit
+	}
+
+	bodyBytes, err := readResponseBody(resp.Body, maxResponseBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	output := map[string]any{
+		"status_code": resp.StatusCode,
+		"duration_ms": time.Since(start).Milliseconds(),
+		"body":        string(bodyBytes),
+		"headers":     cloneHeaders(resp.Header),
+	}
+
+	if strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		var bodyJSON any
+		if err := json.Unmarshal(bodyBytes, &bodyJSON); err == nil {
+			output["body_json"] = bodyJSON
+		}
+	}
+
+	result := &ExecutionResult{Output: output}
+	if !getBoolConfig(config, "allow_non_2xx") && resp.StatusCode >= http.StatusBadRequest {
+		return result, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
+	}
+
+	return result, nil
 }
 
 // Compensate 补偿执行。
 func (h *HTTPHandler) Compensate(ctx *ExecutionContext) error {
 	// HTTP 调用通常不需要补偿
 	return nil
+}
+
+func replaceVariables(template string, input map[string]any) string {
+	if template == "" || len(input) == 0 {
+		return template
+	}
+	result := template
+	for k, v := range input {
+		result = strings.ReplaceAll(result, fmt.Sprintf("${%s}", k), fmt.Sprintf("%v", v))
+	}
+	return result
+}
+
+func replaceVariablesInValue(value any, input map[string]any) any {
+	switch v := value.(type) {
+	case string:
+		return replaceVariables(v, input)
+	case map[string]any:
+		clone := make(map[string]any, len(v))
+		for k, val := range v {
+			clone[k] = replaceVariablesInValue(val, input)
+		}
+		return clone
+	case map[string]string:
+		clone := make(map[string]any, len(v))
+		for k, val := range v {
+			clone[k] = replaceVariables(val, input)
+		}
+		return clone
+	case []any:
+		clone := make([]any, 0, len(v))
+		for _, val := range v {
+			clone = append(clone, replaceVariablesInValue(val, input))
+		}
+		return clone
+	default:
+		return value
+	}
+}
+
+func buildRequestBody(raw any, input map[string]any, contentType *string) (io.Reader, error) {
+	if raw == nil {
+		return nil, nil
+	}
+
+	resolved := replaceVariablesInValue(raw, input)
+	switch v := resolved.(type) {
+	case string:
+		if contentType != nil && *contentType == "" {
+			*contentType = "text/plain; charset=utf-8"
+		}
+		return strings.NewReader(v), nil
+	case []byte:
+		if contentType != nil && *contentType == "" {
+			*contentType = "application/octet-stream"
+		}
+		return bytes.NewReader(v), nil
+	default:
+		bodyBytes, err := json.Marshal(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		if contentType != nil && *contentType == "" {
+			*contentType = "application/json"
+		}
+		return bytes.NewReader(bodyBytes), nil
+	}
+}
+
+func getStringConfig(config map[string]any, key string) string {
+	if config == nil {
+		return ""
+	}
+	val, ok := config[key]
+	if !ok || val == nil {
+		return ""
+	}
+	if str, ok := val.(string); ok {
+		return str
+	}
+	return fmt.Sprintf("%v", val)
+}
+
+func getMapConfig(config map[string]any, key string) map[string]any {
+	if config == nil {
+		return nil
+	}
+	val, ok := config[key]
+	if !ok || val == nil {
+		return nil
+	}
+
+	switch typed := val.(type) {
+	case map[string]any:
+		return typed
+	case map[string]string:
+		converted := make(map[string]any, len(typed))
+		for k, v := range typed {
+			converted[k] = v
+		}
+		return converted
+	default:
+		return nil
+	}
+}
+
+func getBoolConfig(config map[string]any, key string) bool {
+	if config == nil {
+		return false
+	}
+	val, ok := config[key]
+	if !ok || val == nil {
+		return false
+	}
+	switch typed := val.(type) {
+	case bool:
+		return typed
+	case string:
+		parsed, err := strconv.ParseBool(typed)
+		if err == nil {
+			return parsed
+		}
+	case int:
+		return typed != 0
+	case int64:
+		return typed != 0
+	case float64:
+		return typed != 0
+	}
+	return false
+}
+
+func parseDuration(value any) (time.Duration, bool) {
+	switch v := value.(type) {
+	case time.Duration:
+		return v, true
+	case string:
+		parsed, err := time.ParseDuration(v)
+		if err == nil {
+			return parsed, true
+		}
+	case int:
+		return time.Duration(v) * time.Millisecond, true
+	case int64:
+		return time.Duration(v) * time.Millisecond, true
+	case float64:
+		return time.Duration(v) * time.Millisecond, true
+	case json.Number:
+		parsed, err := v.Int64()
+		if err == nil {
+			return time.Duration(parsed) * time.Millisecond, true
+		}
+	}
+	return 0, false
+}
+
+func parseInt64(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float64:
+		return int64(v), true
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			return parsed, true
+		}
+	case json.Number:
+		parsed, err := v.Int64()
+		if err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func readResponseBody(reader io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		limit = 1024 * 1024
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("response body exceeds limit of %d bytes", limit)
+	}
+	return body, nil
+}
+
+func cloneHeaders(headers http.Header) map[string][]string {
+	clone := make(map[string][]string, len(headers))
+	for k, v := range headers {
+		copied := make([]string, len(v))
+		copy(copied, v)
+		clone[k] = copied
+	}
+	return clone
 }
 
 // ScriptHandler 脚本执行处理器。

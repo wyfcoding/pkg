@@ -420,6 +420,7 @@ func (b *Builder[C, S]) initRegistry(cfg *config.Config, logger *logging.Logger,
 		Metadata:  map[string]string{"version": cfg.Version},
 		Weight:    1,
 		UpdatedAt: time.Now(),
+		Zone:      cfg.Server.Zone,
 	}
 
 	regCleanup, err := reg.Register(context.Background(), instance)

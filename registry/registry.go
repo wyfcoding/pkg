@@ -23,6 +23,7 @@ type ServiceInstance struct {
 	Metadata  map[string]string `json:"metadata"`   // 扩展元数据。
 	Weight    int               `json:"weight"`     // 权重。
 	UpdatedAt time.Time         `json:"updated_at"` // 更新时间。
+	Zone      string            `json:"zone"`       // 可用区标识（如 ap-east-1a）。
 }
 
 // WatchHandler 定义注册中心的变更处理函数。

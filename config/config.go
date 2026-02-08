@@ -55,6 +55,7 @@ type Config struct {
 type ServerConfig struct {
 	Name        string `mapstructure:"name"        toml:"name"        validate:"required"`
 	Environment string `mapstructure:"environment" toml:"environment" validate:"oneof=dev test prod"`
+	Zone        string `mapstructure:"zone"        toml:"zone"`
 	HTTP        struct {
 		Addr              string        `mapstructure:"addr"          toml:"addr"`
 		Timeout           time.Duration `mapstructure:"timeout"       toml:"timeout"`

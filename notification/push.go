@@ -10,14 +10,23 @@ package notification
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/net/http2"
 )
 
@@ -93,6 +102,9 @@ type PushSender struct {
 	// APNs JWT token 缓存
 	apnsToken       string
 	apnsTokenExpiry time.Time
+	fcmToken        string
+	fcmTokenExpiry  time.Time
+	tokenMu         sync.Mutex
 }
 
 // NewPushSender 创建 Push 发送器实例。
@@ -325,15 +337,54 @@ func (s *PushSender) sendAPNs(ctx context.Context, deviceToken string, payload *
 
 // getAPNsToken 获取或刷新 APNs JWT token。
 func (s *PushSender) getAPNsToken() (string, error) {
-	// 简化实现，实际需要使用 P8 证书生成 JWT
-	// 这里返回配置的 token 或生成新的
+	s.tokenMu.Lock()
+	defer s.tokenMu.Unlock()
+
 	if s.apnsToken != "" && time.Now().Before(s.apnsTokenExpiry) {
 		return s.apnsToken, nil
 	}
 
-	// TODO: 使用 P8 证书生成 JWT token
-	// 需要：ES256 签名、Kid、Iss、Iat
-	return "", fmt.Errorf("APNs token generation not implemented - configure pre-generated token")
+	if s.config.APNsKeyID == "" || s.config.APNsTeamID == "" || s.config.APNsKeyPath == "" {
+		return "", fmt.Errorf("APNs key_id/team_id/key_path is required for token generation")
+	}
+
+	keyBytes, err := os.ReadFile(s.config.APNsKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read APNs key: %w", err)
+	}
+
+	block, _ := pem.Decode(keyBytes)
+	if block == nil {
+		return "", errors.New("failed to decode APNs key PEM")
+	}
+
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse APNs key: %w", err)
+	}
+
+	privateKey, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok {
+		return "", errors.New("APNs key is not ECDSA private key")
+	}
+
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss": s.config.APNsTeamID,
+		"iat": now.Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	token.Header["kid"] = s.config.APNsKeyID
+
+	signed, err := token.SignedString(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign APNs token: %w", err)
+	}
+
+	s.apnsToken = signed
+	s.apnsTokenExpiry = now.Add(50 * time.Minute)
+
+	return signed, nil
 }
 
 // getPushType 获取 APNs 推送类型。
@@ -456,11 +507,131 @@ func (s *PushSender) sendFCM(ctx context.Context, deviceToken string, payload *P
 	return result.Name, nil
 }
 
+type fcmServiceAccount struct {
+	Type        string `json:"type"`
+	ProjectID   string `json:"project_id"`
+	PrivateKey  string `json:"private_key"`
+	ClientEmail string `json:"client_email"`
+	TokenURI    string `json:"token_uri"`
+}
+
+func (s *PushSender) loadFCMServiceAccount() (*fcmServiceAccount, error) {
+	raw := strings.TrimSpace(s.config.FCMServiceAccountKey)
+	if raw == "" {
+		return nil, errors.New("FCM service account key not configured")
+	}
+
+	var data []byte
+	if strings.HasPrefix(raw, "{") {
+		data = []byte(raw)
+	} else {
+		fileData, err := os.ReadFile(raw)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read FCM service account key: %w", err)
+		}
+		data = fileData
+	}
+
+	var sa fcmServiceAccount
+	if err := json.Unmarshal(data, &sa); err != nil {
+		return nil, fmt.Errorf("failed to parse FCM service account key: %w", err)
+	}
+
+	if sa.ClientEmail == "" || sa.PrivateKey == "" {
+		return nil, errors.New("invalid FCM service account key: missing client_email or private_key")
+	}
+
+	if sa.TokenURI == "" {
+		sa.TokenURI = "https://oauth2.googleapis.com/token"
+	}
+
+	return &sa, nil
+}
+
 // getFCMAccessToken 获取 FCM OAuth2 访问令牌。
 func (s *PushSender) getFCMAccessToken(ctx context.Context) (string, error) {
-	// 简化实现，实际需要使用服务账号密钥生成 OAuth2 token
-	// 需要：JWT 签名、调用 Google OAuth2 API
-	return "", fmt.Errorf("FCM token generation not implemented - configure service account")
+	s.tokenMu.Lock()
+	if s.fcmToken != "" && time.Now().Before(s.fcmTokenExpiry) {
+		token := s.fcmToken
+		s.tokenMu.Unlock()
+		return token, nil
+	}
+	s.tokenMu.Unlock()
+
+	serviceAccount, err := s.loadFCMServiceAccount()
+	if err != nil {
+		return "", err
+	}
+
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(serviceAccount.PrivateKey))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse FCM private key: %w", err)
+	}
+
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":   serviceAccount.ClientEmail,
+		"scope": "https://www.googleapis.com/auth/firebase.messaging",
+		"aud":   serviceAccount.TokenURI,
+		"iat":   now.Unix(),
+		"exp":   now.Add(time.Hour).Unix(),
+	}
+
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	signed, err := jwtToken.SignedString(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign FCM JWT: %w", err)
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
+	form.Set("assertion", signed)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", serviceAccount.TokenURI, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create FCM token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to request FCM token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read FCM token response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("FCM token response error: status=%d, body=%s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int64  `json:"expires_in"`
+		TokenType   string `json:"token_type"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("failed to parse FCM token response: %w", err)
+	}
+
+	if tokenResp.AccessToken == "" {
+		return "", errors.New("FCM token response missing access_token")
+	}
+
+	expiry := now.Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	if tokenResp.ExpiresIn > 60 {
+		expiry = expiry.Add(-60 * time.Second)
+	}
+
+	s.tokenMu.Lock()
+	s.fcmToken = tokenResp.AccessToken
+	s.fcmTokenExpiry = expiry
+	s.tokenMu.Unlock()
+
+	return tokenResp.AccessToken, nil
 }
 
 // maskToken 遮盖设备令牌用于日志。
