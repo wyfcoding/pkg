@@ -9,19 +9,21 @@ package grpcclient
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/contextx"
 	"github.com/wyfcoding/pkg/idgen"
+	"github.com/wyfcoding/pkg/limiter"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/retry"
 	"github.com/wyfcoding/pkg/tracing"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -39,36 +41,40 @@ const grpcRoleKey = "x-role"
 
 // ClientFactory 是一个生产级的 gRPC 客户端工厂，集成了治理能力（限流、熔断、重试、监控、追踪）。
 type ClientFactory struct {
-	logger     *logging.Logger             // 日志记录器。
-	metrics    *metrics.Metrics            // 性能指标采集组件。
-	cfg        config.CircuitBreakerConfig // 全局默认熔断配置。
-	retryCount int                         // 最大重试次数。
-	rateLimit  rate.Limit                  // 每秒请求限制。
-	rateBurst  int                         // 突发请求限制。
+	logger     *logging.Logger  // 日志记录器。
+	metrics    *metrics.Metrics // 性能指标采集组件。
+	cbConfig   atomic.Value
+	retryCount atomic.Int64
+	rateLimit  atomic.Int64
+	rateBurst  atomic.Int64
+	breakersMu sync.Mutex
+	breakers   []*breaker.DynamicBreaker
+	limitersMu sync.Mutex
+	limiters   []*limiter.DynamicLimiter
 }
 
 // NewClientFactory 初始化 gRPC 客户端工厂。
 func NewClientFactory(logger *logging.Logger, m *metrics.Metrics, cfg config.CircuitBreakerConfig) *ClientFactory {
-	return &ClientFactory{
-		logger:     logger,
-		metrics:    m,
-		cfg:        cfg,
-		retryCount: 3,
-		rateLimit:  rate.Limit(5000),
-		rateBurst:  500,
+	factory := &ClientFactory{
+		logger:  logger,
+		metrics: m,
 	}
+	factory.retryCount.Store(3)
+	factory.rateLimit.Store(5000)
+	factory.rateBurst.Store(500)
+	factory.cbConfig.Store(cfg)
+	return factory
 }
 
 // WithRetry 设置最大重试次数.
 func (f *ClientFactory) WithRetry(count int) *ClientFactory {
-	f.retryCount = count
+	f.UpdateRetry(count)
 	return f
 }
 
 // WithRateLimit 设置限流参数.
 func (f *ClientFactory) WithRateLimit(limit, burst int) *ClientFactory {
-	f.rateLimit = rate.Limit(limit)
-	f.rateBurst = burst
+	f.UpdateRateLimit(limit, burst)
 	return f
 }
 
@@ -78,12 +84,19 @@ func (f *ClientFactory) WithRateLimit(limit, burst int) *ClientFactory {
 // 2. 注入 OpenTelemetry 追踪处理器。
 // 3. 注入一元拦截器链：指标采集 -> 熔断保护 -> 频控拦截 -> 指数退避重试。
 func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	cb := breaker.NewBreaker(breaker.Settings{
-		Name:   "grpc-client-" + target,
-		Config: f.cfg,
-	}, f.metrics)
+	cb := breaker.NewDynamicBreaker("grpc-client-"+target, f.metrics, 0, 0)
+	cb.Update(f.currentCircuitBreaker())
+	f.registerBreaker(cb)
 
-	limiter := rate.NewLimiter(f.rateLimit, f.rateBurst)
+	dynamicLimiter := limiter.NewDynamicLimiter(nil)
+	limit, burst := f.currentRateLimit()
+	if limit > 0 {
+		if burst <= 0 {
+			burst = limit
+		}
+		dynamicLimiter.UpdateLocal(limit, burst)
+	}
+	f.registerLimiter(dynamicLimiter)
 
 	defaultOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -96,8 +109,8 @@ func (f *ClientFactory) NewClient(target string, opts ...grpc.DialOption) (*grpc
 			f.requestIDInterceptor(),
 			f.metricsInterceptor(target),
 			f.circuitBreakerInterceptor(cb),
-			f.rateLimitInterceptor(limiter),
-			f.retryInterceptor(f.retryCount),
+			f.rateLimitInterceptor(dynamicLimiter, target),
+			f.retryInterceptor(&f.retryCount),
 		),
 	}
 
@@ -176,11 +189,11 @@ func (f *ClientFactory) requestIDInterceptor() grpc.UnaryClientInterceptor {
 	}
 }
 
-func (f *ClientFactory) circuitBreakerInterceptor(b *breaker.Breaker) grpc.UnaryClientInterceptor {
+func (f *ClientFactory) circuitBreakerInterceptor(b *breaker.DynamicBreaker) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		_, err := b.Execute(func() (any, error) {
-			err := invoker(ctx, method, req, reply, cc, opts...)
-			return nil, err
+			callErr := invoker(ctx, method, req, reply, cc, opts...)
+			return nil, callErr
 		})
 		if err != nil && errors.Is(err, breaker.ErrServiceUnavailable) {
 			return status.Error(codes.Unavailable, "circuit breaker open")
@@ -189,19 +202,144 @@ func (f *ClientFactory) circuitBreakerInterceptor(b *breaker.Breaker) grpc.Unary
 	}
 }
 
-func (f *ClientFactory) rateLimitInterceptor(limiter *rate.Limiter) grpc.UnaryClientInterceptor {
+func (f *ClientFactory) rateLimitInterceptor(l limiter.Limiter, target string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if !limiter.Allow() {
+		allowed, err := l.Allow(ctx, target+":"+method)
+		if err != nil {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
+		if !allowed {
 			return status.Error(codes.ResourceExhausted, "rate limit exceeded")
 		}
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }
 
-func (f *ClientFactory) retryInterceptor(maxRetries int) grpc.UnaryClientInterceptor {
+func (f *ClientFactory) retryInterceptor(counter *atomic.Int64) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		count := 0
+		if counter != nil {
+			count = int(counter.Load())
+		}
+		if count <= 0 {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
 		return retry.Retry(ctx, func() error {
 			return invoker(ctx, method, req, reply, cc, opts...)
-		}, retry.Config{MaxRetries: maxRetries})
+		}, retry.Config{MaxRetries: count})
+	}
+}
+
+// UpdateRetry 动态更新最大重试次数。
+func (f *ClientFactory) UpdateRetry(count int) {
+	if f == nil {
+		return
+	}
+	f.retryCount.Store(int64(count))
+}
+
+// UpdateRateLimit 动态更新限流参数。
+func (f *ClientFactory) UpdateRateLimit(limit, burst int) {
+	if f == nil {
+		return
+	}
+	f.rateLimit.Store(int64(limit))
+	f.rateBurst.Store(int64(burst))
+	f.updateLimiters(limit, burst)
+}
+
+// UpdateCircuitBreaker 动态更新熔断参数。
+func (f *ClientFactory) UpdateCircuitBreaker(cfg config.CircuitBreakerConfig) {
+	if f == nil {
+		return
+	}
+	f.cbConfig.Store(cfg)
+	f.updateBreakers(cfg)
+}
+
+// ClientFactoryOptions 定义动态更新的可选项。
+type ClientFactoryOptions struct {
+	RetryMax  int
+	RateLimit int
+	RateBurst int
+	Breaker   config.CircuitBreakerConfig
+}
+
+// UpdateOptions 根据配置动态更新工厂参数。
+func (f *ClientFactory) UpdateOptions(opts ClientFactoryOptions) {
+	if f == nil {
+		return
+	}
+	if opts.RetryMax != 0 {
+		f.UpdateRetry(opts.RetryMax)
+	}
+	if opts.RateLimit != 0 || opts.RateBurst != 0 {
+		f.UpdateRateLimit(opts.RateLimit, opts.RateBurst)
+	}
+	if opts.Breaker != (config.CircuitBreakerConfig{}) {
+		f.UpdateCircuitBreaker(opts.Breaker)
+	}
+}
+
+func (f *ClientFactory) currentCircuitBreaker() config.CircuitBreakerConfig {
+	if f == nil {
+		return config.CircuitBreakerConfig{}
+	}
+	val := f.cbConfig.Load()
+	if val == nil {
+		return config.CircuitBreakerConfig{}
+	}
+	return val.(config.CircuitBreakerConfig)
+}
+
+func (f *ClientFactory) currentRateLimit() (int, int) {
+	if f == nil {
+		return 0, 0
+	}
+	return int(f.rateLimit.Load()), int(f.rateBurst.Load())
+}
+
+func (f *ClientFactory) registerBreaker(b *breaker.DynamicBreaker) {
+	f.breakersMu.Lock()
+	f.breakers = append(f.breakers, b)
+	f.breakersMu.Unlock()
+}
+
+func (f *ClientFactory) registerLimiter(l *limiter.DynamicLimiter) {
+	f.limitersMu.Lock()
+	f.limiters = append(f.limiters, l)
+	f.limitersMu.Unlock()
+}
+
+func (f *ClientFactory) updateBreakers(cfg config.CircuitBreakerConfig) {
+	f.breakersMu.Lock()
+	items := make([]*breaker.DynamicBreaker, len(f.breakers))
+	copy(items, f.breakers)
+	f.breakersMu.Unlock()
+
+	for _, item := range items {
+		item.Update(cfg)
+	}
+}
+
+func (f *ClientFactory) updateLimiters(limit, burst int) {
+	if limit <= 0 {
+		burst = 0
+	}
+	f.limitersMu.Lock()
+	items := make([]*limiter.DynamicLimiter, len(f.limiters))
+	copy(items, f.limiters)
+	f.limitersMu.Unlock()
+
+	for _, item := range items {
+		if limit <= 0 {
+			item.Update(nil)
+			continue
+		}
+		adjusted := burst
+		if adjusted <= 0 {
+			adjusted = limit
+		}
+		item.UpdateLocal(limit, adjusted)
 	}
 }

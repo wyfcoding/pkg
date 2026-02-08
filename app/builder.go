@@ -187,6 +187,7 @@ func (b *Builder[C, S]) Build() *App {
 		}
 		httpclient.SetDefault(httpclient.NewFromConfig(updated.HTTPClient, loggerInstance, metricsInstance))
 	})
+	b.initGRPCClientFactory(&cfg, loggerInstance, metricsInstance)
 	b.initFeatureFlags(&cfg, loggerInstance, metricsInstance)
 	b.initRegistry(&cfg, loggerInstance, metricsInstance)
 	b.initConfigCenterWatch(&cfg, loggerInstance)
@@ -444,6 +445,39 @@ func (b *Builder[C, S]) initMetrics(cfg *config.Config) *metrics.Metrics {
 	}
 
 	return metricsInstance
+}
+
+func (b *Builder[C, S]) initGRPCClientFactory(cfg *config.Config, logger *logging.Logger, m *metrics.Metrics) {
+	if cfg == nil {
+		return
+	}
+
+	factory := grpcclient.NewClientFactory(logger, m, cfg.CircuitBreaker)
+
+	apply := func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+
+		grpcCfg := updated.GRPCClient
+		grpcCfgProvided := grpcCfg != (config.GRPCClientConfig{})
+
+		if grpcCfgProvided {
+			factory.UpdateRateLimit(grpcCfg.RateLimit, grpcCfg.RateBurst)
+			factory.UpdateRetry(grpcCfg.RetryMax)
+			if grpcCfg.Breaker != (config.CircuitBreakerConfig{}) {
+				factory.UpdateCircuitBreaker(grpcCfg.Breaker)
+			} else {
+				factory.UpdateCircuitBreaker(updated.CircuitBreaker)
+			}
+		} else {
+			factory.UpdateCircuitBreaker(updated.CircuitBreaker)
+		}
+	}
+
+	apply(cfg)
+	grpcclient.SetDefaultFactory(factory)
+	config.RegisterReloadHook(apply)
 }
 
 func (b *Builder[C, S]) initFeatureFlags(cfg *config.Config, logger *logging.Logger, m *metrics.Metrics) {

@@ -36,7 +36,7 @@ func InitClientsWithRegistry(reg registry.Registry, metricsInstance *metrics.Met
 	typ := elem.Type()
 
 	conns := make([]*grpc.ClientConn, 0, elem.NumField())
-	factory := NewClientFactory(logging.Default(), metricsInstance, cbCfg)
+	factory := pickFactory(metricsInstance, cbCfg)
 
 	for i := range elem.NumField() {
 		field := elem.Field(i)

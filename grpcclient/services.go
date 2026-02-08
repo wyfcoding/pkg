@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/wyfcoding/pkg/config"
-	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"google.golang.org/grpc"
 )
@@ -32,7 +31,7 @@ func InitClients(services map[string]config.ServiceAddr, metricsInstance *metric
 
 	conns := make([]*grpc.ClientConn, 0, elem.NumField())
 
-	factory := NewClientFactory(logging.Default(), metricsInstance, cbCfg)
+	factory := pickFactory(metricsInstance, cbCfg)
 
 	for i := range elem.NumField() {
 		field := elem.Field(i)

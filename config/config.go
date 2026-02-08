@@ -51,6 +51,7 @@ type Config struct {
 	Maintenance    MaintenanceConfig    `mapstructure:"maintenance"    toml:"maintenance"`
 	FeatureFlags   FeatureFlagConfig    `mapstructure:"feature_flags"  toml:"feature_flags"`
 	ConfigCenter   ConfigCenterConfig   `mapstructure:"config_center"  toml:"config_center"`
+	GRPCClient     GRPCClientConfig     `mapstructure:"grpc_client"    toml:"grpc_client"`
 }
 
 // ConfigCenterConfig 定义配置中心接入参数。
@@ -288,6 +289,14 @@ type HTTPClientConfig struct {
 	RetryStatus     []int                `mapstructure:"retry_status"        toml:"retry_status"`
 	RetryMethods    []string             `mapstructure:"retry_methods"       toml:"retry_methods"`
 	Breaker         CircuitBreakerConfig `mapstructure:"breaker"             toml:"breaker"`
+}
+
+// GRPCClientConfig 定义统一 gRPC 客户端治理配置。
+type GRPCClientConfig struct {
+	RateLimit int                  `mapstructure:"rate_limit"   toml:"rate_limit"`
+	RateBurst int                  `mapstructure:"rate_burst"   toml:"rate_burst"`
+	RetryMax  int                  `mapstructure:"retry_max"    toml:"retry_max"`
+	Breaker   CircuitBreakerConfig `mapstructure:"breaker"      toml:"breaker"`
 }
 
 // MaintenanceConfig 定义服务维护模式配置。
