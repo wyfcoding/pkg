@@ -59,6 +59,24 @@ func New(name string, logger *slog.Logger, opts ...Option) *App {
 		})
 	}
 
+	// 注册调度器
+	for _, sched := range o.schedulers {
+		if sched == nil {
+			continue
+		}
+		schedulerInstance := sched
+		l.Append(Hook{
+			Name: "Scheduler",
+			OnStart: func(ctx context.Context) error {
+				schedulerInstance.Start(ctx)
+				return nil
+			},
+			OnStop: func(ctx context.Context) error {
+				return schedulerInstance.Stop(ctx)
+			},
+		})
+	}
+
 	return &App{
 		name:      name,
 		logger:    logger,

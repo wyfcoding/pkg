@@ -2,6 +2,7 @@
 package app
 
 import (
+	"github.com/wyfcoding/pkg/scheduler"
 	"github.com/wyfcoding/pkg/server" // 导入服务器接口定义。
 )
 
@@ -9,6 +10,7 @@ type options struct {
 	servers        []server.Server
 	cleanups       []func()
 	healthCheckers []func() error // 自定义健康检查探测器列表。
+	schedulers     []*scheduler.Scheduler
 }
 
 // Option 定义配置 App 的函数原型。
@@ -32,5 +34,15 @@ func WithCleanup(cleanup func()) Option {
 func WithHealthChecker(checker func() error) Option {
 	return func(o *options) {
 		o.healthCheckers = append(o.healthCheckers, checker)
+	}
+}
+
+// WithScheduler 注册一个任务调度器。
+func WithScheduler(s *scheduler.Scheduler) Option {
+	return func(o *options) {
+		if s == nil {
+			return
+		}
+		o.schedulers = append(o.schedulers, s)
 	}
 }

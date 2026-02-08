@@ -23,6 +23,7 @@ import (
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/middleware"
+	"github.com/wyfcoding/pkg/scheduler"
 	"github.com/wyfcoding/pkg/security"
 	"github.com/wyfcoding/pkg/server"
 	"github.com/wyfcoding/pkg/tracing"
@@ -123,6 +124,15 @@ func (b *Builder[C, S]) WithGRPCInterceptor(interceptors ...grpc.UnaryServerInte
 func (b *Builder[C, S]) WithGinMiddleware(mw ...gin.HandlerFunc) *Builder[C, S] {
 	b.ginMiddleware = append(b.ginMiddleware, mw...)
 
+	return b
+}
+
+// WithScheduler 注册任务调度器。
+func (b *Builder[C, S]) WithScheduler(s *scheduler.Scheduler) *Builder[C, S] {
+	if s == nil {
+		return b
+	}
+	b.appOpts = append(b.appOpts, WithScheduler(s))
 	return b
 }
 
