@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wyfcoding/pkg/config"
+	"github.com/wyfcoding/pkg/configcenter"
 	"github.com/wyfcoding/pkg/contextx"
 	"github.com/wyfcoding/pkg/etcd"
 	"github.com/wyfcoding/pkg/featureflag"
@@ -177,8 +178,15 @@ func (b *Builder[C, S]) Build() *App {
 		metricsInstance.RegisterBuildInfo(b.serviceName, cfg.Version)
 	}
 	httpclient.SetDefault(httpclient.NewFromConfig(cfg.HTTPClient, loggerInstance, metricsInstance))
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		httpclient.SetDefault(httpclient.NewFromConfig(updated.HTTPClient, loggerInstance, metricsInstance))
+	})
 	b.initFeatureFlags(&cfg, loggerInstance, metricsInstance)
 	b.initRegistry(&cfg, loggerInstance, metricsInstance)
+	b.initConfigCenterWatch(&cfg, loggerInstance)
 
 	b.setupMiddleware(&cfg, metricsInstance)
 
@@ -204,6 +212,18 @@ func (b *Builder[C, S]) loadConfig() config.Config {
 		panic("failed to load config: " + err.Error())
 	}
 
+	cfg := b.extractConfig()
+	if cfg.ConfigCenter.Enabled {
+		if err := b.mergeConfigCenter(&cfg); err != nil {
+			slog.Warn("failed to merge config center config", "error", err)
+		}
+		cfg = b.extractConfig()
+	}
+
+	return cfg
+}
+
+func (b *Builder[C, S]) extractConfig() config.Config {
 	var cfg config.Config
 	switch c := any(b.configInstance).(type) {
 	case *config.Config:
@@ -211,7 +231,6 @@ func (b *Builder[C, S]) loadConfig() config.Config {
 	case config.Config:
 		cfg = c
 	default:
-		// 使用反射尝试提取嵌套的 config.Config
 		val := reflect.ValueOf(b.configInstance)
 		if val.Kind() == reflect.Ptr {
 			val = val.Elem()
@@ -233,6 +252,108 @@ func (b *Builder[C, S]) loadConfig() config.Config {
 	}
 
 	return cfg
+}
+
+func (b *Builder[C, S]) mergeConfigCenter(cfg *config.Config) error {
+	if cfg == nil || !cfg.ConfigCenter.Enabled {
+		return nil
+	}
+
+	key := cfg.ConfigCenter.Key
+	if key == "" {
+		key = b.serviceName
+	}
+
+	provider := cfg.ConfigCenter.Provider
+	if provider == "" {
+		provider = string(configcenter.ProviderEtcd)
+	}
+
+	ccCfg := configcenter.Config{
+		Provider:      configcenter.Provider(provider),
+		Endpoints:     cfg.ConfigCenter.Endpoints,
+		Namespace:     cfg.ConfigCenter.Namespace,
+		Group:         cfg.ConfigCenter.Group,
+		Username:      cfg.ConfigCenter.Username,
+		Password:      cfg.ConfigCenter.Password,
+		Timeout:       cfg.ConfigCenter.Timeout,
+		CacheDir:      cfg.ConfigCenter.CacheDir,
+		EnableCache:   cfg.ConfigCenter.EnableCache,
+		WatchInterval: cfg.ConfigCenter.WatchInterval,
+	}
+
+	client, err := configcenter.NewClient(&ccCfg, slog.Default())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+
+	item, err := client.Get(context.Background(), key)
+	if err != nil {
+		return err
+	}
+
+	return config.MergeConfig([]byte(item.Value), cfg.ConfigCenter.ContentType, b.configInstance)
+}
+
+func (b *Builder[C, S]) initConfigCenterWatch(cfg *config.Config, logger *logging.Logger) {
+	if cfg == nil || !cfg.ConfigCenter.Enabled || !cfg.ConfigCenter.Watch {
+		return
+	}
+
+	key := cfg.ConfigCenter.Key
+	if key == "" {
+		key = b.serviceName
+	}
+
+	provider := cfg.ConfigCenter.Provider
+	if provider == "" {
+		provider = string(configcenter.ProviderEtcd)
+	}
+
+	ccCfg := configcenter.Config{
+		Provider:      configcenter.Provider(provider),
+		Endpoints:     cfg.ConfigCenter.Endpoints,
+		Namespace:     cfg.ConfigCenter.Namespace,
+		Group:         cfg.ConfigCenter.Group,
+		Username:      cfg.ConfigCenter.Username,
+		Password:      cfg.ConfigCenter.Password,
+		Timeout:       cfg.ConfigCenter.Timeout,
+		CacheDir:      cfg.ConfigCenter.CacheDir,
+		EnableCache:   cfg.ConfigCenter.EnableCache,
+		WatchInterval: cfg.ConfigCenter.WatchInterval,
+	}
+
+	client, err := configcenter.NewClient(&ccCfg, logger.Logger)
+	if err != nil {
+		logger.Logger.Error("failed to initialize config center client", "error", err)
+		return
+	}
+
+	manager := configcenter.NewConfigManager(client, logger.Logger)
+	manager.OnChange(key, func(event *configcenter.ChangeEvent) {
+		if event.EventType == configcenter.EventTypeDelete {
+			logger.Logger.Warn("config center key deleted", "key", event.Key)
+			return
+		}
+
+		if err := config.MergeConfig([]byte(event.NewValue), cfg.ConfigCenter.ContentType, b.configInstance); err != nil {
+			logger.Logger.Error("failed to merge config center change", "key", event.Key, "error", err)
+		}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := manager.StartWatch(ctx); err != nil {
+		logger.Logger.Error("failed to start config center watch", "error", err)
+		cancel()
+		_ = manager.Close()
+		return
+	}
+
+	b.appOpts = append(b.appOpts, WithCleanup(func() {
+		cancel()
+		_ = manager.Close()
+	}))
 }
 
 func (b *Builder[C, S]) initLogger(cfg *config.Config) *logging.Logger {

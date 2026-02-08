@@ -193,7 +193,7 @@ func (s *EmailSender) Close() error {
 }
 
 // sendSMTP 通过 SMTP 发送邮件。
-func (s *EmailSender) sendSMTP(ctx context.Context, msg *EmailMessage) error {
+func (s *EmailSender) sendSMTP(_ context.Context, msg *EmailMessage) error {
 	// 构建邮件内容
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)

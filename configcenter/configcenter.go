@@ -11,7 +11,6 @@ package configcenter
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -37,25 +36,25 @@ const (
 // Config 配置中心客户端配置。
 type Config struct {
 	// Provider 配置中心类型。
-	Provider Provider `json:"provider"`
+	Provider Provider `json:"provider" toml:"provider" mapstructure:"provider"`
 	// Endpoints 服务端点列表。
-	Endpoints []string `json:"endpoints"`
+	Endpoints []string `json:"endpoints" toml:"endpoints" mapstructure:"endpoints"`
 	// Namespace 命名空间。
-	Namespace string `json:"namespace"`
+	Namespace string `json:"namespace" toml:"namespace" mapstructure:"namespace"`
 	// Group 配置分组。
-	Group string `json:"group"`
+	Group string `json:"group" toml:"group" mapstructure:"group"`
 	// Username 用户名。
-	Username string `json:"username,omitempty"`
+	Username string `json:"username,omitempty" toml:"username" mapstructure:"username"`
 	// Password 密码。
-	Password string `json:"password,omitempty"`
+	Password string `json:"password,omitempty" toml:"password" mapstructure:"password"`
 	// Timeout 请求超时。
-	Timeout time.Duration `json:"timeout"`
+	Timeout time.Duration `json:"timeout" toml:"timeout" mapstructure:"timeout"`
 	// CacheDir 本地缓存目录。
-	CacheDir string `json:"cache_dir,omitempty"`
+	CacheDir string `json:"cache_dir,omitempty" toml:"cache_dir" mapstructure:"cache_dir"`
 	// EnableCache 是否启用本地缓存。
-	EnableCache bool `json:"enable_cache"`
+	EnableCache bool `json:"enable_cache" toml:"enable_cache" mapstructure:"enable_cache"`
 	// WatchInterval 轮询间隔（用于不支持 watch 的配置中心）。
-	WatchInterval time.Duration `json:"watch_interval"`
+	WatchInterval time.Duration `json:"watch_interval" toml:"watch_interval" mapstructure:"watch_interval"`
 }
 
 // DefaultConfig 返回默认配置。
@@ -529,11 +528,11 @@ func NewClient(cfg *Config, logger *slog.Logger) (Client, error) {
 	case ProviderEtcd:
 		return NewEtcdClient(cfg, logger)
 	case ProviderConsul:
-		return nil, errors.New("consul provider not yet implemented")
+		return NewConsulClient(cfg, logger)
 	case ProviderNacos:
-		return nil, errors.New("nacos provider not yet implemented")
+		return NewNacosClient(cfg, logger)
 	case ProviderFile:
-		return nil, errors.New("file provider not yet implemented")
+		return NewFileClient(cfg, logger)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
 	}

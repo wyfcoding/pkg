@@ -9,6 +9,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -49,6 +50,25 @@ type Config struct {
 	HTTPClient     HTTPClientConfig     `mapstructure:"httpclient"     toml:"httpclient"`
 	Maintenance    MaintenanceConfig    `mapstructure:"maintenance"    toml:"maintenance"`
 	FeatureFlags   FeatureFlagConfig    `mapstructure:"feature_flags"  toml:"feature_flags"`
+	ConfigCenter   ConfigCenterConfig   `mapstructure:"config_center"  toml:"config_center"`
+}
+
+// ConfigCenterConfig 定义配置中心接入参数。
+type ConfigCenterConfig struct {
+	Enabled       bool          `mapstructure:"enabled"        toml:"enabled"`
+	Provider      string        `mapstructure:"provider"       toml:"provider"`
+	Endpoints     []string      `mapstructure:"endpoints"      toml:"endpoints"`
+	Namespace     string        `mapstructure:"namespace"      toml:"namespace"`
+	Group         string        `mapstructure:"group"          toml:"group"`
+	Key           string        `mapstructure:"key"            toml:"key"`
+	ContentType   string        `mapstructure:"content_type"   toml:"content_type"`
+	Username      string        `mapstructure:"username"       toml:"username"`
+	Password      string        `mapstructure:"password"       toml:"password"`
+	Timeout       time.Duration `mapstructure:"timeout"        toml:"timeout"`
+	CacheDir      string        `mapstructure:"cache_dir"      toml:"cache_dir"`
+	EnableCache   bool          `mapstructure:"enable_cache"   toml:"enable_cache"`
+	Watch         bool          `mapstructure:"watch"          toml:"watch"`
+	WatchInterval time.Duration `mapstructure:"watch_interval" toml:"watch_interval"`
 }
 
 // ServerConfig 定义服务器运行时的基础网络与环境参数.
@@ -434,6 +454,70 @@ func RegisterReloadHook(hook func(*Config)) {
 	onReload = append(onReload, hook)
 }
 
+func updateLogLevel(conf any) {
+	if c, ok := conf.(*Config); ok {
+		logging.SetLevel(c.Log.Level)
+		return
+	}
+
+	val := reflect.ValueOf(conf)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	logField := val.FieldByName("Log")
+	if logField.IsValid() {
+		levelField := logField.FieldByName("Level")
+		if levelField.IsValid() && levelField.Kind() == reflect.String {
+			logging.SetLevel(levelField.String())
+		}
+	}
+}
+
+func triggerReload(conf any) {
+	cfg, ok := conf.(*Config)
+	if !ok {
+		return
+	}
+	for _, hook := range onReload {
+		hook(cfg)
+	}
+}
+
+// MergeConfig 将远程配置内容合并到当前配置并触发热更新回调。
+func MergeConfig(content []byte, contentType string, conf any) error {
+	if len(content) == 0 {
+		return nil
+	}
+
+	if contentType == "" {
+		contentType = "toml"
+	}
+
+	remote := viper.New()
+	remote.SetConfigType(contentType)
+	if err := remote.ReadConfig(bytes.NewReader(content)); err != nil {
+		return fmt.Errorf("read remote config error: %w", err)
+	}
+
+	if err := vInstance.MergeConfigMap(remote.AllSettings()); err != nil {
+		return fmt.Errorf("merge remote config error: %w", err)
+	}
+
+	if err := vInstance.Unmarshal(conf); err != nil {
+		return fmt.Errorf("unmarshal merged config error: %w", err)
+	}
+
+	validate := validator.New()
+	if err := validate.Struct(conf); err != nil {
+		return fmt.Errorf("config validation failed: %w", err)
+	}
+
+	updateLogLevel(conf)
+	triggerReload(conf)
+
+	return nil
+}
+
 // Load 全生产级的配置加载逻辑.
 func Load(path string, conf any) error {
 	vInstance.SetConfigFile(path)
@@ -468,34 +552,13 @@ func Load(path string, conf any) error {
 			return
 		}
 
-		// 核心优化：如果配置中有日志级别，自动更新全局日志级别
-		if c, ok := conf.(*Config); ok {
-			logging.SetLevel(c.Log.Level)
-		} else {
-			// 尝试使用反射获取 Log.Level
-			val := reflect.ValueOf(conf)
-			if val.Kind() == reflect.Ptr {
-				val = val.Elem()
-			}
-			logField := val.FieldByName("Log")
-			if logField.IsValid() {
-				levelField := logField.FieldByName("Level")
-				if levelField.IsValid() && levelField.Kind() == reflect.String {
-					logging.SetLevel(levelField.String())
-				}
-			}
-		}
+		updateLogLevel(conf)
 
 		if validateErr := validate.Struct(conf); validateErr != nil {
 			slog.Error("reload config validation failed", "error", validateErr)
 		} else {
 			slog.Info("config hot-reloaded and validated successfully")
-		}
-
-		if cfg, ok := conf.(*Config); ok {
-			for _, hook := range onReload {
-				hook(cfg)
-			}
+			triggerReload(conf)
 		}
 	})
 

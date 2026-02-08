@@ -499,7 +499,7 @@ func (e *Engine) executeTaskNode(ctx context.Context, instance *Instance, node *
 }
 
 // executeParallelNode 执行并行网关节点。
-func (e *Engine) executeParallelNode(ctx context.Context, instance *Instance, node *NodeDefinition) (*ExecutionResult, error) {
+func (e *Engine) executeParallelNode(_ context.Context, instance *Instance, node *NodeDefinition) (*ExecutionResult, error) {
 	// 并行网关：等待所有进入分支完成，然后触发所有出去分支
 	// 简化实现：标记完成，由 determineNextNode 处理多分支
 	nodeState := instance.NodeStates[node.ID]
@@ -511,7 +511,7 @@ func (e *Engine) executeParallelNode(ctx context.Context, instance *Instance, no
 }
 
 // executeExclusiveNode 执行排他网关节点。
-func (e *Engine) executeExclusiveNode(ctx context.Context, instance *Instance, node *NodeDefinition) (*ExecutionResult, error) {
+func (e *Engine) executeExclusiveNode(_ context.Context, instance *Instance, node *NodeDefinition) (*ExecutionResult, error) {
 	// 排他网关：根据条件选择一个分支
 	nodeState := instance.NodeStates[node.ID]
 	nodeState.Status = StatusCompleted
