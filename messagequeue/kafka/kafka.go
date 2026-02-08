@@ -279,6 +279,7 @@ func (p *Producer) Close() error {
 
 // Consumer 封装了 Kafka 消息消费者.
 type Consumer struct {
+	mu            sync.RWMutex
 	reader        *kafkago.Reader
 	logger        *logging.Logger
 	metrics       *metrics.Metrics
@@ -297,6 +298,9 @@ func NewConsumer(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Met
 
 // NewConsumerWithOptions 创建带自定义选项的 Kafka 消费者。
 func NewConsumerWithOptions(cfg *config.KafkaConfig, logger *logging.Logger, m *metrics.Metrics, opts *ConsumerOptions) *Consumer {
+	if logger == nil {
+		logger = logging.Default()
+	}
 	normalized := normalizeConsumerOptions(cfg, opts)
 
 	dialer := buildDialer(cfg)
@@ -372,23 +376,28 @@ func NewConsumerWithOptions(cfg *config.KafkaConfig, logger *logging.Logger, m *
 // Consume 循环读取并处理消息.
 func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
 	for {
-		msg, err := c.reader.FetchMessage(ctx)
+		reader, dlqWriter, opts, logger := c.snapshot()
+		if reader == nil {
+			return errors.New("kafka consumer not initialized")
+		}
+
+		msg, err := reader.FetchMessage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return fmt.Errorf("context cancelled during fetch: %w", ctx.Err())
 			}
 
-			c.logger.Error("failed to fetch message", "error", err)
+			logger.Error("failed to fetch message", "error", err)
 
 			continue
 		}
-		if err := c.processMessage(ctx, msg, handler); err != nil {
-			c.logger.ErrorContext(ctx, "message processing failed", "error", err, "topic", msg.Topic)
+		if err := c.processMessage(ctx, reader, dlqWriter, logger, opts, msg, handler); err != nil {
+			logger.ErrorContext(ctx, "message processing failed", "error", err, "topic", msg.Topic)
 		}
 	}
 }
 
-func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message, handler Handler) error {
+func (c *Consumer) processMessage(ctx context.Context, reader *kafkago.Reader, dlqWriter *kafkago.Writer, logger *logging.Logger, opts ConsumerOptions, msg kafkago.Message, handler Handler) error {
 	carrier := propagation.MapCarrier{}
 	for _, h := range msg.Headers {
 		carrier[h.Key] = string(h.Value)
@@ -398,18 +407,18 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message, hand
 	spanCtx, span := tracing.Tracer().Start(extractedCtx, "Kafka.Consume", trace.WithSpanKind(trace.SpanKindConsumer))
 	defer span.End()
 
-	idempotencyKey, idempotencyEnabled := c.prepareIdempotency(spanCtx, msg)
+	idempotencyKey, idempotencyEnabled := c.prepareIdempotency(spanCtx, msg, opts, logger)
 	if idempotencyEnabled && idempotencyKey != "" {
-		ok, _, err := c.opts.IdempotencyManager.TryStart(spanCtx, idempotencyKey, c.opts.IdempotencyTTL)
+		ok, _, err := opts.IdempotencyManager.TryStart(spanCtx, idempotencyKey, opts.IdempotencyTTL)
 		if err != nil {
-			c.logger.ErrorContext(spanCtx, "idempotency check failed, continue processing", "error", err, "key", idempotencyKey)
+			logger.ErrorContext(spanCtx, "idempotency check failed, continue processing", "error", err, "key", idempotencyKey)
 		} else if !ok {
-			c.logger.InfoContext(spanCtx, "duplicate message skipped", "key", idempotencyKey, "topic", msg.Topic)
-			return c.commitMessage(spanCtx, msg)
+			logger.InfoContext(spanCtx, "duplicate message skipped", "key", idempotencyKey, "topic", msg.Topic)
+			return c.commitMessage(spanCtx, reader, logger, msg)
 		}
 	}
 
-	retryable := c.opts.Retryable
+	retryable := opts.Retryable
 	if retryable == nil {
 		retryable = func(error) bool { return true }
 	}
@@ -421,42 +430,42 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message, hand
 			c.retryTotal.WithLabelValues(msg.Topic).Inc()
 		}
 		return handler(spanCtx, msg)
-	}, retryable, c.opts.RetryConfig)
+	}, retryable, opts.RetryConfig)
 
 	c.consumeLag.WithLabelValues(msg.Topic).Observe(time.Since(msg.Time).Seconds())
 
 	if handleErr != nil {
 		c.consumedTotal.WithLabelValues(msg.Topic, "failed").Inc()
 		tracing.SetError(spanCtx, handleErr)
-		c.logger.ErrorContext(spanCtx, "message handler failed", "error", handleErr, "topic", msg.Topic)
+		logger.ErrorContext(spanCtx, "message handler failed", "error", handleErr, "topic", msg.Topic)
 
-		if c.opts.DLQEnabled {
-			if err := c.publishDLQ(spanCtx, msg, handleErr); err != nil {
+		if opts.DLQEnabled {
+			if err := c.publishDLQ(spanCtx, msg, handleErr, dlqWriter, logger); err != nil {
 				return err
 			}
 			c.dlqTotal.WithLabelValues(msg.Topic).Inc()
-			return c.commitMessage(spanCtx, msg)
+			return c.commitMessage(spanCtx, reader, logger, msg)
 		}
 
-		if c.opts.CommitOnError {
-			return c.commitMessage(spanCtx, msg)
+		if opts.CommitOnError {
+			return c.commitMessage(spanCtx, reader, logger, msg)
 		}
 
 		return nil
 	}
 
 	if idempotencyEnabled && idempotencyKey != "" {
-		finishErr := c.opts.IdempotencyManager.Finish(spanCtx, idempotencyKey, &idempotency.Response{
+		finishErr := opts.IdempotencyManager.Finish(spanCtx, idempotencyKey, &idempotency.Response{
 			Header:     map[string]string{"source": "kafka"},
 			Body:       "OK",
 			StatusCode: 200,
-		}, c.opts.IdempotencyTTL)
+		}, opts.IdempotencyTTL)
 		if finishErr != nil {
-			c.logger.ErrorContext(spanCtx, "idempotency finish failed", "error", finishErr, "key", idempotencyKey)
+			logger.ErrorContext(spanCtx, "idempotency finish failed", "error", finishErr, "key", idempotencyKey)
 		}
 	}
 
-	if err := c.commitMessage(spanCtx, msg); err != nil {
+	if err := c.commitMessage(spanCtx, reader, logger, msg); err != nil {
 		return err
 	}
 
@@ -464,20 +473,20 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message, hand
 	return nil
 }
 
-func (c *Consumer) prepareIdempotency(ctx context.Context, msg kafkago.Message) (string, bool) {
-	if c.opts.IdempotencyManager == nil {
+func (c *Consumer) prepareIdempotency(ctx context.Context, msg kafkago.Message, opts ConsumerOptions, logger *logging.Logger) (string, bool) {
+	if opts.IdempotencyManager == nil {
 		return "", false
 	}
-	key := c.opts.IdempotencyKeyFunc(msg)
+	key := opts.IdempotencyKeyFunc(msg)
 	if key == "" {
-		c.logger.WarnContext(ctx, "idempotency key is empty, skip", "topic", msg.Topic)
+		logger.WarnContext(ctx, "idempotency key is empty, skip", "topic", msg.Topic)
 		return "", false
 	}
 	return key, true
 }
 
-func (c *Consumer) publishDLQ(ctx context.Context, msg kafkago.Message, err error) error {
-	if c.dlqWriter == nil {
+func (c *Consumer) publishDLQ(ctx context.Context, msg kafkago.Message, err error, dlqWriter *kafkago.Writer, logger *logging.Logger) error {
+	if dlqWriter == nil {
 		return fmt.Errorf("dlq writer is not configured")
 	}
 
@@ -491,24 +500,27 @@ func (c *Consumer) publishDLQ(ctx context.Context, msg kafkago.Message, err erro
 	)
 
 	dlqMsg := kafkago.Message{
-		Topic:   c.dlqWriter.Topic,
+		Topic:   dlqWriter.Topic,
 		Key:     msg.Key,
 		Value:   msg.Value,
 		Headers: headers,
 		Time:    time.Now(),
 	}
 
-	if writeErr := c.dlqWriter.WriteMessages(ctx, dlqMsg); writeErr != nil {
-		c.logger.ErrorContext(ctx, "failed to write to dlq", "error", writeErr, "topic", c.dlqWriter.Topic)
+	if writeErr := dlqWriter.WriteMessages(ctx, dlqMsg); writeErr != nil {
+		logger.ErrorContext(ctx, "failed to write to dlq", "error", writeErr, "topic", dlqWriter.Topic)
 		return writeErr
 	}
 
 	return nil
 }
 
-func (c *Consumer) commitMessage(ctx context.Context, msg kafkago.Message) error {
-	if err := c.reader.CommitMessages(ctx, msg); err != nil {
-		c.logger.ErrorContext(ctx, "commit failed", "error", err, "topic", msg.Topic)
+func (c *Consumer) commitMessage(ctx context.Context, reader *kafkago.Reader, logger *logging.Logger, msg kafkago.Message) error {
+	if reader == nil {
+		return errors.New("kafka reader is nil")
+	}
+	if err := reader.CommitMessages(ctx, msg); err != nil {
+		logger.ErrorContext(ctx, "commit failed", "error", err, "topic", msg.Topic)
 		return err
 	}
 
@@ -520,7 +532,8 @@ func (c *Consumer) Start(ctx context.Context, workers int, handler Handler) {
 	for i := 0; i < workers; i++ {
 		go func() {
 			if err := c.Consume(ctx, handler); err != nil && !errors.Is(err, context.Canceled) {
-				c.logger.Error("consumer stopped", "error", err)
+				_, _, _, logger := c.snapshot()
+				logger.Error("consumer stopped", "error", err)
 			}
 		}()
 	}
@@ -528,16 +541,109 @@ func (c *Consumer) Start(ctx context.Context, workers int, handler Handler) {
 
 // Close 关闭消费者.
 func (c *Consumer) Close() error {
-	if c.dlqWriter != nil {
-		if err := c.dlqWriter.Close(); err != nil {
-			c.logger.Error("failed to close dlq writer", "error", err)
+	if c == nil {
+		return nil
+	}
+	reader, dlqWriter, _, logger := c.snapshot()
+	if dlqWriter != nil {
+		if err := dlqWriter.Close(); err != nil {
+			logger.Error("failed to close dlq writer", "error", err)
 		}
 	}
-	if err := c.reader.Close(); err != nil {
-		return fmt.Errorf("failed to close kafka reader: %w", err)
+	if reader != nil {
+		if err := reader.Close(); err != nil {
+			return fmt.Errorf("failed to close kafka reader: %w", err)
+		}
 	}
 
 	return nil
+}
+
+// UpdateConfig 使用最新配置刷新消费者连接与治理参数。
+// 注意：更新会主动关闭旧 reader，可能导致少量消息重复消费，需保证幂等。
+func (c *Consumer) UpdateConfig(cfg *config.KafkaConfig, opts *ConsumerOptions) error {
+	if c == nil {
+		return errors.New("consumer is nil")
+	}
+	if cfg == nil {
+		return errors.New("kafka config is nil")
+	}
+
+	logger := c.logger
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	normalized := normalizeConsumerOptions(cfg, opts)
+	dialer := buildDialer(cfg)
+	reader := kafkago.NewReader(kafkago.ReaderConfig{
+		Brokers:        cfg.Brokers,
+		GroupID:        cfg.GroupID,
+		Topic:          cfg.Topic,
+		MinBytes:       normalizeMinBytes(cfg.MinBytes),
+		MaxBytes:       normalizeMaxBytes(cfg.MaxBytes),
+		MaxWait:        normalizeMaxWait(cfg.MaxWait),
+		Dialer:         dialer,
+		CommitInterval: 0,
+	})
+
+	var dlqWriter *kafkago.Writer
+	if normalized.DLQEnabled {
+		dlqTopic := normalized.DLQTopic
+		if dlqTopic == "" {
+			dlqTopic = defaultDLQTopic(cfg.Topic)
+		}
+		transport := buildTransport(cfg)
+		dlqWriter = &kafkago.Writer{
+			Addr:         kafkago.TCP(cfg.Brokers...),
+			Topic:        dlqTopic,
+			Balancer:     &kafkago.LeastBytes{},
+			Transport:    transport,
+			RequiredAcks: kafkago.RequireAll,
+		}
+	}
+
+	c.mu.Lock()
+	oldReader := c.reader
+	oldDLQ := c.dlqWriter
+	c.reader = reader
+	c.dlqWriter = dlqWriter
+	c.opts = normalized
+	c.mu.Unlock()
+
+	if oldDLQ != nil {
+		if err := oldDLQ.Close(); err != nil {
+			logger.Error("failed to close old dlq writer", "error", err)
+		}
+	}
+	if oldReader != nil {
+		if err := oldReader.Close(); err != nil {
+			logger.Error("failed to close old kafka reader", "error", err)
+		}
+	}
+
+	logger.Info("kafka consumer updated", "topic", cfg.Topic, "group", cfg.GroupID, "brokers", cfg.Brokers)
+
+	return nil
+}
+
+func (c *Consumer) snapshot() (*kafkago.Reader, *kafkago.Writer, ConsumerOptions, *logging.Logger) {
+	if c == nil {
+		return nil, nil, ConsumerOptions{}, logging.Default()
+	}
+
+	c.mu.RLock()
+	reader := c.reader
+	dlqWriter := c.dlqWriter
+	opts := c.opts
+	logger := c.logger
+	c.mu.RUnlock()
+
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	return reader, dlqWriter, opts, logger
 }
 
 func normalizeConsumerOptions(cfg *config.KafkaConfig, opts *ConsumerOptions) ConsumerOptions {
