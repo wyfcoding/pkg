@@ -180,12 +180,13 @@ func (b *Builder[C, S]) Build() *App {
 	if metricsInstance != nil {
 		metricsInstance.RegisterBuildInfo(b.serviceName, cfg.Version)
 	}
-	httpclient.SetDefault(httpclient.NewFromConfig(cfg.HTTPClient, loggerInstance, metricsInstance))
+	httpClient := httpclient.NewFromConfig(cfg.HTTPClient, loggerInstance, metricsInstance)
+	httpclient.SetDefault(httpClient)
 	config.RegisterReloadHook(func(updated *config.Config) {
 		if updated == nil {
 			return
 		}
-		httpclient.SetDefault(httpclient.NewFromConfig(updated.HTTPClient, loggerInstance, metricsInstance))
+		httpClient.UpdateFromConfig(updated.HTTPClient)
 	})
 	b.initGRPCClientFactory(&cfg, loggerInstance, metricsInstance)
 	b.initFeatureFlags(&cfg, loggerInstance, metricsInstance)

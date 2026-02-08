@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,13 +21,11 @@ import (
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/contextx"
 	"github.com/wyfcoding/pkg/idgen"
-	"github.com/wyfcoding/pkg/limiter"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/middleware"
 	"github.com/wyfcoding/pkg/retry"
 	"github.com/wyfcoding/pkg/tracing"
-	"golang.org/x/time/rate"
 )
 
 var (
@@ -54,19 +53,15 @@ type Config struct {
 	RetryConfig    retry.Config
 	RetryStatus    []int
 	RetryMethods   []string
+	Rules          []Rule
 }
 
 // Client 封装标准 http.Client，提供治理能力。
 type Client struct {
 	client          *http.Client
 	logger          *logging.Logger
-	breaker         *breaker.Breaker
-	limiter         limiter.Limiter
-	concurrency     limiter.ConcurrencyLimiter
-	slowThreshold   time.Duration
-	retryConfig     retry.Config
-	retryStatus     map[int]struct{}
-	retryMethods    map[string]struct{}
+	metricsInstance *metrics.Metrics
+	policies        atomic.Value
 	requestsTotal   *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
 	slowRequests    *prometheus.CounterVec
@@ -77,29 +72,6 @@ func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metr
 	if metricsInstance == nil {
 		metricsInstance = metrics.NewMetrics(cfg.ServiceName)
 	}
-
-	timeout := cfg.Timeout
-	if timeout == 0 {
-		timeout = defaultTimeout
-	}
-
-	retryCfg := cfg.RetryConfig
-	if retryCfg == (retry.Config{}) {
-		retryCfg = retry.DefaultRetryConfig()
-	}
-
-	retryMethods := normalizeRetryMethods(cfg.RetryMethods)
-	retryStatus := normalizeRetryStatus(cfg.RetryStatus)
-
-	limit := limiter.NewLocalLimiter(rate.Limit(maxInt(cfg.RateLimit, 0)), maxInt(cfg.RateBurst, 0))
-	if cfg.RateLimit <= 0 {
-		limit = limiter.NewLocalLimiter(rate.Limit(2000), 200)
-	}
-
-	cb := breaker.NewBreaker(breaker.Settings{
-		Name:   "http-client-" + cfg.ServiceName,
-		Config: cfg.BreakerConfig,
-	}, metricsInstance)
 
 	requestsTotal := metricsInstance.NewCounterVec(&prometheus.CounterOpts{
 		Namespace: "pkg",
@@ -123,22 +95,18 @@ func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metr
 		Help:      "HTTP client slow request count",
 	}, []string{"host", "method"})
 
-	return &Client{
+	client := &Client{
 		client: &http.Client{
-			Timeout: timeout,
+			Timeout: 0,
 		},
 		logger:          logger,
-		breaker:         cb,
-		limiter:         limit,
-		concurrency:     limiter.NewSemaphoreLimiter(cfg.MaxConcurrency),
-		slowThreshold:   cfg.SlowThreshold,
-		retryConfig:     retryCfg,
-		retryStatus:     retryStatus,
-		retryMethods:    retryMethods,
+		metricsInstance: metricsInstance,
 		requestsTotal:   requestsTotal,
 		requestDuration: requestDuration,
 		slowRequests:    slowRequests,
 	}
+	client.UpdateConfig(cfg)
+	return client
 }
 
 // Do 发起 HTTP 请求并返回响应。
@@ -147,41 +115,68 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 		return nil, errors.New("request is nil")
 	}
 
+	policy := c.matchPolicy(req)
 	ctx = ensureContext(ctx, req)
+	if policy != nil && policy.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, policy.timeout)
+		defer cancel()
+	}
+
+	req = req.WithContext(ctx)
 	injectHeaders(req, ctx)
 	injectTraceContext(req, ctx)
 
-	if err := c.concurrency.Acquire(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrConcurrencyLimit, err)
-	}
-	defer c.concurrency.Release()
-
-	allowed, err := c.limiter.Allow(ctx, "http:"+hostKey(req))
-	if err != nil {
-		c.logWarn(ctx, "http client limiter error", "error", err)
-	}
-	if !allowed {
-		return nil, ErrRateLimit
+	if policy != nil && policy.concurrency != nil {
+		if err := policy.concurrency.Acquire(ctx); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrConcurrencyLimit, err)
+		}
+		defer policy.concurrency.Release()
 	}
 
-	if !c.methodRetryAllowed(req.Method) {
-		return c.doOnce(ctx, req)
+	if policy != nil && policy.limiter != nil {
+		allowed, err := policy.limiter.Allow(ctx, "http:"+hostKey(req))
+		if err != nil {
+			c.logWarn(ctx, "http client limiter error", "error", err)
+		}
+		if !allowed {
+			return nil, ErrRateLimit
+		}
+	}
+
+	if policy == nil || !policy.methodRetryAllowed(req.Method) {
+		return c.doOnce(ctx, req, policy)
+	}
+
+	retryCfg := policy.retryConfig
+	if retryCfg.MaxRetries <= 0 {
+		return c.doOnce(ctx, req, policy)
+	}
+
+	if req.Body != nil && req.GetBody == nil {
+		return c.doOnce(ctx, req, policy)
 	}
 
 	var lastResp *http.Response
-	err = retry.If(ctx, func() error {
-		reqClone, cloneErr := cloneRequest(ctx, req)
-		if cloneErr != nil {
-			return cloneErr
+	attempt := 0
+	err := retry.If(ctx, func() error {
+		attempt++
+		currentReq := req
+		if attempt > 1 {
+			reqClone, cloneErr := cloneRequest(ctx, req)
+			if cloneErr != nil {
+				return cloneErr
+			}
+			currentReq = reqClone
 		}
 
-		resp, callErr := c.doOnce(ctx, reqClone)
+		resp, callErr := c.doOnce(ctx, currentReq, policy)
 		if callErr != nil {
 			lastResp = nil
 			return callErr
 		}
 
-		if c.shouldRetryStatus(resp.StatusCode) {
+		if policy != nil && policy.shouldRetryStatus(resp.StatusCode) {
 			lastResp = resp
 			drainAndClose(resp.Body)
 			return retryableStatusError{code: resp.StatusCode}
@@ -189,7 +184,9 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 
 		lastResp = resp
 		return nil
-	}, c.shouldRetry, c.retryConfig)
+	}, func(err error) bool {
+		return c.shouldRetry(policy, err)
+	}, retryCfg)
 
 	if err != nil {
 		if _, ok := err.(retryableStatusError); ok && lastResp != nil {
@@ -204,11 +201,11 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 	return lastResp, nil
 }
 
-func (c *Client) doOnce(ctx context.Context, req *http.Request) (*http.Response, error) {
+func (c *Client) doOnce(ctx context.Context, req *http.Request, policy *clientPolicy) (*http.Response, error) {
 	start := time.Now()
 	var resp *http.Response
 
-	_, err := c.breaker.Execute(func() (any, error) {
+	exec := func() (any, error) {
 		spanCtx, span := tracing.Tracer().Start(ctx, "HTTPClient."+strings.ToUpper(req.Method))
 		defer span.End()
 
@@ -223,7 +220,14 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request) (*http.Response,
 			return nil, callErr
 		}
 		return nil, nil
-	})
+	}
+
+	var err error
+	if policy != nil && policy.breaker != nil {
+		_, err = policy.breaker.Execute(exec)
+	} else {
+		_, err = exec()
+	}
 
 	duration := time.Since(start)
 	status := "error"
@@ -232,7 +236,7 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request) (*http.Response,
 	}
 
 	c.record(req, status, duration)
-	c.checkSlow(ctx, req, duration)
+	c.checkSlow(ctx, req, duration, policy)
 
 	return resp, err
 }
@@ -246,8 +250,12 @@ func (c *Client) record(req *http.Request, status string, duration time.Duration
 	}
 }
 
-func (c *Client) checkSlow(ctx context.Context, req *http.Request, duration time.Duration) {
-	if c.slowThreshold <= 0 || duration < c.slowThreshold {
+func (c *Client) checkSlow(ctx context.Context, req *http.Request, duration time.Duration, policy *clientPolicy) {
+	slowThreshold := time.Duration(0)
+	if policy != nil {
+		slowThreshold = policy.slowThreshold
+	}
+	if slowThreshold <= 0 || duration < slowThreshold {
 		return
 	}
 	if c.slowRequests != nil {
@@ -256,7 +264,7 @@ func (c *Client) checkSlow(ctx context.Context, req *http.Request, duration time
 	c.logWarn(ctx, "http client slow request", "method", req.Method, "url", req.URL.String(), "duration", duration)
 }
 
-func (c *Client) shouldRetry(err error) bool {
+func (c *Client) shouldRetry(policy *clientPolicy, err error) bool {
 	if err == nil {
 		return false
 	}
@@ -265,16 +273,6 @@ func (c *Client) shouldRetry(err error) bool {
 	}
 	_, ok := err.(retryableStatusError)
 	return ok || !errors.Is(err, breaker.ErrServiceUnavailable)
-}
-
-func (c *Client) shouldRetryStatus(code int) bool {
-	_, ok := c.retryStatus[code]
-	return ok
-}
-
-func (c *Client) methodRetryAllowed(method string) bool {
-	_, ok := c.retryMethods[strings.ToUpper(method)]
-	return ok
 }
 
 func (c *Client) logWarn(ctx context.Context, msg string, args ...any) {

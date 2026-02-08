@@ -289,6 +289,28 @@ type HTTPClientConfig struct {
 	RetryStatus     []int                `mapstructure:"retry_status"        toml:"retry_status"`
 	RetryMethods    []string             `mapstructure:"retry_methods"       toml:"retry_methods"`
 	Breaker         CircuitBreakerConfig `mapstructure:"breaker"             toml:"breaker"`
+	Rules           []HTTPClientRule     `mapstructure:"rules"               toml:"rules"`
+}
+
+// HTTPClientRule 定义 HTTP 客户端按目标维度的治理规则。
+type HTTPClientRule struct {
+	Name            string                `mapstructure:"name"              toml:"name"`
+	Hosts           []string              `mapstructure:"hosts"             toml:"hosts"`
+	Methods         []string              `mapstructure:"methods"           toml:"methods"`
+	Paths           []string              `mapstructure:"paths"             toml:"paths"`
+	Timeout         *time.Duration        `mapstructure:"timeout"           toml:"timeout"`
+	RateLimit       *int                  `mapstructure:"rate_limit"        toml:"rate_limit"`
+	RateBurst       *int                  `mapstructure:"rate_burst"        toml:"rate_burst"`
+	MaxConcurrency  *int                  `mapstructure:"max_concurrency"   toml:"max_concurrency"`
+	SlowThreshold   *time.Duration        `mapstructure:"slow_threshold"    toml:"slow_threshold"`
+	RetryMax        *int                  `mapstructure:"retry_max"         toml:"retry_max"`
+	RetryInitial    *time.Duration        `mapstructure:"retry_initial"     toml:"retry_initial"`
+	RetryMaxBackoff *time.Duration        `mapstructure:"retry_max_backoff" toml:"retry_max_backoff"`
+	RetryMultiplier *float64              `mapstructure:"retry_multiplier"  toml:"retry_multiplier"`
+	RetryJitter     *float64              `mapstructure:"retry_jitter"      toml:"retry_jitter"`
+	RetryStatus     []int                 `mapstructure:"retry_status"      toml:"retry_status"`
+	RetryMethods    []string              `mapstructure:"retry_methods"     toml:"retry_methods"`
+	Breaker         *CircuitBreakerConfig `mapstructure:"breaker"           toml:"breaker"`
 }
 
 // GRPCClientConfig 定义统一 gRPC 客户端治理配置。

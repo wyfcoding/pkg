@@ -10,10 +10,7 @@ import (
 // NewFromConfig 基于统一配置构造 HTTP 客户端。
 func NewFromConfig(cfg config.HTTPClientConfig, logger *logging.Logger, metricsInstance *metrics.Metrics) *Client {
 	retryCfg := normalizeRetryConfig(cfg)
-	serviceName := "httpclient"
-	if logger != nil && logger.Service != "" {
-		serviceName = logger.Service
-	}
+	serviceName := resolveServiceName(logger)
 
 	return NewClient(Config{
 		ServiceName:    serviceName,
@@ -26,7 +23,30 @@ func NewFromConfig(cfg config.HTTPClientConfig, logger *logging.Logger, metricsI
 		RetryConfig:    retryCfg,
 		RetryStatus:    cfg.RetryStatus,
 		RetryMethods:   cfg.RetryMethods,
+		Rules:          convertRules(cfg.Rules),
 	}, logger, metricsInstance)
+}
+
+// UpdateFromConfig 基于最新配置更新 HTTP 客户端治理策略。
+func (c *Client) UpdateFromConfig(cfg config.HTTPClientConfig) {
+	if c == nil {
+		return
+	}
+	retryCfg := normalizeRetryConfig(cfg)
+	serviceName := resolveServiceName(c.logger)
+	c.UpdateConfig(Config{
+		ServiceName:    serviceName,
+		Timeout:        cfg.Timeout,
+		RateLimit:      cfg.RateLimit,
+		RateBurst:      cfg.RateBurst,
+		MaxConcurrency: cfg.MaxConcurrency,
+		SlowThreshold:  cfg.SlowThreshold,
+		BreakerConfig:  cfg.Breaker,
+		RetryConfig:    retryCfg,
+		RetryStatus:    cfg.RetryStatus,
+		RetryMethods:   cfg.RetryMethods,
+		Rules:          convertRules(cfg.Rules),
+	})
 }
 
 func normalizeRetryConfig(cfg config.HTTPClientConfig) retry.Config {
@@ -52,4 +72,41 @@ func normalizeRetryConfig(cfg config.HTTPClientConfig) retry.Config {
 	}
 
 	return base
+}
+
+func convertRules(rules []config.HTTPClientRule) []Rule {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]Rule, 0, len(rules))
+	for _, rule := range rules {
+		out = append(out, Rule{
+			Name:            rule.Name,
+			Hosts:           rule.Hosts,
+			Methods:         rule.Methods,
+			Paths:           rule.Paths,
+			Timeout:         rule.Timeout,
+			RateLimit:       rule.RateLimit,
+			RateBurst:       rule.RateBurst,
+			MaxConcurrency:  rule.MaxConcurrency,
+			SlowThreshold:   rule.SlowThreshold,
+			RetryMax:        rule.RetryMax,
+			RetryInitial:    rule.RetryInitial,
+			RetryMaxBackoff: rule.RetryMaxBackoff,
+			RetryMultiplier: rule.RetryMultiplier,
+			RetryJitter:     rule.RetryJitter,
+			RetryStatus:     rule.RetryStatus,
+			RetryMethods:    rule.RetryMethods,
+			Breaker:         rule.Breaker,
+		})
+	}
+	return out
+}
+
+func resolveServiceName(logger *logging.Logger) string {
+	serviceName := "httpclient"
+	if logger != nil && logger.Service != "" {
+		serviceName = logger.Service
+	}
+	return serviceName
 }
