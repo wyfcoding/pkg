@@ -1,4 +1,8 @@
-// Package algorithm 提供了高性能算法实现.
+// Package optimization 提供了高性能配送路线优化算法实现.
+// 包含:
+// 1. Nearest Neighbor (NN): 贪心路线优化. 复杂度 O(N^2), 适用于快速获取初始解.
+// 2. Clarke-Wright Savings: 启发式车辆路径问题 (VRP) 算法. 复杂度 O(N^2 log N), 用于带约束配送优化.
+// 参考: Clarke, G. and Wright, J.W. (1964) "Scheduling of Vehicles from a Central Depot to a Number of Delivery Points"
 package optimization
 
 import (

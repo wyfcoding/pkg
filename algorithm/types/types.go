@@ -40,12 +40,32 @@ type Order struct {
 	IsIceberg  bool
 	PostOnly   bool
 	IsPegged   bool
-	// 期权/衍生品特有
+	// 高级委托类型
+	TimeInForce TimeInForce    // GTC, FOK, FAK
+	Condition   OrderCondition // NONE, AON
+	// 期权/衍生品特特有
 	Strike     decimal.Decimal
 	Expiry     int64
 	OptionType OptionType
 	Leverage   decimal.Decimal
 }
+
+// TimeInForce 订单生效时间策略。
+type TimeInForce string
+
+const (
+	TIFGTC TimeInForce = "GTC" // Good Till Cancel
+	TIFFOK TimeInForce = "FOK" // Fill Or Kill
+	TIFFAK TimeInForce = "FAK" // Fill And Kill (IOC)
+)
+
+// OrderCondition 订单限制条件。
+type OrderCondition string
+
+const (
+	CondNone OrderCondition = "NONE"
+	CondAON  OrderCondition = "AON" // All Or None
+)
 
 // OrderBookLevel 订单簿档位，聚合了同一价格下的委托总量。
 type OrderBookLevel struct {
