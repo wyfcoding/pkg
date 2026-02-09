@@ -16,6 +16,9 @@ type DynamicRiskEngine struct {
 
 // NewDynamicRiskEngine 初始化并返回一个新的动态风控引擎实例。
 func NewDynamicRiskEngine(logger *slog.Logger) (*DynamicRiskEngine, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	engine := ruleengine.NewEngine(logger)
 	dre := &DynamicRiskEngine{
 		re:     engine,

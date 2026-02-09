@@ -9,16 +9,18 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
-	"github.com/elastic/go-elasticsearch/v9"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/wyfcoding/pkg/breaker"
 	"github.com/wyfcoding/pkg/config"
 	"github.com/wyfcoding/pkg/limiter"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
 	"github.com/wyfcoding/pkg/tracing"
+
+	"github.com/elastic/go-elasticsearch/v9"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -47,8 +49,10 @@ const (
 
 // Client 封装了具备高级治理能力的 Elasticsearch 客户端.
 type Client struct {
+	mu              sync.RWMutex
 	es              *elasticsearch.Client
 	logger          *logging.Logger
+	metrics         *metrics.Metrics
 	cb              *breaker.Breaker
 	limiter         limiter.Limiter
 	requestsTotal   *prometheus.CounterVec
@@ -68,35 +72,27 @@ type Config struct {
 
 // NewClient 创建具备全方位治理能力的 ES 客户端.
 func NewClient(cfg *Config, logger *logging.Logger, metricsInstance *metrics.Metrics) (*Client, error) {
-	tp := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   esDialTimeout,
-			KeepAlive: esKeepAlive,
-		}).DialContext,
-		MaxIdleConns:          esMaxIdleConns,
-		IdleConnTimeout:       esIdleConnTimeout,
-		TLSHandshakeTimeout:   esTLSHandshake,
-		ExpectContinueTimeout: esExpectContinue,
-		ForceAttemptHTTP2:     true,
+	if cfg == nil {
+		return nil, errors.New("config is nil")
+	}
+	serviceName := cfg.ServiceName
+	if serviceName == "" {
+		serviceName = "search"
+	}
+	if logger == nil {
+		logger = logging.Default()
+	}
+	if metricsInstance == nil {
+		metricsInstance = metrics.NewMetrics(serviceName)
 	}
 
-	esCfg := elasticsearch.Config{
-		Addresses:     cfg.Addresses,
-		Username:      cfg.Username,
-		Password:      cfg.Password,
-		Transport:     tp,
-		MaxRetries:    cfg.MaxRetries,
-		RetryOnStatus: []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusTooManyRequests},
-	}
-
-	esClient, err := elasticsearch.NewClient(esCfg)
+	esClient, err := newESClient(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create es client: %w", err)
+		return nil, err
 	}
 
 	cb := breaker.NewBreaker(breaker.Settings{
-		Name:   "Elasticsearch-" + cfg.ServiceName,
+		Name:   "Elasticsearch-" + serviceName,
 		Config: cfg.BreakerConfig,
 	}, metricsInstance)
 
@@ -123,6 +119,7 @@ func NewClient(cfg *Config, logger *logging.Logger, metricsInstance *metrics.Met
 	return &Client{
 		es:              esClient,
 		logger:          logger,
+		metrics:         metricsInstance,
 		slowThreshold:   cfg.SlowThreshold,
 		cb:              cb,
 		limiter:         l,
@@ -131,13 +128,120 @@ func NewClient(cfg *Config, logger *logging.Logger, metricsInstance *metrics.Met
 	}, nil
 }
 
-// Search 执行带全方位治理的搜索.
-func (c *Client) Search(ctx context.Context, index string, query map[string]any, results any) error {
-	allowed, errLimit := c.limiter.Allow(ctx, "es-search")
-	if errLimit != nil {
-		c.logger.ErrorContext(ctx, "limiter error", "error", errLimit)
+// UpdateConfig 使用最新配置刷新 ES 客户端。
+func (c *Client) UpdateConfig(cfg *Config) error {
+	if c == nil {
+		return errors.New("es client is nil")
+	}
+	if cfg == nil {
+		return errors.New("config is nil")
+	}
+	serviceName := cfg.ServiceName
+	if serviceName == "" {
+		serviceName = "search"
 	}
 
+	logger := c.logger
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	esClient, err := newESClient(cfg)
+	if err != nil {
+		return err
+	}
+
+	cb := breaker.NewBreaker(breaker.Settings{
+		Name:   "Elasticsearch-" + serviceName,
+		Config: cfg.BreakerConfig,
+	}, c.metrics)
+
+	l := cfg.Limiter
+	if l == nil {
+		l = limiter.NewLocalLimiter(esDefaultRate, esDefaultBurst)
+	}
+
+	c.mu.Lock()
+	c.es = esClient
+	c.cb = cb
+	c.limiter = l
+	c.slowThreshold = cfg.SlowThreshold
+	c.logger = logger
+	c.mu.Unlock()
+
+	logger.Info("es client updated", "addresses", cfg.Addresses)
+
+	return nil
+}
+
+// RegisterReloadHook 注册 ES 客户端热更新回调。
+// baseConfig 用于保留服务名、限流器等非配置中心字段。
+func RegisterReloadHook(client *Client, baseConfig Config) {
+	if client == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		next := baseConfig
+		next.ElasticsearchConfig = updated.Data.Elasticsearch
+		next.BreakerConfig = updated.CircuitBreaker
+		if err := client.UpdateConfig(&next); err != nil {
+			logger := client.logger
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("es client reload failed", "error", err)
+		}
+	})
+}
+
+func newESClient(cfg *Config) (*elasticsearch.Client, error) {
+	tp := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   esDialTimeout,
+			KeepAlive: esKeepAlive,
+		}).DialContext,
+		MaxIdleConns:          esMaxIdleConns,
+		IdleConnTimeout:       esIdleConnTimeout,
+		TLSHandshakeTimeout:   esTLSHandshake,
+		ExpectContinueTimeout: esExpectContinue,
+		ForceAttemptHTTP2:     true,
+	}
+
+	esCfg := elasticsearch.Config{
+		Addresses:     cfg.Addresses,
+		Username:      cfg.Username,
+		Password:      cfg.Password,
+		Transport:     tp,
+		MaxRetries:    cfg.MaxRetries,
+		RetryOnStatus: []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusTooManyRequests},
+	}
+
+	esClient, err := elasticsearch.NewClient(esCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create es client: %w", err)
+	}
+	return esClient, nil
+}
+
+// Search 执行带全方位治理的搜索.
+func (c *Client) Search(ctx context.Context, index string, query map[string]any, results any) error {
+	esClient, logger, cb, limit, slowThreshold := c.snapshot()
+	if esClient == nil {
+		return errors.New("es client not initialized")
+	}
+
+	allowed := true
+	if limit != nil {
+		errLimit := error(nil)
+		allowed, errLimit = limit.Allow(ctx, "es-search")
+		if errLimit != nil {
+			logger.ErrorContext(ctx, "limiter error", "error", errLimit)
+		}
+	}
 	if !allowed {
 		return ErrRateLimit
 	}
@@ -145,7 +249,7 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 	operation := "search"
 	start := time.Now()
 
-	_, err := c.cb.Execute(func() (any, error) {
+	exec := func() (any, error) {
 		searchCtx, span := tracing.Tracer().Start(ctx, "ES.Search")
 		defer span.End()
 
@@ -158,10 +262,10 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 		tracing.AddTag(searchCtx, "db.index", index)
 		tracing.AddTag(searchCtx, "db.statement", string(queryJSON))
 
-		res, errSearch := c.es.Search(
-			c.es.Search.WithContext(searchCtx),
-			c.es.Search.WithIndex(index),
-			c.es.Search.WithBody(bytes.NewReader(queryJSON)),
+		res, errSearch := esClient.Search(
+			esClient.Search.WithContext(searchCtx),
+			esClient.Search.WithIndex(index),
+			esClient.Search.WithBody(bytes.NewReader(queryJSON)),
 		)
 		if errSearch != nil {
 			c.record(index, operation, "error", start)
@@ -182,20 +286,32 @@ func (c *Client) Search(ctx context.Context, index string, query map[string]any,
 		}
 
 		c.record(index, operation, "success", start)
-		c.checkSlow(searchCtx, index, queryJSON, time.Since(start))
+		c.checkSlow(searchCtx, logger, slowThreshold, index, queryJSON, time.Since(start))
 
 		return struct{}{}, nil
-	})
+	}
+
+	var err error
+	if cb != nil {
+		_, err = cb.Execute(exec)
+	} else {
+		_, err = exec()
+	}
 
 	return err
 }
 
 // Index 创建或在索引中更新指定的文档.
 func (c *Client) Index(ctx context.Context, index, documentID string, document any) error {
+	esClient, _, cb, _, _ := c.snapshot()
+	if esClient == nil {
+		return errors.New("es client not initialized")
+	}
+
 	operation := "index"
 	start := time.Now()
 
-	_, err := c.cb.Execute(func() (any, error) {
+	exec := func() (any, error) {
 		indexCtx, span := tracing.Tracer().Start(ctx, "ES.Index")
 		defer span.End()
 
@@ -204,11 +320,11 @@ func (c *Client) Index(ctx context.Context, index, documentID string, document a
 			return nil, fmt.Errorf("failed to marshal document: %w", errMarshal)
 		}
 
-		res, errIdx := c.es.Index(
+		res, errIdx := esClient.Index(
 			index,
 			bytes.NewReader(data),
-			c.es.Index.WithContext(indexCtx),
-			c.es.Index.WithDocumentID(documentID),
+			esClient.Index.WithContext(indexCtx),
+			esClient.Index.WithDocumentID(documentID),
 		)
 		if errIdx != nil {
 			c.record(index, operation, "error", start)
@@ -227,24 +343,36 @@ func (c *Client) Index(ctx context.Context, index, documentID string, document a
 		c.record(index, operation, "success", start)
 
 		return struct{}{}, nil
-	})
+	}
+
+	var err error
+	if cb != nil {
+		_, err = cb.Execute(exec)
+	} else {
+		_, err = exec()
+	}
 
 	return err
 }
 
 // Delete 从索引中安全删除指定的文档.
 func (c *Client) Delete(ctx context.Context, index, documentID string) error {
+	esClient, _, cb, _, _ := c.snapshot()
+	if esClient == nil {
+		return errors.New("es client not initialized")
+	}
+
 	operation := "delete"
 	start := time.Now()
 
-	_, err := c.cb.Execute(func() (any, error) {
+	exec := func() (any, error) {
 		deleteCtx, span := tracing.Tracer().Start(ctx, "ES.Delete")
 		defer span.End()
 
-		res, errDel := c.es.Delete(
+		res, errDel := esClient.Delete(
 			index,
 			documentID,
-			c.es.Delete.WithContext(deleteCtx),
+			esClient.Delete.WithContext(deleteCtx),
 		)
 		if errDel != nil {
 			c.record(index, operation, "error", start)
@@ -263,14 +391,25 @@ func (c *Client) Delete(ctx context.Context, index, documentID string) error {
 		c.record(index, operation, "success", start)
 
 		return struct{}{}, nil
-	})
+	}
+
+	var err error
+	if cb != nil {
+		_, err = cb.Execute(exec)
+	} else {
+		_, err = exec()
+	}
 
 	return err
 }
 
 // Bulk 批量操作接口.
 func (c *Client) Bulk(ctx context.Context, body io.Reader) error {
-	res, err := c.es.Bulk(body, c.es.Bulk.WithContext(ctx))
+	esClient, _, _, _, _ := c.snapshot()
+	if esClient == nil {
+		return errors.New("es client not initialized")
+	}
+	res, err := esClient.Bulk(body, esClient.Bulk.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("bulk execution failed: %w", err)
 	}
@@ -288,11 +427,30 @@ func (c *Client) record(index, op, status string, start time.Time) {
 	c.requestDuration.WithLabelValues(index, op).Observe(time.Since(start).Seconds())
 }
 
-func (c *Client) checkSlow(ctx context.Context, index string, query []byte, cost time.Duration) {
-	if c.slowThreshold > 0 && cost > c.slowThreshold {
-		c.logger.WarnContext(ctx, "es slow query",
+func (c *Client) checkSlow(ctx context.Context, logger *logging.Logger, slowThreshold time.Duration, index string, query []byte, cost time.Duration) {
+	if slowThreshold > 0 && cost > slowThreshold {
+		logger.WarnContext(ctx, "es slow query",
 			"index", index,
 			"cost", cost.String(),
 			"q", string(query))
 	}
+}
+
+func (c *Client) snapshot() (*elasticsearch.Client, *logging.Logger, *breaker.Breaker, limiter.Limiter, time.Duration) {
+	if c == nil {
+		return nil, logging.Default(), nil, nil, 0
+	}
+	c.mu.RLock()
+	esClient := c.es
+	logger := c.logger
+	cb := c.cb
+	limit := c.limiter
+	slow := c.slowThreshold
+	c.mu.RUnlock()
+
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	return esClient, logger, cb, limit, slow
 }

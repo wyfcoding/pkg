@@ -60,6 +60,12 @@ type SMSSender struct {
 
 // NewSMSSender 创建 SMS 发送器实例。
 func NewSMSSender(cfg *SMSConfig, logger *slog.Logger) *SMSSender {
+	if cfg == nil {
+		cfg = &SMSConfig{}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 10 * time.Second
@@ -79,6 +85,9 @@ func (s *SMSSender) Channel() Channel {
 
 // Send 发送单条短信。
 func (s *SMSSender) Send(ctx context.Context, msg *Message) (*Result, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("SMS message is nil")
+	}
 	start := time.Now()
 	result := &Result{
 		MessageID: msg.ID,
@@ -121,6 +130,9 @@ func (s *SMSSender) Send(ctx context.Context, msg *Message) (*Result, error) {
 func (s *SMSSender) SendBatch(ctx context.Context, msgs []*Message) ([]*Result, error) {
 	results := make([]*Result, 0, len(msgs))
 	for _, msg := range msgs {
+		if msg == nil {
+			continue
+		}
 		result, err := s.Send(ctx, msg)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "batch SMS send failed for message",

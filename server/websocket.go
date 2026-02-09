@@ -85,6 +85,9 @@ type BroadcastMessage struct {
 }
 
 func NewWSManager(logger *slog.Logger) *WSManager {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &WSManager{
 		clients:     make(map[*Client]bool),
 		userClients: make(map[string]map[*Client]bool),

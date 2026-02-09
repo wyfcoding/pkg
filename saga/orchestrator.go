@@ -20,45 +20,45 @@ type Step struct {
 	Timeout    time.Duration
 }
 
-// Orchestrator 负责管理并执行一系列步骤。
-type Orchestrator struct {
+// Engine 负责管理并执行一系列步骤。
+type Engine struct {
 	steps []*Step
 	mu    sync.Mutex
 }
 
-// NewOrchestrator 创建并返回一个新的编排器。
-func NewOrchestrator() *Orchestrator {
-	return &Orchestrator{
+// NewEngine 创建并返回一个新的引擎。
+func NewEngine() *Engine {
+	return &Engine{
 		steps: make([]*Step, 0),
 	}
 }
 
-// AddStep 向编排器中增加一个事务步骤。
-func (o *Orchestrator) AddStep(name string, action, compensate func(ctx context.Context) error) *Orchestrator {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.steps = append(o.steps, &Step{
+// AddStep 向引擎中增加一个事务步骤。
+func (e *Engine) AddStep(name string, action, compensate func(ctx context.Context) error) *Engine {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.steps = append(e.steps, &Step{
 		Name:       name,
 		Action:     action,
 		Compensate: compensate,
 		Retries:    3,
 		Timeout:    10 * time.Second,
 	})
-	return o
+	return e
 }
 
 // Execute 执行整个 Saga 流程。
-func (o *Orchestrator) Execute(ctx context.Context) error {
+func (e *Engine) Execute(ctx context.Context) error {
 	logger := logging.Default()
 	executedSteps := make([]*Step, 0)
 
-	for _, step := range o.steps {
+	for _, step := range e.steps {
 		logger.InfoContext(ctx, "executing saga step", "step", step.Name)
 
-		err := o.executeWithRetry(ctx, step)
+		err := e.executeWithRetry(ctx, step)
 		if err != nil {
 			logger.ErrorContext(ctx, "saga step failed, starting compensation", "step", step.Name, "error", err)
-			o.compensate(ctx, executedSteps)
+			e.compensate(ctx, executedSteps)
 			return fmt.Errorf("saga step %s failed: %w", step.Name, err)
 		}
 
@@ -69,7 +69,7 @@ func (o *Orchestrator) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (o *Orchestrator) executeWithRetry(ctx context.Context, step *Step) error {
+func (e *Engine) executeWithRetry(ctx context.Context, step *Step) error {
 	var lastErr error
 	for i := 0; i < step.Retries; i++ {
 		tCtx, cancel := context.WithTimeout(ctx, step.Timeout)
@@ -87,7 +87,7 @@ func (o *Orchestrator) executeWithRetry(ctx context.Context, step *Step) error {
 	return lastErr
 }
 
-func (o *Orchestrator) compensate(ctx context.Context, steps []*Step) {
+func (e *Engine) compensate(ctx context.Context, steps []*Step) {
 	logger := logging.Default()
 	// 逆序回滚
 	for i := len(steps) - 1; i >= 0; i-- {

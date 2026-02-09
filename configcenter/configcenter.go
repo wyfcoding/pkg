@@ -11,6 +11,7 @@ package configcenter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -150,6 +151,9 @@ type EtcdClient struct {
 func NewEtcdClient(cfg *Config, logger *slog.Logger) (*EtcdClient, error) {
 	if cfg == nil {
 		cfg = DefaultConfig()
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	etcdCfg := clientv3.Config{
@@ -450,6 +454,9 @@ type ConfigManager struct {
 
 // NewConfigManager 创建配置管理器。
 func NewConfigManager(client Client, logger *slog.Logger) *ConfigManager {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &ConfigManager{
 		client:   client,
 		cache:    make(map[string]any),
@@ -460,6 +467,9 @@ func NewConfigManager(client Client, logger *slog.Logger) *ConfigManager {
 
 // Load 加载配置并反序列化到目标结构。
 func (m *ConfigManager) Load(ctx context.Context, key string, target any) error {
+	if m.client == nil {
+		return errors.New("config manager client is nil")
+	}
 	if err := m.client.GetJSON(ctx, key, target); err != nil {
 		return err
 	}
@@ -489,6 +499,9 @@ func (m *ConfigManager) OnChange(key string, handler ChangeHandler) {
 
 // StartWatch 开始监听所有已注册的配置变更。
 func (m *ConfigManager) StartWatch(ctx context.Context) error {
+	if m.client == nil {
+		return errors.New("config manager client is nil")
+	}
 	m.handlerMu.RLock()
 	keys := make([]string, 0, len(m.handlers))
 	for key := range m.handlers {
@@ -515,6 +528,9 @@ func (m *ConfigManager) StartWatch(ctx context.Context) error {
 
 // Close 关闭配置管理器。
 func (m *ConfigManager) Close() error {
+	if m.client == nil {
+		return nil
+	}
 	return m.client.Close()
 }
 

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
@@ -49,9 +50,11 @@ type Config struct {
 
 // Client 封装 Neo4j 客户端，提供统一治理能力。
 type Client struct {
+	mu              sync.RWMutex
 	driver          neo4j.Driver
 	dbName          string
 	logger          *logging.Logger
+	metrics         *metrics.Metrics
 	breaker         *breaker.Breaker
 	limiter         limiter.Limiter
 	concurrency     limiter.ConcurrencyLimiter
@@ -63,26 +66,23 @@ type Client struct {
 
 // NewClient 创建具备治理能力的图数据库客户端。
 func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metrics) (*Client, error) {
+	serviceName := cfg.ServiceName
+	if serviceName == "" {
+		serviceName = "graph"
+	}
+	if logger == nil {
+		logger = logging.Default()
+	}
 	if metricsInstance == nil {
-		metricsInstance = metrics.NewMetrics(cfg.ServiceName)
+		metricsInstance = metrics.NewMetrics(serviceName)
 	}
 
-	driver, err := neo4j.NewDriver(cfg.URI, neo4j.BasicAuth(cfg.Username, cfg.Password, ""))
+	driver, err := newNeo4jDriver(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create neo4j driver: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := driver.VerifyConnectivity(ctx); err != nil {
-		_ = driver.Close(ctx)
-		return nil, fmt.Errorf("failed to verify neo4j connectivity: %w", err)
-	}
-
-	if logger != nil {
-		logger.Info("graph client initialized", "uri", cfg.URI)
-	}
+	logger.Info("graph client initialized", "uri", cfg.URI)
 
 	limit := cfg.Limiter
 	if limit == nil {
@@ -90,7 +90,7 @@ func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metr
 	}
 
 	cb := breaker.NewBreaker(breaker.Settings{
-		Name:   "neo4j-" + cfg.ServiceName,
+		Name:   "neo4j-" + serviceName,
 		Config: cfg.BreakerConfig,
 	}, metricsInstance)
 
@@ -120,6 +120,7 @@ func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metr
 		driver:          driver,
 		dbName:          "neo4j",
 		logger:          logger,
+		metrics:         metricsInstance,
 		breaker:         cb,
 		limiter:         limit,
 		concurrency:     limiter.NewSemaphoreLimiter(cfg.MaxConcurrency),
@@ -134,24 +135,109 @@ func NewClient(cfg Config, logger *logging.Logger, metricsInstance *metrics.Metr
 
 // Close 优雅关闭图数据库连接。
 func (c *Client) Close(ctx context.Context) error {
-	if c == nil || c.driver == nil {
+	if c == nil {
 		return nil
 	}
-	return c.driver.Close(ctx)
+	driver, _, _, _, _, _, _, _, _, _ := c.snapshot()
+	if driver == nil {
+		return nil
+	}
+	return driver.Close(ctx)
 }
 
 // SetDatabase 设置目标数据库名称。
 func (c *Client) SetDatabase(name string) {
 	if name != "" {
+		c.mu.Lock()
 		c.dbName = name
+		c.mu.Unlock()
 	}
+}
+
+// UpdateConfig 使用最新配置刷新 Neo4j 客户端。
+func (c *Client) UpdateConfig(cfg Config) error {
+	if c == nil {
+		return ErrGraphQuery
+	}
+	serviceName := cfg.ServiceName
+	if serviceName == "" {
+		serviceName = "graph"
+	}
+	logger := c.logger
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	driver, err := newNeo4jDriver(cfg)
+	if err != nil {
+		return err
+	}
+
+	limit := cfg.Limiter
+	if limit == nil {
+		limit = limiter.NewLocalLimiter(rate.Limit(defaultRateLimit), defaultBurst)
+	}
+
+	cb := breaker.NewBreaker(breaker.Settings{
+		Name:   "neo4j-" + serviceName,
+		Config: cfg.BreakerConfig,
+	}, c.metrics)
+
+	concurrency := limiter.NewSemaphoreLimiter(cfg.MaxConcurrency)
+	slowThreshold := cfg.SlowThreshold
+
+	c.mu.Lock()
+	oldDriver := c.driver
+	c.driver = driver
+	c.limiter = limit
+	c.breaker = cb
+	c.concurrency = concurrency
+	c.slowThreshold = slowThreshold
+	c.logger = logger
+	c.mu.Unlock()
+
+	if oldDriver != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = oldDriver.Close(ctx)
+	}
+
+	logger.Info("neo4j client updated", "uri", cfg.URI)
+
+	return nil
+}
+
+// RegisterReloadHook 注册 Neo4j 客户端热更新回调。
+func RegisterReloadHook(client *Client, base Config) {
+	if client == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		next := base
+		next.Neo4jConfig = updated.Data.Neo4j
+		next.BreakerConfig = updated.CircuitBreaker
+		if err := client.UpdateConfig(next); err != nil {
+			logger := client.logger
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("neo4j client reload failed", "error", err)
+		}
+	})
 }
 
 // ExecuteQuery 执行单条 Cypher 查询。
 func (c *Client) ExecuteQuery(ctx context.Context, cypher string, params map[string]any) (*neo4j.EagerResult, error) {
 	var result *neo4j.EagerResult
 	if err := c.execute(ctx, "query", cypher, func(execCtx context.Context) error {
-		res, err := neo4j.ExecuteQuery(execCtx, c.driver, cypher, params, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(c.dbName))
+		driver, _, _, _, _, dbName, _, _, _, _ := c.snapshot()
+		if driver == nil {
+			return ErrGraphQuery
+		}
+		res, err := neo4j.ExecuteQuery(execCtx, driver, cypher, params, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(dbName))
 		if err != nil {
 			return err
 		}
@@ -186,8 +272,12 @@ func (c *Client) session(ctx context.Context, mode neo4j.AccessMode, work func(n
 	}
 
 	return c.execute(ctx, op, "", func(execCtx context.Context) error {
-		session := c.driver.NewSession(execCtx, neo4j.SessionConfig{
-			DatabaseName: c.dbName,
+		driver, _, _, _, _, dbName, _, _, _, _ := c.snapshot()
+		if driver == nil {
+			return ErrGraphQuery
+		}
+		session := driver.NewSession(execCtx, neo4j.SessionConfig{
+			DatabaseName: dbName,
 			AccessMode:   mode,
 		})
 		defer session.Close(execCtx)
@@ -201,28 +291,39 @@ func (c *Client) execute(ctx context.Context, op, statement string, fn func(cont
 		return ErrGraphQuery
 	}
 
-	if err := c.concurrency.Acquire(ctx); err != nil {
-		return fmt.Errorf("%w: %v", ErrConcurrencyLimit, err)
+	driver, logger, limit, concurrency, cb, dbName, slowThreshold, requestsTotal, requestDuration, slowRequests := c.snapshot()
+	if driver == nil {
+		return ErrGraphQuery
 	}
-	defer c.concurrency.Release()
 
-	allowed, err := c.limiter.Allow(ctx, "neo4j:"+op)
-	if err != nil {
-		c.logWarn(ctx, "neo4j limiter error", "error", err)
+	if concurrency != nil {
+		if err := concurrency.Acquire(ctx); err != nil {
+			return fmt.Errorf("%w: %v", ErrConcurrencyLimit, err)
+		}
+		defer concurrency.Release()
+	}
+
+	allowed := true
+	if limit != nil {
+		var err error
+		allowed, err = limit.Allow(ctx, "neo4j:"+op)
+		if err != nil {
+			c.logWarn(ctx, logger, "neo4j limiter error", "error", err)
+		}
 	}
 	if !allowed {
-		c.record(op, "rate_limited", 0)
+		c.record(dbName, op, "rate_limited", 0, requestsTotal, requestDuration)
 		return ErrRateLimit
 	}
 
 	start := time.Now()
 
-	_, execErr := c.breaker.Execute(func() (any, error) {
+	exec := func() (any, error) {
 		execCtx, span := tracing.Tracer().Start(ctx, "Neo4j."+op)
 		defer span.End()
 
 		tracing.AddTag(execCtx, "db.system", "neo4j")
-		tracing.AddTag(execCtx, "db.name", c.dbName)
+		tracing.AddTag(execCtx, "db.name", dbName)
 		if statement != "" {
 			tracing.AddTag(execCtx, "db.statement", statement)
 		}
@@ -232,7 +333,14 @@ func (c *Client) execute(ctx context.Context, op, statement string, fn func(cont
 			tracing.SetError(execCtx, err)
 		}
 		return nil, err
-	})
+	}
+
+	var execErr error
+	if cb != nil {
+		_, execErr = cb.Execute(exec)
+	} else {
+		_, execErr = exec()
+	}
 
 	duration := time.Since(start)
 	status := "success"
@@ -240,8 +348,8 @@ func (c *Client) execute(ctx context.Context, op, statement string, fn func(cont
 		status = "error"
 	}
 
-	c.record(op, status, duration)
-	c.checkSlow(ctx, op, statement, duration)
+	c.record(dbName, op, status, duration, requestsTotal, requestDuration)
+	c.checkSlow(ctx, logger, dbName, slowThreshold, slowRequests, op, statement, duration)
 
 	if execErr != nil {
 		return fmt.Errorf("%w: %v", ErrGraphQuery, execErr)
@@ -250,30 +358,69 @@ func (c *Client) execute(ctx context.Context, op, statement string, fn func(cont
 	return nil
 }
 
-func (c *Client) record(op, status string, duration time.Duration) {
-	if c.requestsTotal != nil {
-		c.requestsTotal.WithLabelValues(c.dbName, op, status).Inc()
+func (c *Client) record(dbName, op, status string, duration time.Duration, requestsTotal *prometheus.CounterVec, requestDuration *prometheus.HistogramVec) {
+	if requestsTotal != nil {
+		requestsTotal.WithLabelValues(dbName, op, status).Inc()
 	}
-	if c.requestDuration != nil && duration > 0 {
-		c.requestDuration.WithLabelValues(c.dbName, op).Observe(duration.Seconds())
+	if requestDuration != nil && duration > 0 {
+		requestDuration.WithLabelValues(dbName, op).Observe(duration.Seconds())
 	}
 }
 
-func (c *Client) checkSlow(ctx context.Context, op, statement string, duration time.Duration) {
-	if c.slowThreshold <= 0 || duration < c.slowThreshold {
+func (c *Client) checkSlow(ctx context.Context, logger *logging.Logger, dbName string, slowThreshold time.Duration, slowRequests *prometheus.CounterVec, op, statement string, duration time.Duration) {
+	if slowThreshold <= 0 || duration < slowThreshold {
 		return
 	}
-	if c.slowRequests != nil {
-		c.slowRequests.WithLabelValues(c.dbName, op).Inc()
+	if slowRequests != nil {
+		slowRequests.WithLabelValues(dbName, op).Inc()
 	}
 
-	c.logWarn(ctx, "neo4j slow query", "op", op, "duration", duration, "statement", statement)
+	c.logWarn(ctx, logger, "neo4j slow query", "op", op, "duration", duration, "statement", statement)
 }
 
-func (c *Client) logWarn(ctx context.Context, msg string, args ...any) {
-	if c.logger != nil {
-		c.logger.WarnContext(ctx, msg, args...)
+func (c *Client) logWarn(ctx context.Context, logger *logging.Logger, msg string, args ...any) {
+	if logger != nil {
+		logger.WarnContext(ctx, msg, args...)
 		return
 	}
 	logging.Warn(ctx, msg, args...)
+}
+
+func (c *Client) snapshot() (neo4j.Driver, *logging.Logger, limiter.Limiter, limiter.ConcurrencyLimiter, *breaker.Breaker, string, time.Duration, *prometheus.CounterVec, *prometheus.HistogramVec, *prometheus.CounterVec) {
+	if c == nil {
+		return nil, logging.Default(), nil, nil, nil, "", 0, nil, nil, nil
+	}
+	c.mu.RLock()
+	driver := c.driver
+	logger := c.logger
+	limit := c.limiter
+	concurrency := c.concurrency
+	cb := c.breaker
+	dbName := c.dbName
+	slowThreshold := c.slowThreshold
+	requestsTotal := c.requestsTotal
+	requestDuration := c.requestDuration
+	slowRequests := c.slowRequests
+	c.mu.RUnlock()
+	if logger == nil {
+		logger = logging.Default()
+	}
+	return driver, logger, limit, concurrency, cb, dbName, slowThreshold, requestsTotal, requestDuration, slowRequests
+}
+
+func newNeo4jDriver(cfg Config) (neo4j.Driver, error) {
+	driver, err := neo4j.NewDriver(cfg.URI, neo4j.BasicAuth(cfg.Username, cfg.Password, ""))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create neo4j driver: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := driver.VerifyConnectivity(ctx); err != nil {
+		_ = driver.Close(ctx)
+		return nil, fmt.Errorf("failed to verify neo4j connectivity: %w", err)
+	}
+
+	return driver, nil
 }

@@ -195,6 +195,9 @@ type SimpleConditionEvaluator struct {
 
 // NewSimpleConditionEvaluator 创建简单条件评估器。
 func NewSimpleConditionEvaluator(logger *slog.Logger) *SimpleConditionEvaluator {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &SimpleConditionEvaluator{logger: logger}
 }
 
@@ -381,6 +384,9 @@ type HTTPHandler struct {
 
 // NewHTTPHandler 创建 HTTP 处理器。
 func NewHTTPHandler(logger *slog.Logger) *HTTPHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &HTTPHandler{logger: logger}
 }
 
@@ -711,6 +717,9 @@ type ScriptHandler struct {
 
 // NewScriptHandler 创建脚本处理器。
 func NewScriptHandler(logger *slog.Logger) *ScriptHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &ScriptHandler{
 		scripts: make(map[string]func(ctx *ExecutionContext) (*ExecutionResult, error)),
 		logger:  logger,
@@ -726,6 +735,9 @@ func (h *ScriptHandler) RegisterScript(name string, fn func(ctx *ExecutionContex
 
 // Execute 执行脚本。
 func (h *ScriptHandler) Execute(ctx *ExecutionContext) (*ExecutionResult, error) {
+	if ctx.Node.Config == nil {
+		return nil, errors.New("script handler requires config")
+	}
 	scriptName, _ := ctx.Node.Config["script"].(string)
 	if scriptName == "" {
 		return nil, errors.New("script name not specified")
@@ -758,6 +770,9 @@ func NewNotificationHandler(
 	sendFunc func(ctx context.Context, channel, recipient, subject, content string) error,
 	logger *slog.Logger,
 ) *NotificationHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &NotificationHandler{
 		sendFunc: sendFunc,
 		logger:   logger,
@@ -766,6 +781,9 @@ func NewNotificationHandler(
 
 // Execute 执行通知发送。
 func (h *NotificationHandler) Execute(ctx *ExecutionContext) (*ExecutionResult, error) {
+	if h.sendFunc == nil {
+		return nil, errors.New("notification handler requires sendFunc")
+	}
 	config := ctx.Node.Config
 	if config == nil {
 		return nil, errors.New("notification handler requires config")
@@ -814,11 +832,17 @@ type DelayHandler struct {
 
 // NewDelayHandler 创建延时处理器。
 func NewDelayHandler(logger *slog.Logger) *DelayHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &DelayHandler{logger: logger}
 }
 
 // Execute 执行延时。
 func (h *DelayHandler) Execute(ctx *ExecutionContext) (*ExecutionResult, error) {
+	if ctx.Node.Config == nil {
+		return nil, errors.New("delay handler requires config")
+	}
 	durationStr, _ := ctx.Node.Config["duration"].(string)
 	if durationStr == "" {
 		return nil, errors.New("delay handler requires duration in config")
@@ -858,11 +882,17 @@ type TransformHandler struct {
 
 // NewTransformHandler 创建数据转换处理器。
 func NewTransformHandler(logger *slog.Logger) *TransformHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &TransformHandler{logger: logger}
 }
 
 // Execute 执行数据转换。
 func (h *TransformHandler) Execute(ctx *ExecutionContext) (*ExecutionResult, error) {
+	if ctx.Node.Config == nil {
+		return nil, errors.New("transform handler requires config")
+	}
 	mappings, ok := ctx.Node.Config["mappings"].(map[string]any)
 	if !ok {
 		return nil, errors.New("transform handler requires mappings in config")
@@ -901,11 +931,17 @@ type ValidationHandler struct {
 
 // NewValidationHandler 创建验证处理器。
 func NewValidationHandler(logger *slog.Logger) *ValidationHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &ValidationHandler{logger: logger}
 }
 
 // Execute 执行验证。
 func (h *ValidationHandler) Execute(ctx *ExecutionContext) (*ExecutionResult, error) {
+	if ctx.Node.Config == nil {
+		return nil, errors.New("validation handler requires config")
+	}
 	rules, ok := ctx.Node.Config["rules"].([]any)
 	if !ok {
 		return nil, errors.New("validation handler requires rules in config")

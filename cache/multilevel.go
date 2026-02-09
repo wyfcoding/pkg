@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,6 +24,9 @@ type MultiLevelCache struct {
 
 // NewMultiLevelCache 初始化并返回一个新的多级缓存管理器。
 func NewMultiLevelCache(l1, l2 Cache, logger *logging.Logger) *MultiLevelCache {
+	if logger == nil {
+		logger = logging.Default()
+	}
 	logger.Info("multi-level cache initialized", "strategy", "L1_L2_Coordination")
 	return &MultiLevelCache{
 		l1:     l1,
@@ -35,6 +39,12 @@ func NewMultiLevelCache(l1, l2 Cache, logger *logging.Logger) *MultiLevelCache {
 // Get 依次尝试从各级缓存中检索数据。
 // 流程：L1 命中直接返回 -> L2 命中则回填 L1 并返回 -> 全不中返回 ErrCacheMiss。
 func (c *MultiLevelCache) Get(ctx context.Context, key string, value any) error {
+	if c == nil {
+		return errors.New("multi-level cache is nil")
+	}
+	if c.l1 == nil || c.l2 == nil {
+		return errors.New("multi-level cache backend is nil")
+	}
 	ctx, span := c.tracer.Start(ctx, "multi_level_cache.get", trace.WithAttributes(
 		attribute.String("cache.key", key),
 	))
@@ -63,6 +73,12 @@ func (c *MultiLevelCache) Get(ctx context.Context, key string, value any) error 
 // Set 同时更新各级缓存，确保数据一致性。
 // 策略：先写 L2（确保全局可见），再写 L1（单机可见）。
 func (c *MultiLevelCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
+	if c == nil {
+		return errors.New("multi-level cache is nil")
+	}
+	if c.l1 == nil || c.l2 == nil {
+		return errors.New("multi-level cache backend is nil")
+	}
 	ctx, span := c.tracer.Start(ctx, "multi_level_cache.set", trace.WithAttributes(
 		attribute.String("cache.key", key),
 	))
@@ -82,6 +98,12 @@ func (c *MultiLevelCache) Set(ctx context.Context, key string, value any, expira
 
 // GetOrSet 多级缓存下的防击穿逻辑
 func (c *MultiLevelCache) GetOrSet(ctx context.Context, key string, value any, expiration time.Duration, fn func() (any, error)) error {
+	if c == nil {
+		return errors.New("multi-level cache is nil")
+	}
+	if c.l1 == nil || c.l2 == nil {
+		return errors.New("multi-level cache backend is nil")
+	}
 	// 1. 先尝试获取
 	err := c.Get(ctx, key, value)
 	if err == nil {
@@ -102,6 +124,12 @@ func (c *MultiLevelCache) GetOrSet(ctx context.Context, key string, value any, e
 }
 
 func (c *MultiLevelCache) Delete(ctx context.Context, keys ...string) error {
+	if c == nil {
+		return errors.New("multi-level cache is nil")
+	}
+	if c.l1 == nil || c.l2 == nil {
+		return errors.New("multi-level cache backend is nil")
+	}
 	if err := c.l1.Delete(ctx, keys...); err != nil {
 		c.logger.ErrorContext(ctx, "failed to delete from L1 cache", "keys", keys, "error", err)
 	}
@@ -109,6 +137,12 @@ func (c *MultiLevelCache) Delete(ctx context.Context, keys ...string) error {
 }
 
 func (c *MultiLevelCache) Exists(ctx context.Context, key string) (bool, error) {
+	if c == nil {
+		return false, errors.New("multi-level cache is nil")
+	}
+	if c.l1 == nil || c.l2 == nil {
+		return false, errors.New("multi-level cache backend is nil")
+	}
 	exists, err := c.l1.Exists(ctx, key)
 	if err != nil {
 		c.logger.ErrorContext(ctx, "failed to check L1 cache existence", "key", key, "error", err)
@@ -120,6 +154,12 @@ func (c *MultiLevelCache) Exists(ctx context.Context, key string) (bool, error) 
 }
 
 func (c *MultiLevelCache) Close() error {
+	if c == nil {
+		return nil
+	}
+	if c.l1 == nil || c.l2 == nil {
+		return errors.New("multi-level cache backend is nil")
+	}
 	var err error
 	if l1Err := c.l1.Close(); l1Err != nil {
 		c.logger.Error("failed to close L1 cache", "error", l1Err)

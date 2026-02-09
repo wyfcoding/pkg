@@ -201,6 +201,9 @@ func NewService(cfg *Config, logger *slog.Logger) *Service {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Service{
 		senders:    make(map[Channel]Sender),
 		config:     cfg,
@@ -212,6 +215,9 @@ func NewService(cfg *Config, logger *slog.Logger) *Service {
 
 // RegisterSender 注册渠道发送器。
 func (s *Service) RegisterSender(sender Sender) {
+	if sender == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.senders[sender.Channel()] = sender
@@ -254,6 +260,9 @@ func (s *Service) Stop() {
 
 // Send 同步发送通知。
 func (s *Service) Send(ctx context.Context, msg *Message) (*Result, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("notification message is nil")
+	}
 	start := time.Now()
 
 	s.mu.RLock()
@@ -313,6 +322,9 @@ func (s *Service) Send(ctx context.Context, msg *Message) (*Result, error) {
 
 // SendAsync 异步发送通知。
 func (s *Service) SendAsync(ctx context.Context, msg *Message) error {
+	if msg == nil {
+		return fmt.Errorf("notification message is nil")
+	}
 	select {
 	case s.asyncQueue <- msg:
 		s.logger.DebugContext(ctx, "notification queued for async send",
@@ -333,6 +345,9 @@ func (s *Service) SendBatch(ctx context.Context, msgs []*Message) ([]*Result, er
 	// 按渠道分组
 	channelMsgs := make(map[Channel][]*Message)
 	for _, msg := range msgs {
+		if msg == nil {
+			continue
+		}
 		channelMsgs[msg.Channel] = append(channelMsgs[msg.Channel], msg)
 	}
 

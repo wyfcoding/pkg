@@ -24,6 +24,9 @@ type Lifecycle struct {
 
 // NewLifecycle 创建一个新的生命周期管理器实例。
 func NewLifecycle(logger *slog.Logger) *Lifecycle {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Lifecycle{
 		hooks:  make([]Hook, 0),
 		logger: logger.With("module", "lifecycle"),

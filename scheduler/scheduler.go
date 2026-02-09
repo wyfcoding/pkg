@@ -5,55 +5,45 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/robfig/cron/v3"
+	"github.com/wyfcoding/pkg/lock"
 	"github.com/wyfcoding/pkg/logging"
 	"github.com/wyfcoding/pkg/metrics"
-	"github.com/wyfcoding/pkg/retry"
 )
 
 var (
 	// ErrJobNameEmpty 任务名称为空。
 	ErrJobNameEmpty = errors.New("job name is empty")
-	// ErrJobIntervalInvalid 任务间隔非法。
-	ErrJobIntervalInvalid = errors.New("job interval is invalid")
-	// ErrJobAlreadyExists 任务名称重复。
-	ErrJobAlreadyExists = errors.New("job already exists")
 	// ErrJobHandlerNil 任务处理函数为空。
 	ErrJobHandlerNil = errors.New("job handler is nil")
 )
 
-// Job 定义定时任务函数原型。
-type Job func(ctx context.Context) error
+// JobFunc 定义单纯的任务函数。
+type JobFunc func(ctx context.Context) error
 
-// JobConfig 定义任务调度参数。
+// JobConfig 定义任务配置。
 type JobConfig struct {
-	Name            string        // 任务名称（唯一）。
-	Interval        time.Duration // 调度间隔。
-	Jitter          time.Duration // 抖动时间，用于打散同一时刻的任务触发。
-	Timeout         time.Duration // 单次执行超时。
-	RetryConfig     retry.Config  // 重试策略配置。
-	RunOnStart      bool          // 是否在启动时立即执行一次。
-	AllowConcurrent bool          // 是否允许任务并发执行。
-	Enabled         bool          // 是否启用任务。
+	Name            string               // 任务名称（唯一标识，用于锁和其他追踪）。
+	CronExpr        string               // Cron 表达式 (例如 "* * * * *")。
+	RunOnStart      bool                 // 是否启动时立即运行一次。
+	Retry           int                  // 失败重试次数 (简单重试)。
+	Timeout         time.Duration        // 单次执行超时。
+	Lock            lock.DistributedLock // 分布式锁实例 (可选，若提供则启用分布式互斥)。
+	LockTTL         time.Duration        // 锁的过期时间。
+	AllowConcurrent bool                 // 允许并发 (单实例内并发，若有分布式锁则多实例也互斥)。
 }
 
-// Scheduler 负责任务的统一调度与生命周期管理。
+// Scheduler 分装 robfig/cron 的通用调度器。
 type Scheduler struct {
+	cron    *cron.Cron
 	logger  *slog.Logger
 	mu      sync.Mutex
-	jobs    map[string]*jobRunner
-	stop    chan struct{}
-	wg      sync.WaitGroup
+	entries map[string]cron.EntryID
+	jobs    map[string]*JobConfig
 	metrics *schedulerMetrics
-}
-
-type jobRunner struct {
-	cfg     JobConfig
-	handler Job
-	running int32
 }
 
 type schedulerMetrics struct {
@@ -62,16 +52,18 @@ type schedulerMetrics struct {
 	jobRunning  *prometheus.GaugeVec
 }
 
-// NewScheduler 创建任务调度器。
-func NewScheduler(logger *logging.Logger) *Scheduler {
-	return NewSchedulerWithMetrics(logger, nil)
-}
-
-// NewSchedulerWithMetrics 创建带指标采集的任务调度器。
-func NewSchedulerWithMetrics(logger *logging.Logger, m *metrics.Metrics) *Scheduler {
+// NewScheduler 创建新的调度器。
+func NewScheduler(logger *logging.Logger, m *metrics.Metrics) *Scheduler {
 	if logger == nil {
 		logger = logging.Default()
 	}
+
+	cronLogger := &cronLoggerAdapter{logger: logger.Logger}
+	c := cron.New(
+		cron.WithSeconds(), // 支持秒级 cron (6位)
+		cron.WithChain(cron.Recover(cronLogger), cron.SkipIfStillRunning(cronLogger)),
+		cron.WithLogger(cronLogger),
+	)
 
 	var schedMetrics *schedulerMetrics
 	if m != nil {
@@ -99,159 +91,168 @@ func NewSchedulerWithMetrics(logger *logging.Logger, m *metrics.Metrics) *Schedu
 	}
 
 	return &Scheduler{
+		cron:    c,
 		logger:  logger.Logger,
-		jobs:    make(map[string]*jobRunner),
-		stop:    make(chan struct{}),
+		entries: make(map[string]cron.EntryID),
+		jobs:    make(map[string]*JobConfig),
 		metrics: schedMetrics,
 	}
 }
 
-// AddJob 注册一个新的调度任务。
-func (s *Scheduler) AddJob(cfg JobConfig, handler Job) error {
+// AddJob 添加或更新任务。如果任务名已存在，会先移除旧任务。
+func (s *Scheduler) AddJob(cfg JobConfig, handler JobFunc) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if cfg.Name == "" {
 		return ErrJobNameEmpty
-	}
-	if cfg.Interval <= 0 {
-		return ErrJobIntervalInvalid
 	}
 	if handler == nil {
 		return ErrJobHandlerNil
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.jobs[cfg.Name]; exists {
-		return ErrJobAlreadyExists
+	// 移除旧任务
+	if id, exists := s.entries[cfg.Name]; exists {
+		s.cron.Remove(id)
+		delete(s.entries, cfg.Name)
 	}
 
-	if cfg.RetryConfig == (retry.Config{}) {
-		cfg.RetryConfig = retry.Config{MaxRetries: 0}
-	}
-	if cfg.Enabled == false {
-		cfg.Enabled = true
+	wrapper := s.wrapJob(cfg, handler)
+
+	// 添加到 cron
+	id, err := s.cron.AddFunc(cfg.CronExpr, wrapper)
+	if err != nil {
+		return err
 	}
 
-	s.jobs[cfg.Name] = &jobRunner{
-		cfg:     cfg,
-		handler: handler,
+	s.entries[cfg.Name] = id
+	s.jobs[cfg.Name] = &cfg
+
+	s.logger.Info("job added to scheduler", "name", cfg.Name, "cron", cfg.CronExpr)
+
+	if cfg.RunOnStart {
+		go wrapper()
 	}
 
 	return nil
 }
 
-// Start 启动调度器并异步运行所有任务。
-func (s *Scheduler) Start(ctx context.Context) {
+// RemoveJob 移除任务。
+func (s *Scheduler) RemoveJob(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, runner := range s.jobs {
-		if !runner.cfg.Enabled {
-			continue
-		}
-		s.wg.Add(1)
-		go s.runJob(ctx, runner)
+	if id, exists := s.entries[name]; exists {
+		s.cron.Remove(id)
+		delete(s.entries, name)
+		delete(s.jobs, name)
+		s.logger.Info("job removed from scheduler", "name", name)
 	}
 }
 
-// Stop 关闭调度器并等待所有任务退出。
+// Start 启动调度器。
+func (s *Scheduler) Start(ctx context.Context) {
+	s.cron.Start()
+	s.logger.Info("scheduler started")
+}
+
+// Stop 停止调度器。
 func (s *Scheduler) Stop(ctx context.Context) error {
-	close(s.stop)
-
-	done := make(chan struct{})
-	go func() {
-		s.wg.Wait()
-		close(done)
-	}()
-
+	ctx = s.cron.Stop() // cron.Stop returns a context that is done when stop completes
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
+		s.logger.Info("scheduler stopped")
 		return nil
+	case <-time.After(5 * time.Second): // Default timeout if context not provided or needed
+		return errors.New("scheduler stop timed out")
 	}
 }
 
-func (s *Scheduler) runJob(ctx context.Context, runner *jobRunner) {
-	defer s.wg.Done()
-
-	if runner.cfg.RunOnStart {
-		s.execute(ctx, runner)
-	}
-
-	ticker := time.NewTicker(runner.cfg.Interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if runner.cfg.Jitter > 0 {
-				time.Sleep(randomJitter(runner.cfg.Jitter))
-			}
-			s.execute(ctx, runner)
-		case <-s.stop:
-			return
-		case <-ctx.Done():
-			return
+// wrapJob 包装任务执行逻辑（锁、重试、指标、超时）。
+func (s *Scheduler) wrapJob(cfg JobConfig, handler JobFunc) func() {
+	return func() {
+		ctx := context.Background()
+		// 超时控制
+		if cfg.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, cfg.Timeout)
+			defer cancel()
 		}
-	}
-}
 
-func (s *Scheduler) execute(ctx context.Context, runner *jobRunner) {
-	if !runner.cfg.AllowConcurrent {
-		if !atomic.CompareAndSwapInt32(&runner.running, 0, 1) {
-			s.logger.Warn("scheduler job skipped (already running)", "job", runner.cfg.Name)
-			if s.metrics != nil {
-				s.metrics.jobRuns.WithLabelValues(runner.cfg.Name, "skipped").Inc()
+		start := time.Now()
+
+		// 分布式锁
+		if cfg.Lock != nil {
+			// 尝试加锁 (非阻塞，失败即跳过)
+			lockKey := "scheduler:lock:" + cfg.Name
+			ttl := cfg.LockTTL
+			if ttl == 0 {
+				ttl = 10 * time.Second // 默认 10s
 			}
-			return
+			// 使用 TryLock，waitTimeout=0 (立即返回)
+			token, err := cfg.Lock.TryLock(ctx, lockKey, ttl, 0)
+			if err != nil {
+				s.logger.Debug("job skipped (locked by other instance)", "name", cfg.Name)
+				if s.metrics != nil {
+					s.metrics.jobRuns.WithLabelValues(cfg.Name, "skipped_locked").Inc()
+				}
+				return
+			}
+			defer func() {
+				// 使用新的 context 释放锁，防止 ctx 已超时
+				unlockCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				if err := cfg.Lock.Unlock(unlockCtx, lockKey, token); err != nil {
+					s.logger.Warn("failed to unlock job", "name", cfg.Name, "error", err)
+				}
+			}()
 		}
-		defer atomic.StoreInt32(&runner.running, 0)
-	}
 
-	execCtx := ctx
-	var cancel context.CancelFunc
-	if runner.cfg.Timeout > 0 {
-		execCtx, cancel = context.WithTimeout(ctx, runner.cfg.Timeout)
-		defer cancel()
-	}
-
-	start := time.Now()
-	if s.metrics != nil {
-		s.metrics.jobRunning.WithLabelValues(runner.cfg.Name).Inc()
-	}
-	err := retry.If(execCtx, func() error {
-		return runner.handler(execCtx)
-	}, func(err error) bool {
-		return err != nil
-	}, runner.cfg.RetryConfig)
-	if s.metrics != nil {
-		s.metrics.jobRunning.WithLabelValues(runner.cfg.Name).Dec()
-	}
-
-	if err != nil {
 		if s.metrics != nil {
-			s.metrics.jobRuns.WithLabelValues(runner.cfg.Name, "failed").Inc()
-			s.metrics.jobDuration.WithLabelValues(runner.cfg.Name, "failed").Observe(time.Since(start).Seconds())
+			s.metrics.jobRunning.WithLabelValues(cfg.Name).Inc()
+			defer s.metrics.jobRunning.WithLabelValues(cfg.Name).Dec()
 		}
-		s.logger.Error("scheduler job failed", "job", runner.cfg.Name, "error", err)
-		return
-	}
 
-	if s.metrics != nil {
-		s.metrics.jobRuns.WithLabelValues(runner.cfg.Name, "success").Inc()
-		s.metrics.jobDuration.WithLabelValues(runner.cfg.Name, "success").Observe(time.Since(start).Seconds())
+		var err error
+		// 执行逻辑 (含简单重试)
+		for i := 0; i <= cfg.Retry; i++ {
+			err = handler(ctx)
+			if err == nil {
+				break
+			}
+			if i < cfg.Retry {
+				time.Sleep(time.Duration(i+1) * 100 * time.Millisecond) // 线性退避
+				s.logger.Warn("job failed, retrying", "name", cfg.Name, "attempt", i+1, "error", err)
+			}
+		}
+
+		duration := time.Since(start).Seconds()
+
+		if err != nil {
+			s.logger.Error("job execution failed", "name", cfg.Name, "error", err)
+			if s.metrics != nil {
+				s.metrics.jobRuns.WithLabelValues(cfg.Name, "failed").Inc()
+				s.metrics.jobDuration.WithLabelValues(cfg.Name, "failed").Observe(duration)
+			}
+		} else {
+			s.logger.Info("job execution success", "name", cfg.Name, "duration", duration)
+			if s.metrics != nil {
+				s.metrics.jobRuns.WithLabelValues(cfg.Name, "success").Inc()
+				s.metrics.jobDuration.WithLabelValues(cfg.Name, "success").Observe(duration)
+			}
+		}
 	}
-	s.logger.Debug("scheduler job succeeded", "job", runner.cfg.Name)
 }
 
-func randomJitter(maxJitter time.Duration) time.Duration {
-	if maxJitter <= 0 {
-		return 0
-	}
-	n := time.Now().UnixNano()
-	if n < 0 {
-		n = -n
-	}
-	return time.Duration(n % int64(maxJitter))
+// cronLoggerAdapter 适配 cron.Logger 接口
+type cronLoggerAdapter struct {
+	logger *slog.Logger
+}
+
+func (l *cronLoggerAdapter) Info(msg string, keysAndValues ...interface{}) {
+	l.logger.Info(msg, keysAndValues...)
+}
+
+func (l *cronLoggerAdapter) Error(err error, msg string, keysAndValues ...interface{}) {
+	l.logger.Error(msg, append(keysAndValues, "error", err)...)
 }

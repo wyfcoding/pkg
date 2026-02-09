@@ -39,6 +39,9 @@ type BaseEvaluator struct {
 
 // NewBaseEvaluator 创建一个新的基础评估器。
 func NewBaseEvaluator(logger *slog.Logger) *BaseEvaluator {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &BaseEvaluator{
 		logger: logger,
 	}

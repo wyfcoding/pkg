@@ -2,6 +2,7 @@ package database
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/wyfcoding/pkg/breaker"
@@ -31,6 +32,7 @@ const (
 
 // DB 封装了 GORM 实例.
 type DB struct {
+	mu sync.RWMutex
 	*gorm.DB
 	cfg     *config.DatabaseConfig
 	breaker *breaker.Breaker
@@ -49,6 +51,9 @@ func SetDefault(db *DB) {
 
 // NewDB 初始化并返回一个功能增强的数据库连接封装.
 func NewDB(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) (*DB, error) {
+	if logger == nil {
+		logger = logging.Default()
+	}
 	var dialer gorm.Dialector
 
 	dsn := cfg.DSN
@@ -143,7 +148,11 @@ func (db *DB) registerMetrics(m *metrics.Metrics) {
 
 // Ping 检查数据库连接是否存活.
 func (db *DB) Ping() error {
-	sqlDB, err := db.DB.DB()
+	orm, _, _ := db.snapshot()
+	if orm == nil {
+		return errors.New("database is nil")
+	}
+	sqlDB, err := orm.DB()
 	if err != nil {
 		return err
 	}
@@ -152,19 +161,97 @@ func (db *DB) Ping() error {
 
 // Transaction 封装了带熔断保护的事务逻辑.
 func (db *DB) Transaction(fc func(tx *gorm.DB) error) error {
-	_, err := db.breaker.Execute(func() (any, error) {
-		errTx := db.DB.Transaction(fc)
+	orm, cb, _ := db.snapshot()
+	if orm == nil {
+		return errors.New("database is nil")
+	}
+	exec := func() (any, error) {
+		errTx := orm.Transaction(fc)
 		if errTx != nil {
 			return nil, xerrors.Wrap(errTx, xerrors.ErrInternal, ErrTransactionFailed.Error())
 		}
 
 		return struct{}{}, nil
-	})
+	}
+
+	var err error
+	if cb != nil {
+		_, err = cb.Execute(exec)
+	} else {
+		_, err = exec()
+	}
 
 	return err
 }
 
 // RawDB 暴露原始 GORM 实例.
 func (db *DB) RawDB() *gorm.DB {
-	return db.DB
+	orm, _, _ := db.snapshot()
+	return orm
+}
+
+// UpdateConfig 使用最新配置刷新数据库连接。
+func (db *DB) UpdateConfig(cfg config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, m *metrics.Metrics) error {
+	if db == nil {
+		return errors.New("database is nil")
+	}
+	newDB, err := NewDB(cfg, cbCfg, logger, m)
+	if err != nil {
+		return err
+	}
+
+	db.mu.Lock()
+	oldDB := db.DB
+	db.DB = newDB.DB
+	db.cfg = newDB.cfg
+	db.breaker = newDB.breaker
+	db.logger = newDB.logger
+	db.mu.Unlock()
+
+	if oldDB != nil {
+		if sqlDB, err := oldDB.DB(); err == nil {
+			if errClose := sqlDB.Close(); errClose != nil && db.logger != nil {
+				db.logger.Error("failed to close old database", "error", errClose)
+			}
+		}
+	}
+
+	if db.logger != nil {
+		db.logger.Info("database updated", "driver", cfg.Driver)
+	}
+
+	return nil
+}
+
+// RegisterReloadHook 注册数据库热更新回调。
+func RegisterReloadHook(db *DB, logger *logging.Logger, m *metrics.Metrics) {
+	if db == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		if err := db.UpdateConfig(updated.Data.Database, updated.CircuitBreaker, logger, m); err != nil {
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("database reload failed", "error", err)
+		}
+	})
+}
+
+func (db *DB) snapshot() (*gorm.DB, *breaker.Breaker, *logging.Logger) {
+	if db == nil {
+		return nil, nil, logging.Default()
+	}
+	db.mu.RLock()
+	orm := db.DB
+	cb := db.breaker
+	logger := db.logger
+	db.mu.RUnlock()
+	if logger == nil {
+		logger = logging.Default()
+	}
+	return orm, cb, logger
 }

@@ -109,6 +109,12 @@ type PushSender struct {
 
 // NewPushSender 创建 Push 发送器实例。
 func NewPushSender(cfg *PushConfig, logger *slog.Logger) (*PushSender, error) {
+	if cfg == nil {
+		cfg = &PushConfig{}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
@@ -138,6 +144,9 @@ func (s *PushSender) Channel() Channel {
 
 // Send 发送单条推送。
 func (s *PushSender) Send(ctx context.Context, msg *Message) (*Result, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("push message is nil")
+	}
 	start := time.Now()
 	result := &Result{
 		MessageID: msg.ID,

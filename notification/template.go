@@ -131,6 +131,9 @@ type compiledTemplate struct {
 
 // NewDefaultTemplateRenderer 创建默认模板渲染器。
 func NewDefaultTemplateRenderer(store TemplateStore, logger *slog.Logger) *DefaultTemplateRenderer {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &DefaultTemplateRenderer{
 		store:  store,
 		cache:  make(map[string]*compiledTemplate),
@@ -179,6 +182,9 @@ func (r *DefaultTemplateRenderer) Render(ctx context.Context, templateID string,
 
 // getCompiled 获取或编译模板。
 func (r *DefaultTemplateRenderer) getCompiled(ctx context.Context, templateID string) (*compiledTemplate, error) {
+	if r.store == nil {
+		return nil, fmt.Errorf("template store is nil")
+	}
 	// 先尝试从缓存获取
 	r.mu.RLock()
 	if compiled, ok := r.cache[templateID]; ok {

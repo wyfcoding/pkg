@@ -113,3 +113,68 @@ func (m *Manager) Close() error {
 
 	return nil
 }
+
+// UpdateConfig 使用最新配置刷新分片连接。
+func (m *Manager) UpdateConfig(configs []config.DatabaseConfig, cbCfg config.CircuitBreakerConfig, logger *logging.Logger, metrics *metrics.Metrics) error {
+	if m == nil {
+		return errors.New("sharding manager is nil")
+	}
+	if len(configs) == 0 {
+		return ErrNoConfigs
+	}
+	if logger == nil {
+		logger = logging.Default()
+	}
+
+	newShards := make(map[int]*database.DB)
+	for i, cfg := range configs {
+		db, err := database.NewDB(cfg, cbCfg, logger, metrics)
+		if err != nil {
+			return fmt.Errorf("failed to connect to shard %d: %w", i, err)
+		}
+		newShards[i] = db
+	}
+
+	m.mu.Lock()
+	oldShards := m.shards
+	m.shards = newShards
+	m.shardCount = len(configs)
+	m.mu.Unlock()
+
+	for idx, db := range oldShards {
+		sqlDB, err := db.RawDB().DB()
+		if err != nil {
+			logger.Error("failed to get sql db for old shard", "shard", idx, "error", err)
+			continue
+		}
+		if errClose := sqlDB.Close(); errClose != nil {
+			logger.Error("failed to close old shard", "shard", idx, "error", errClose)
+		}
+	}
+
+	logger.Info("database shards updated", "shards_count", len(configs))
+
+	return nil
+}
+
+// RegisterReloadHook 注册分片连接热更新回调。
+func RegisterReloadHook(manager *Manager, logger *logging.Logger, metrics *metrics.Metrics) {
+	if manager == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		shards := updated.Data.Shards
+		if len(shards) == 0 {
+			shards = []config.DatabaseConfig{updated.Data.Database}
+		}
+		if err := manager.UpdateConfig(shards, updated.CircuitBreaker, logger, metrics); err != nil {
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("sharding reload failed", "error", err)
+		}
+	})
+}

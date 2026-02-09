@@ -3,7 +3,6 @@ package database
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -42,12 +41,11 @@ func (e *BaseEntity) ClearEvents() {
 
 // OutboxRecord 必须与业务在同一事务中持久化的记录.
 type OutboxRecord struct {
-	CreatedAt time.Time `gorm:"index"`
-	Topic     string    `gorm:"type:varchar(255);not null;index"`
-	Key       string    `gorm:"type:varchar(255);index"`
-	Payload   []byte    `gorm:"type:blob;not null"`
-	ID        uint64    `gorm:"primarykey"`
-	Status    int8      `gorm:"type:tinyint;default:0;index"` // 0: Pending, 1: Sent, 2: Failed.
+	gorm.Model
+	Topic   string `gorm:"type:varchar(255);not null;index"`
+	Key     string `gorm:"type:varchar(255);index"`
+	Payload []byte `gorm:"type:blob;not null"`
+	Status  int8   `gorm:"type:tinyint;default:0;index"` // 0: Pending, 1: Sent, 2: Failed.
 }
 
 // TableName 返回表名.
@@ -96,12 +94,10 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 		}
 
 		record := &OutboxRecord{
-			Topic:     event.EventName(),
-			Key:       event.EventKey(),
-			Payload:   payload,
-			Status:    0,
-			CreatedAt: time.Now(),
-			ID:        0,
+			Topic:   event.EventName(),
+			Key:     event.EventKey(),
+			Payload: payload,
+			Status:  0,
 		}
 
 		if err := db.Session(&gorm.Session{NewDB: true}).Create(record).Error; err != nil {

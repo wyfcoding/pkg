@@ -45,6 +45,9 @@ type Engine struct {
 
 // NewEngine 初始化并返回一个新的规则引擎。
 func NewEngine(logger *slog.Logger) *Engine {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Engine{
 		logger:   logger.With("module", "rule_engine"),
 		rules:    make(map[string]*Rule),

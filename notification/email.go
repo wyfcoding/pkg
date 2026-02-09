@@ -101,6 +101,12 @@ type EmailSender struct {
 
 // NewEmailSender 创建 Email 发送器实例。
 func NewEmailSender(cfg *EmailConfig, logger *slog.Logger) *EmailSender {
+	if cfg == nil {
+		cfg = &EmailConfig{}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
@@ -120,6 +126,9 @@ func (s *EmailSender) Channel() Channel {
 
 // Send 发送单封邮件。
 func (s *EmailSender) Send(ctx context.Context, msg *Message) (*Result, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("email message is nil")
+	}
 	start := time.Now()
 	result := &Result{
 		MessageID: msg.ID,
@@ -175,6 +184,9 @@ func (s *EmailSender) Send(ctx context.Context, msg *Message) (*Result, error) {
 func (s *EmailSender) SendBatch(ctx context.Context, msgs []*Message) ([]*Result, error) {
 	results := make([]*Result, 0, len(msgs))
 	for _, msg := range msgs {
+		if msg == nil {
+			continue
+		}
 		result, err := s.Send(ctx, msg)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "batch email send failed for message",

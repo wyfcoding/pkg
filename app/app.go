@@ -23,6 +23,9 @@ type App struct {
 
 // New 创建一个新的应用程序实例.
 func New(name string, logger *slog.Logger, opts ...Option) *App {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	o := options{}
 	for _, opt := range opts {
 		opt(&o)

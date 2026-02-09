@@ -73,7 +73,7 @@ func (c *ConsulClient) pickEndpoint() string {
 
 func (c *ConsulClient) buildURL(path string, query url.Values) string {
 	base := strings.TrimRight(c.pickEndpoint(), "/")
-	if query == nil || len(query) == 0 {
+	if len(query) == 0 {
 		return base + path
 	}
 	return base + path + "?" + query.Encode()

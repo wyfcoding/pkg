@@ -72,6 +72,9 @@ type Manager struct {
 
 // NewManager 创建并返回一个新的 Outbox 管理器实例。
 func NewManager(db *gorm.DB, logger *slog.Logger) *Manager {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Manager{
 		db:     db,
 		logger: logger.With("module", "outbox"),

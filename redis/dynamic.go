@@ -97,6 +97,25 @@ func (d *DynamicClient) Close() error {
 	return nil
 }
 
+// RegisterReloadHook 注册 Redis 客户端热更新回调。
+func RegisterReloadHook(client *DynamicClient) {
+	if client == nil {
+		return
+	}
+	config.RegisterReloadHook(func(updated *config.Config) {
+		if updated == nil {
+			return
+		}
+		if err := client.UpdateConfig(updated.Data.Redis); err != nil {
+			logger := client.logger
+			if logger == nil {
+				logger = logging.Default()
+			}
+			logger.Error("redis client reload failed", "error", err)
+		}
+	})
+}
+
 func (d *DynamicClient) load() *dynamicState {
 	if d == nil {
 		return nil

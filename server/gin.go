@@ -45,6 +45,9 @@ func NewGinServer(engine *gin.Engine, addr string, logger *slog.Logger, options 
 	if len(options) > 0 {
 		opts = options[0]
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	return &GinServer{
 		server: &http.Server{

@@ -63,9 +63,10 @@ type Builder[C any, S any] struct {
 	wsManager        *server.WSManager
 	metricsPort      string
 	appOpts          []Option
-	healthCheckers   []func() error
+	healthCheckers   []health.Checker
 	grpcInterceptors []grpc.UnaryServerInterceptor
 	ginMiddleware    []gin.HandlerFunc
+	serverProviders  []func(S) server.Server
 }
 
 // NewBuilder 创建一个新的应用构建器。
@@ -73,9 +74,10 @@ func NewBuilder[C any, S any](serviceName string) *Builder[C, S] {
 	return &Builder[C, S]{
 		serviceName:      serviceName,
 		appOpts:          make([]Option, 0),
-		healthCheckers:   make([]func() error, 0),
+		healthCheckers:   make([]health.Checker, 0),
 		grpcInterceptors: make([]grpc.UnaryServerInterceptor, 0),
 		ginMiddleware:    make([]gin.HandlerFunc, 0),
+		serverProviders:  make([]func(S) server.Server, 0),
 	}
 }
 
@@ -115,7 +117,7 @@ func (b *Builder[C, S]) WithMetrics(port string) *Builder[C, S] {
 }
 
 // WithHealthChecker 添加自定义健康检查。
-func (b *Builder[C, S]) WithHealthChecker(checker func() error) *Builder[C, S] {
+func (b *Builder[C, S]) WithHealthChecker(checker health.Checker) *Builder[C, S] {
 	b.healthCheckers = append(b.healthCheckers, checker)
 
 	return b
@@ -141,6 +143,21 @@ func (b *Builder[C, S]) WithScheduler(s *scheduler.Scheduler) *Builder[C, S] {
 		return b
 	}
 	b.appOpts = append(b.appOpts, WithScheduler(s))
+	return b
+}
+
+// WithServer 注册通用服务器。
+func (b *Builder[C, S]) WithServer(s server.Server) *Builder[C, S] {
+	if s == nil {
+		return b
+	}
+	b.appOpts = append(b.appOpts, WithServer(s))
+	return b
+}
+
+// WithServerRunner 注册一个从服务实例获取服务器的函数。
+func (b *Builder[C, S]) WithServerRunner(provider func(S) server.Server) *Builder[C, S] {
+	b.serverProviders = append(b.serverProviders, provider)
 	return b
 }
 
@@ -199,6 +216,13 @@ func (b *Builder[C, S]) Build() *App {
 	b.appOpts = append(b.appOpts, WithCleanup(cleanup))
 
 	b.registerServers(&cfg, serviceInstance, metricsInstance, loggerInstance)
+
+	for _, provider := range b.serverProviders {
+		srv := provider(serviceInstance)
+		if srv != nil {
+			b.appOpts = append(b.appOpts, WithServer(srv))
+		}
+	}
 
 	for _, checker := range b.healthCheckers {
 		b.appOpts = append(b.appOpts, WithHealthChecker(checker))
@@ -847,11 +871,7 @@ func (b *Builder[C, S]) registerServers(cfg *config.Config, svc S, m *metrics.Me
 			GRPCKeepalive:            cfg.Server.GRPC.Keepalive,
 		}
 		srv := server.NewGRPCServer(addr, logger.Logger, func(s *grpc.Server) {
-			healthCheckers := make([]health.Checker, 0, len(b.healthCheckers))
-			for _, checker := range b.healthCheckers {
-				healthCheckers = append(healthCheckers, health.Checker(checker))
-			}
-			health.RegisterGRPCHealthServer(s, b.serviceName, healthCheckers)
+			health.RegisterGRPCHealthServer(s, b.serviceName, b.healthCheckers)
 			b.registerGRPC(s, svc)
 		}, b.grpcInterceptors, grpcOptions)
 

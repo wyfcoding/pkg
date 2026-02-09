@@ -27,6 +27,9 @@ func NewGRPCServer(addr string, logger *slog.Logger, register func(*grpc.Server)
 	if len(options) > 0 {
 		opts = options[0]
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	var grpcOpts []grpc.ServerOption
 	grpcOpts = append(grpcOpts, grpc.StatsHandler(otelgrpc.NewServerHandler()))
