@@ -1,6 +1,6 @@
 module github.com/wyfcoding/pkg
 
-go 1.25.7
+go 1.26
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.43.0
