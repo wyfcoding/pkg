@@ -447,7 +447,7 @@ func matchRollout(flagName, seed string, rollout int) bool {
 		return false
 	}
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(fmt.Sprintf("%s:%s", flagName, seed)))
+	_, _ = h.Write(fmt.Appendf(nil, "%s:%s", flagName, seed))
 	value := int(h.Sum32() % 100)
 	return value < rollout
 }

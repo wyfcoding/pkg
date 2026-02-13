@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 )
@@ -412,9 +413,7 @@ func (e *Engine) executeWorkflow(instance *Instance, def *Definition) {
 
 		// 合并输出到上下文
 		if result.Output != nil {
-			for k, v := range result.Output {
-				instance.Context[k] = v
-			}
+			maps.Copy(instance.Context, result.Output)
 		}
 
 		// 确定下一个节点

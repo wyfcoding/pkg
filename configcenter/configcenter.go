@@ -82,7 +82,7 @@ type ConfigItem struct {
 	// Version 版本号。
 	Version int64 `json:"version"`
 	// ModifiedAt 修改时间。
-	ModifiedAt time.Time `json:"modified_at,omitempty"`
+	ModifiedAt time.Time `json:"modified_at"`
 }
 
 // ChangeEvent 配置变更事件。

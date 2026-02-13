@@ -28,7 +28,7 @@ func InitClientsWithRegistry(reg registry.Registry, metricsInstance *metrics.Met
 	RegisterRegistryResolver(reg, logging.Default())
 
 	val := reflect.ValueOf(targetClients)
-	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
+	if val.Kind() != reflect.Pointer || val.Elem().Kind() != reflect.Struct {
 		return nil, ErrInvalidTarget
 	}
 

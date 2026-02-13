@@ -23,10 +23,7 @@ func HTTPResponseSizeMiddleware(m *metrics.Metrics) gin.HandlerFunc {
 			return
 		}
 
-		size := c.Writer.Size()
-		if size < 0 {
-			size = 0
-		}
+		size := max(c.Writer.Size(), 0)
 		path := c.FullPath()
 		if path == "" {
 			path = c.Request.URL.Path

@@ -22,7 +22,7 @@ var (
 // InitClients 根据 ServiceClients 结构体字段和 Services 配置映射初始化 gRPC 客户端.
 func InitClients(services map[string]config.ServiceAddr, metricsInstance *metrics.Metrics, cbCfg config.CircuitBreakerConfig, targetClients any) (func(), error) {
 	val := reflect.ValueOf(targetClients)
-	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
+	if val.Kind() != reflect.Pointer || val.Elem().Kind() != reflect.Struct {
 		return nil, ErrInvalidTarget
 	}
 

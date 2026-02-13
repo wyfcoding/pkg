@@ -532,8 +532,8 @@ func (c *Consumer) publishDLQ(ctx context.Context, msg kafkago.Message, err erro
 	headers = append(headers, msg.Headers...)
 	headers = append(headers,
 		kafkago.Header{Key: headerOriginalTopic, Value: []byte(msg.Topic)},
-		kafkago.Header{Key: headerOriginalPartition, Value: []byte(fmt.Sprintf("%d", msg.Partition))},
-		kafkago.Header{Key: headerOriginalOffset, Value: []byte(fmt.Sprintf("%d", msg.Offset))},
+		kafkago.Header{Key: headerOriginalPartition, Value: fmt.Appendf(nil, "%d", msg.Partition)},
+		kafkago.Header{Key: headerOriginalOffset, Value: fmt.Appendf(nil, "%d", msg.Offset)},
 		kafkago.Header{Key: headerError, Value: []byte(err.Error())},
 	)
 
@@ -567,7 +567,7 @@ func (c *Consumer) commitMessage(ctx context.Context, reader *kafkago.Reader, lo
 
 // Start 并发启动多个消费者协程.
 func (c *Consumer) Start(ctx context.Context, workers int, handler Handler) {
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			if err := c.Consume(ctx, handler); err != nil && !errors.Is(err, context.Canceled) {
 				_, _, _, logger := c.snapshot()

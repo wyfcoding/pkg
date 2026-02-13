@@ -249,10 +249,10 @@ type cronLoggerAdapter struct {
 	logger *slog.Logger
 }
 
-func (l *cronLoggerAdapter) Info(msg string, keysAndValues ...interface{}) {
+func (l *cronLoggerAdapter) Info(msg string, keysAndValues ...any) {
 	l.logger.Info(msg, keysAndValues...)
 }
 
-func (l *cronLoggerAdapter) Error(err error, msg string, keysAndValues ...interface{}) {
+func (l *cronLoggerAdapter) Error(err error, msg string, keysAndValues ...any) {
 	l.logger.Error(msg, append(keysAndValues, "error", err)...)
 }

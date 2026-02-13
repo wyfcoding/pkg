@@ -8,6 +8,7 @@ package middleware
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/wyfcoding/pkg/audit"
@@ -142,10 +143,5 @@ func pathSkipped(paths []string, target string) bool {
 	if len(paths) == 0 {
 		return false
 	}
-	for _, p := range paths {
-		if p == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(paths, target)
 }

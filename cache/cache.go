@@ -222,10 +222,10 @@ func (c *RedisCache) GetOrSet(ctx context.Context, key string, value any, expira
 	// 仅当 v 类型与 value 指向的类型兼容时有效 (通常是 DB 回源路径)
 	if v != nil {
 		targetVal := reflect.ValueOf(value)
-		if targetVal.Kind() == reflect.Ptr && !targetVal.IsNil() {
+		if targetVal.Kind() == reflect.Pointer && !targetVal.IsNil() {
 			srcVal := reflect.ValueOf(v)
 			// 自动解引用指针
-			if srcVal.Kind() == reflect.Ptr {
+			if srcVal.Kind() == reflect.Pointer {
 				srcVal = srcVal.Elem()
 			}
 

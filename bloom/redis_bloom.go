@@ -65,7 +65,7 @@ func (b *RedisBloom) getOffsets(item string) []uint64 {
 	h := fnv.New64a()
 	for i := uint(0); i < b.hashes; i++ {
 		h.Reset()
-		h.Write([]byte(fmt.Sprintf("%s-%d", item, i)))
+		h.Write(fmt.Appendf(nil, "%s-%d", item, i))
 		offsets[i] = h.Sum64() % b.size
 	}
 	return offsets

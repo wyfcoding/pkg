@@ -492,7 +492,7 @@ func updateLogLevel(conf any) {
 	}
 
 	val := reflect.ValueOf(conf)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
 	logField := val.FieldByName("Log")

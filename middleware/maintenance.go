@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/wyfcoding/pkg/config"
@@ -74,10 +75,5 @@ func isAllowedPath(path string, allowed []string) bool {
 	if len(allowed) == 0 {
 		return false
 	}
-	for _, item := range allowed {
-		if path == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, path)
 }

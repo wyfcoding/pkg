@@ -261,7 +261,7 @@ func (b *Builder[C, S]) extractConfig() config.Config {
 		cfg = c
 	default:
 		val := reflect.ValueOf(b.configInstance)
-		if val.Kind() == reflect.Ptr {
+		if val.Kind() == reflect.Pointer {
 			val = val.Elem()
 		}
 
