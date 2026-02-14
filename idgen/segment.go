@@ -61,14 +61,14 @@ func (s *Segment) PercentUsed() float64 {
 }
 
 type SegmentGenerator struct {
-	client     redis.UniversalClient
-	config     SegmentConfig
-	segments   [2]*Segment
-	index      atomic.Int32
-	mu         sync.Mutex
-	loading    atomic.Bool
+	client      redis.UniversalClient
+	config      SegmentConfig
+	segments    [2]*Segment
+	index       atomic.Int32
+	mu          sync.Mutex
+	loading     atomic.Bool
 	initialized atomic.Bool
-	logger     *slog.Logger
+	logger      *slog.Logger
 }
 
 func NewSegmentGenerator(client redis.UniversalClient, config SegmentConfig, logger *slog.Logger) *SegmentGenerator {
@@ -245,7 +245,7 @@ func (g *SegmentGenerator) loadSegment(ctx context.Context) (*Segment, error) {
 	for i := 0; i < g.config.MaxRetries; i++ {
 		res, err := g.client.Eval(ctx, script, []string{key}, g.config.Step).Result()
 		if err == nil {
-			if vals, ok := res.([]interface{}); ok && len(vals) == 2 {
+			if vals, ok := res.([]any); ok && len(vals) == 2 {
 				if start, ok := vals[0].(int64); ok {
 					if end, ok := vals[1].(int64); ok {
 						result = []int64{start, end}
@@ -275,11 +275,11 @@ func (g *SegmentGenerator) loadSegment(ctx context.Context) (*Segment, error) {
 	return segment, nil
 }
 
-func (g *SegmentGenerator) GetStats() map[string]interface{} {
+func (g *SegmentGenerator) GetStats() map[string]any {
 	currentIndex := g.index.Load()
 	currentSegment := g.segments[currentIndex]
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"business_tag":  g.config.BusinessTag,
 		"current_index": currentIndex,
 		"initialized":   g.initialized.Load(),
@@ -341,9 +341,9 @@ func (p *SegmentPool) Generate(ctx context.Context, businessTag string) (int64, 
 	return gen.Generate(ctx)
 }
 
-func (p *SegmentPool) GetStats() map[string]interface{} {
-	stats := make(map[string]interface{})
-	p.generators.Range(func(key, value interface{}) bool {
+func (p *SegmentPool) GetStats() map[string]any {
+	stats := make(map[string]any)
+	p.generators.Range(func(key, value any) bool {
 		tag := key.(string)
 		gen := value.(*SegmentGenerator)
 		stats[tag] = gen.GetStats()

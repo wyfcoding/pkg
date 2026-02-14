@@ -28,60 +28,60 @@ const (
 type OrderType int8
 
 const (
-	OrderTypeLimit       OrderType = 1
-	OrderTypeMarket      OrderType = 2
-	OrderTypeStopLimit   OrderType = 3
-	OrderTypeStopMarket  OrderType = 4
-	OrderTypeFOK         OrderType = 5
-	OrderTypeIOC         OrderType = 6
+	OrderTypeLimit      OrderType = 1
+	OrderTypeMarket     OrderType = 2
+	OrderTypeStopLimit  OrderType = 3
+	OrderTypeStopMarket OrderType = 4
+	OrderTypeFOK        OrderType = 5
+	OrderTypeIOC        OrderType = 6
 )
 
 // OrderStatus 订单状态
 type OrderStatus int8
 
 const (
-	OrderStatusNew        OrderStatus = 0
-	OrderStatusPartial    OrderStatus = 1
-	OrderStatusFilled     OrderStatus = 2
-	OrderStatusCancelled  OrderStatus = 3
-	OrderStatusRejected   OrderStatus = 4
+	OrderStatusNew       OrderStatus = 0
+	OrderStatusPartial   OrderStatus = 1
+	OrderStatusFilled    OrderStatus = 2
+	OrderStatusCancelled OrderStatus = 3
+	OrderStatusRejected  OrderStatus = 4
 )
 
 // Order 订单
 type Order struct {
-	OrderID       uint64
-	Symbol        string
-	Side          Side
-	Type          OrderType
-	Price         int64
-	Quantity      int64
-	FilledQty     int64
-	RemainingQty  int64
-	Timestamp     int64
-	UserID        uint64
-	Status        OrderStatus
-	StopPrice     int64
-	TimeInForce   string
+	OrderID      uint64
+	Symbol       string
+	Side         Side
+	Type         OrderType
+	Price        int64
+	Quantity     int64
+	FilledQty    int64
+	RemainingQty int64
+	Timestamp    int64
+	UserID       uint64
+	Status       OrderStatus
+	StopPrice    int64
+	TimeInForce  string
 }
 
 // Trade 成交记录
 type Trade struct {
-	TradeID    uint64
-	Symbol     string
-	Price      int64
-	Quantity   int64
-	BuyOrderID uint64
+	TradeID     uint64
+	Symbol      string
+	Price       int64
+	Quantity    int64
+	BuyOrderID  uint64
 	SellOrderID uint64
-	BuyerID    uint64
-	SellerID   uint64
-	Timestamp  int64
+	BuyerID     uint64
+	SellerID    uint64
+	Timestamp   int64
 }
 
 // PriceLevel 价格档位
 type PriceLevel struct {
-	Price   int64
-	Orders  *OrderList
-	Volume  int64
+	Price  int64
+	Orders *OrderList
+	Volume int64
 }
 
 // OrderList 订单列表（无锁队列实现）
@@ -124,12 +124,12 @@ type PriceTree struct {
 
 // PriceNode 价格节点
 type PriceNode struct {
-	price      int64
-	level      *PriceLevel
-	left       *PriceNode
-	right      *PriceNode
-	parent     *PriceNode
-	color      bool
+	price  int64
+	level  *PriceLevel
+	left   *PriceNode
+	right  *PriceNode
+	parent *PriceNode
+	color  bool
 }
 
 const (
@@ -177,7 +177,7 @@ func (e *MatchingEngine) Start() {
 	if !atomic.CompareAndSwapInt32(&e.running, 0, 1) {
 		return
 	}
-	
+
 	e.wg.Add(1)
 	go e.eventLoop()
 }
@@ -187,7 +187,7 @@ func (e *MatchingEngine) Stop() {
 	if !atomic.CompareAndSwapInt32(&e.running, 1, 0) {
 		return
 	}
-	
+
 	e.cancel()
 	e.wg.Wait()
 	close(e.eventChan)
@@ -197,7 +197,7 @@ func (e *MatchingEngine) Stop() {
 func (e *MatchingEngine) AddSymbol(symbol string) {
 	e.orderBooksMu.Lock()
 	defer e.orderBooksMu.Unlock()
-	
+
 	if _, exists := e.orderBooks[symbol]; !exists {
 		e.orderBooks[symbol] = NewOrderBook(symbol)
 	}
@@ -209,20 +209,20 @@ func (e *MatchingEngine) SubmitOrder(order *Order) ([]*Trade, error) {
 	if ob == nil {
 		return nil, ErrSymbolNotFound
 	}
-	
+
 	order.Timestamp = time.Now().UnixNano()
 	order.Status = OrderStatusNew
 	order.RemainingQty = order.Quantity
-	
+
 	trades := ob.Match(order)
-	
+
 	e.emitEvent(&MatchingEvent{
 		EventType: "ORDER_SUBMIT",
 		Symbol:    order.Symbol,
 		Order:     order,
 		Timestamp: order.Timestamp,
 	})
-	
+
 	for _, trade := range trades {
 		e.emitEvent(&MatchingEvent{
 			EventType: "TRADE",
@@ -231,7 +231,7 @@ func (e *MatchingEngine) SubmitOrder(order *Order) ([]*Trade, error) {
 			Timestamp: trade.Timestamp,
 		})
 	}
-	
+
 	return trades, nil
 }
 
@@ -241,7 +241,7 @@ func (e *MatchingEngine) CancelOrder(symbol string, orderID uint64) error {
 	if ob == nil {
 		return ErrSymbolNotFound
 	}
-	
+
 	order := ob.Cancel(orderID)
 	if order != nil {
 		e.emitEvent(&MatchingEvent{
@@ -251,7 +251,7 @@ func (e *MatchingEngine) CancelOrder(symbol string, orderID uint64) error {
 			Timestamp: time.Now().UnixNano(),
 		})
 	}
-	
+
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (e *MatchingEngine) emitEvent(event *MatchingEvent) {
 // eventLoop 事件循环
 func (e *MatchingEngine) eventLoop() {
 	defer e.wg.Done()
-	
+
 	for {
 		select {
 		case <-e.ctx.Done():
@@ -305,40 +305,40 @@ func NewOrderBook(symbol string) *OrderBook {
 func (ob *OrderBook) Match(order *Order) []*Trade {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
-	
+
 	trades := []*Trade{}
-	
+
 	if order.Side == SideBuy {
 		trades = ob.matchBuy(order)
 	} else {
 		trades = ob.matchSell(order)
 	}
-	
+
 	if order.RemainingQty > 0 && order.Type == OrderTypeLimit {
 		ob.addOrder(order)
 	}
-	
+
 	return trades
 }
 
 // matchBuy 买单撮合
 func (ob *OrderBook) matchBuy(order *Order) []*Trade {
 	trades := []*Trade{}
-	
+
 	for order.RemainingQty > 0 && ob.bestAsk > 0 && order.Price >= ob.bestAsk {
 		level := ob.asks.GetBestLevel()
 		if level == nil {
 			break
 		}
-		
+
 		for order.RemainingQty > 0 && level.Orders.Len() > 0 {
 			makerOrder := level.Orders.First()
 			if makerOrder == nil {
 				break
 			}
-			
+
 			matchQty := min(order.RemainingQty, makerOrder.RemainingQty)
-			
+
 			trade := &Trade{
 				TradeID:     atomic.AddUint64(&ob.tradeIDGen, 1),
 				Symbol:      ob.symbol,
@@ -351,15 +351,15 @@ func (ob *OrderBook) matchBuy(order *Order) []*Trade {
 				Timestamp:   time.Now().UnixNano(),
 			}
 			trades = append(trades, trade)
-			
+
 			order.RemainingQty -= matchQty
 			order.FilledQty += matchQty
 			makerOrder.RemainingQty -= matchQty
 			makerOrder.FilledQty += matchQty
-			
+
 			level.Volume -= matchQty
 			ob.totalAskVol -= matchQty
-			
+
 			if makerOrder.RemainingQty == 0 {
 				makerOrder.Status = OrderStatusFilled
 				level.Orders.Remove(makerOrder)
@@ -367,13 +367,13 @@ func (ob *OrderBook) matchBuy(order *Order) []*Trade {
 				makerOrder.Status = OrderStatusPartial
 			}
 		}
-		
+
 		if level.Orders.Len() == 0 {
 			ob.asks.RemoveLevel(level.Price)
 			ob.updateBestAsk()
 		}
 	}
-	
+
 	if order.FilledQty > 0 {
 		if order.RemainingQty == 0 {
 			order.Status = OrderStatusFilled
@@ -381,31 +381,31 @@ func (ob *OrderBook) matchBuy(order *Order) []*Trade {
 			order.Status = OrderStatusPartial
 		}
 	}
-	
+
 	ob.lastPrice = trades[len(trades)-1].Price
 	ob.lastQty = trades[len(trades)-1].Quantity
-	
+
 	return trades
 }
 
 // matchSell 卖单撮合
 func (ob *OrderBook) matchSell(order *Order) []*Trade {
 	trades := []*Trade{}
-	
+
 	for order.RemainingQty > 0 && ob.bestBid > 0 && order.Price <= ob.bestBid {
 		level := ob.bids.GetBestLevel()
 		if level == nil {
 			break
 		}
-		
+
 		for order.RemainingQty > 0 && level.Orders.Len() > 0 {
 			makerOrder := level.Orders.First()
 			if makerOrder == nil {
 				break
 			}
-			
+
 			matchQty := min(order.RemainingQty, makerOrder.RemainingQty)
-			
+
 			trade := &Trade{
 				TradeID:     atomic.AddUint64(&ob.tradeIDGen, 1),
 				Symbol:      ob.symbol,
@@ -418,15 +418,15 @@ func (ob *OrderBook) matchSell(order *Order) []*Trade {
 				Timestamp:   time.Now().UnixNano(),
 			}
 			trades = append(trades, trade)
-			
+
 			order.RemainingQty -= matchQty
 			order.FilledQty += matchQty
 			makerOrder.RemainingQty -= matchQty
 			makerOrder.FilledQty += matchQty
-			
+
 			level.Volume -= matchQty
 			ob.totalBidVol -= matchQty
-			
+
 			if makerOrder.RemainingQty == 0 {
 				makerOrder.Status = OrderStatusFilled
 				level.Orders.Remove(makerOrder)
@@ -434,13 +434,13 @@ func (ob *OrderBook) matchSell(order *Order) []*Trade {
 				makerOrder.Status = OrderStatusPartial
 			}
 		}
-		
+
 		if level.Orders.Len() == 0 {
 			ob.bids.RemoveLevel(level.Price)
 			ob.updateBestBid()
 		}
 	}
-	
+
 	if order.FilledQty > 0 {
 		if order.RemainingQty == 0 {
 			order.Status = OrderStatusFilled
@@ -448,12 +448,12 @@ func (ob *OrderBook) matchSell(order *Order) []*Trade {
 			order.Status = OrderStatusPartial
 		}
 	}
-	
+
 	if len(trades) > 0 {
 		ob.lastPrice = trades[len(trades)-1].Price
 		ob.lastQty = trades[len(trades)-1].Quantity
 	}
-	
+
 	return trades
 }
 
@@ -482,7 +482,7 @@ func (ob *OrderBook) addOrder(order *Order) {
 func (ob *OrderBook) Cancel(orderID uint64) *Order {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
-	
+
 	return nil
 }
 
@@ -517,17 +517,17 @@ func NewPriceTree() *PriceTree {
 func (t *PriceTree) GetOrCreateLevel(price int64) *PriceLevel {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if level, exists := t.prices[price]; exists {
 		return level
 	}
-	
+
 	level := &PriceLevel{
 		Price:  price,
 		Orders: NewOrderList(),
 	}
 	t.prices[price] = level
-	
+
 	return level
 }
 
@@ -535,7 +535,7 @@ func (t *PriceTree) GetOrCreateLevel(price int64) *PriceLevel {
 func (t *PriceTree) GetBestLevel() *PriceLevel {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	
+
 	return nil
 }
 
@@ -555,9 +555,9 @@ func NewOrderList() *OrderList {
 func (l *OrderList) Add(order *Order) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	
+
 	node := &OrderNode{order: order}
-	
+
 	if l.head == nil {
 		l.head = node
 		l.tail = node
@@ -573,7 +573,7 @@ func (l *OrderList) Add(order *Order) {
 func (l *OrderList) Remove(order *Order) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	
+
 	for node := l.head; node != nil; node = node.next {
 		if node.order.OrderID == order.OrderID {
 			if node.prev != nil {
@@ -596,7 +596,7 @@ func (l *OrderList) Remove(order *Order) {
 func (l *OrderList) First() *Order {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	
+
 	if l.head == nil {
 		return nil
 	}
@@ -606,12 +606,4 @@ func (l *OrderList) First() *Order {
 // Len 获取长度
 func (l *OrderList) Len() int64 {
 	return atomic.LoadInt64(&l.count)
-}
-
-// 辅助函数
-func min(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
 }

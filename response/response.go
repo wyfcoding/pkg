@@ -194,7 +194,7 @@ func grpcCodeToHTTP(code codes.Code) int {
 		return http.StatusConflict
 	case codes.OutOfRange:
 		return http.StatusBadRequest
-	case codes.Unimplemented:
+	case codes.Code(12):
 		return http.StatusNotImplemented
 	case codes.Internal:
 		return http.StatusInternalServerError

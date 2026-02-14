@@ -61,47 +61,47 @@ type AppendEntriesRequest struct {
 
 // AppendEntriesResponse 追加日志响应
 type AppendEntriesResponse struct {
-	Term    uint64
-	Success bool
+	Term      uint64
+	Success   bool
 	NextIndex uint64
 }
 
 // Node Raft节点
 type Node struct {
-	nodeID        string
-	peers         map[string]*Peer
-	state         int32
-	currentTerm   uint64
-	votedFor      string
-	votes         map[string]bool
-	log           []LogEntry
-	commitIndex   uint64
-	lastApplied   uint64
-	nextIndex     map[string]uint64
-	matchIndex    map[string]uint64
-	leaderID      string
-	electionTimer *time.Timer
-	heartbeatTick *time.Ticker
-	lastHeartbeat time.Time
-	electionTimeout time.Duration
-	heartbeatInterval time.Duration
-	applyCh       chan Command
-	voteRequestCh       chan *VoteRequest
-	voteResponseCh      chan *VoteResponse
-	appendEntriesCh     chan *AppendEntriesRequest
+	nodeID                  string
+	peers                   map[string]*Peer
+	state                   int32
+	currentTerm             uint64
+	votedFor                string
+	votes                   map[string]bool
+	log                     []LogEntry
+	commitIndex             uint64
+	lastApplied             uint64
+	nextIndex               map[string]uint64
+	matchIndex              map[string]uint64
+	leaderID                string
+	electionTimer           *time.Timer
+	heartbeatTick           *time.Ticker
+	lastHeartbeat           time.Time
+	electionTimeout         time.Duration
+	heartbeatInterval       time.Duration
+	applyCh                 chan Command
+	voteRequestCh           chan *VoteRequest
+	voteResponseCh          chan *VoteResponse
+	appendEntriesCh         chan *AppendEntriesRequest
 	appendEntriesResponseCh chan *AppendEntriesResponse
-	proposeCh           chan Command
-	mu            sync.RWMutex
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
+	proposeCh               chan Command
+	mu                      sync.RWMutex
+	ctx                     context.Context
+	cancel                  context.CancelFunc
+	wg                      sync.WaitGroup
 }
 
 // Peer 对等节点
 type Peer struct {
-	NodeID   string
-	Address  string
-	NextIndex uint64
+	NodeID     string
+	Address    string
+	NextIndex  uint64
 	MatchIndex uint64
 }
 
@@ -114,16 +114,16 @@ type StateMachine interface {
 
 // Config 配置
 type Config struct {
-	NodeID           string
-	Peers            []string
-	ElectionTimeout  time.Duration
+	NodeID            string
+	Peers             []string
+	ElectionTimeout   time.Duration
 	HeartbeatInterval time.Duration
 }
 
 // NewNode 创建Raft节点
 func NewNode(config Config) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	peers := make(map[string]*Peer)
 	for _, peerID := range config.Peers {
 		if peerID != config.NodeID {
@@ -132,39 +132,39 @@ func NewNode(config Config) *Node {
 			}
 		}
 	}
-	
+
 	electionTimeout := config.ElectionTimeout
 	if electionTimeout == 0 {
 		electionTimeout = 300 * time.Millisecond
 	}
-	
+
 	heartbeatInterval := config.HeartbeatInterval
 	if heartbeatInterval == 0 {
 		heartbeatInterval = 100 * time.Millisecond
 	}
-	
+
 	return &Node{
-		nodeID:           config.NodeID,
-		peers:            peers,
-		state:            int32(StateFollower),
-		currentTerm:      0,
-		votedFor:         "",
-		votes:            make(map[string]bool),
-		log:              make([]LogEntry, 0),
-		commitIndex:      0,
-		lastApplied:      0,
-		nextIndex:        make(map[string]uint64),
-		matchIndex:       make(map[string]uint64),
-		electionTimeout:  electionTimeout,
-		heartbeatInterval: heartbeatInterval,
-		applyCh:          make(chan Command, 1000),
-		voteRequestCh:    make(chan *VoteRequest, 100),
-		voteResponseCh:   make(chan *VoteResponse, 100),
-		appendEntriesCh:  make(chan *AppendEntriesRequest, 100),
+		nodeID:                  config.NodeID,
+		peers:                   peers,
+		state:                   int32(StateFollower),
+		currentTerm:             0,
+		votedFor:                "",
+		votes:                   make(map[string]bool),
+		log:                     make([]LogEntry, 0),
+		commitIndex:             0,
+		lastApplied:             0,
+		nextIndex:               make(map[string]uint64),
+		matchIndex:              make(map[string]uint64),
+		electionTimeout:         electionTimeout,
+		heartbeatInterval:       heartbeatInterval,
+		applyCh:                 make(chan Command, 1000),
+		voteRequestCh:           make(chan *VoteRequest, 100),
+		voteResponseCh:          make(chan *VoteResponse, 100),
+		appendEntriesCh:         make(chan *AppendEntriesRequest, 100),
 		appendEntriesResponseCh: make(chan *AppendEntriesResponse, 100),
-		proposeCh:        make(chan Command, 1000),
-		ctx:              ctx,
-		cancel:           cancel,
+		proposeCh:               make(chan Command, 1000),
+		ctx:                     ctx,
+		cancel:                  cancel,
 	}
 }
 
@@ -185,14 +185,14 @@ func (n *Node) Stop() {
 // run 主循环
 func (n *Node) run() {
 	defer n.wg.Done()
-	
+
 	for {
 		select {
 		case <-n.ctx.Done():
 			return
 		default:
 			state := State(atomic.LoadInt32(&n.state))
-			
+
 			switch state {
 			case StateFollower:
 				n.runFollower()
@@ -222,7 +222,7 @@ func (n *Node) runFollower() {
 // runCandidate 候选者状态
 func (n *Node) runCandidate() {
 	n.startElection()
-	
+
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -253,9 +253,9 @@ func (n *Node) runCandidate() {
 func (n *Node) runLeader() {
 	n.heartbeatTick = time.NewTicker(n.heartbeatInterval)
 	defer n.heartbeatTick.Stop()
-	
+
 	n.sendHeartbeats()
-	
+
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -286,7 +286,7 @@ func (n *Node) runLeader() {
 func (n *Node) becomeFollower(term uint64, leaderID string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	
+
 	atomic.StoreInt32(&n.state, int32(StateFollower))
 	n.currentTerm = term
 	n.leaderID = leaderID
@@ -298,7 +298,7 @@ func (n *Node) becomeFollower(term uint64, leaderID string) {
 func (n *Node) becomeCandidate() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	
+
 	atomic.StoreInt32(&n.state, int32(StateCandidate))
 	n.currentTerm++
 	n.votedFor = n.nodeID
@@ -311,10 +311,10 @@ func (n *Node) becomeCandidate() {
 func (n *Node) becomeLeader() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	
+
 	atomic.StoreInt32(&n.state, int32(StateLeader))
 	n.leaderID = n.nodeID
-	
+
 	lastLogIndex := n.getLastLogIndex()
 	for peerID := range n.peers {
 		n.nextIndex[peerID] = lastLogIndex + 1
@@ -328,14 +328,14 @@ func (n *Node) startElection() {
 	lastLogIndex := n.getLastLogIndex()
 	lastLogTerm := n.getLastLogTerm()
 	n.mu.RUnlock()
-	
+
 	req := &VoteRequest{
 		Term:         n.currentTerm,
 		CandidateID:  n.nodeID,
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  lastLogTerm,
 	}
-	
+
 	for peerID := range n.peers {
 		go n.sendVoteRequest(peerID, req)
 	}
@@ -345,7 +345,7 @@ func (n *Node) startElection() {
 func (n *Node) sendHeartbeats() {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	
+
 	for peerID := range n.peers {
 		req := n.buildAppendEntriesRequest(peerID)
 		go n.sendAppendEntries(peerID, req)
@@ -357,16 +357,16 @@ func (n *Node) buildAppendEntriesRequest(peerID string) *AppendEntriesRequest {
 	nextIdx := n.nextIndex[peerID]
 	prevLogIndex := nextIdx - 1
 	prevLogTerm := uint64(0)
-	
+
 	if prevLogIndex > 0 {
 		prevLogTerm = n.log[prevLogIndex-1].Term
 	}
-	
+
 	var entries []LogEntry
 	if nextIdx <= uint64(len(n.log)) {
 		entries = n.log[nextIdx-1:]
 	}
-	
+
 	return &AppendEntriesRequest{
 		Term:         n.currentTerm,
 		LeaderID:     n.nodeID,
@@ -381,23 +381,23 @@ func (n *Node) buildAppendEntriesRequest(peerID string) *AppendEntriesRequest {
 func (n *Node) handleVoteRequest(req *VoteRequest) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	
+
 	resp := &VoteResponse{
 		Term: n.currentTerm,
 	}
-	
+
 	if req.Term < n.currentTerm {
 		resp.VoteGranted = false
 		n.sendVoteResponse(req.CandidateID, resp)
 		return
 	}
-	
+
 	if req.Term > n.currentTerm {
 		n.currentTerm = req.Term
 		n.votedFor = ""
 		n.becomeFollower(req.Term, "")
 	}
-	
+
 	if n.votedFor == "" || n.votedFor == req.CandidateID {
 		if n.isLogUpToDate(req.LastLogTerm, req.LastLogIndex) {
 			n.votedFor = req.CandidateID
@@ -405,7 +405,7 @@ func (n *Node) handleVoteRequest(req *VoteRequest) {
 			n.resetElectionTimer()
 		}
 	}
-	
+
 	n.sendVoteResponse(req.CandidateID, resp)
 }
 
@@ -413,25 +413,25 @@ func (n *Node) handleVoteRequest(req *VoteRequest) {
 func (n *Node) handleAppendEntries(req *AppendEntriesRequest) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	
+
 	resp := &AppendEntriesResponse{
 		Term: n.currentTerm,
 	}
-	
+
 	if req.Term < n.currentTerm {
 		resp.Success = false
 		n.sendAppendEntriesResponse(req.LeaderID, resp)
 		return
 	}
-	
+
 	if req.Term > n.currentTerm {
 		n.currentTerm = req.Term
 		n.votedFor = ""
 	}
-	
+
 	n.leaderID = req.LeaderID
 	n.resetElectionTimer()
-	
+
 	if req.PrevLogIndex > 0 {
 		if uint64(len(n.log)) < req.PrevLogIndex {
 			resp.Success = false
@@ -439,7 +439,7 @@ func (n *Node) handleAppendEntries(req *AppendEntriesRequest) {
 			n.sendAppendEntriesResponse(req.LeaderID, resp)
 			return
 		}
-		
+
 		if n.log[req.PrevLogIndex-1].Term != req.PrevLogTerm {
 			resp.Success = false
 			resp.NextIndex = req.PrevLogIndex
@@ -447,7 +447,7 @@ func (n *Node) handleAppendEntries(req *AppendEntriesRequest) {
 			return
 		}
 	}
-	
+
 	for _, entry := range req.Entries {
 		if entry.Index <= uint64(len(n.log)) {
 			if n.log[entry.Index-1].Term != entry.Term {
@@ -458,17 +458,13 @@ func (n *Node) handleAppendEntries(req *AppendEntriesRequest) {
 			n.log = append(n.log, entry)
 		}
 	}
-	
+
 	if req.LeaderCommit > n.commitIndex {
 		lastNewIndex := n.getLastLogIndex()
-		if req.LeaderCommit < lastNewIndex {
-			n.commitIndex = req.LeaderCommit
-		} else {
-			n.commitIndex = lastNewIndex
-		}
+		n.commitIndex = min(req.LeaderCommit, lastNewIndex)
 		n.applyCommitted()
 	}
-	
+
 	resp.Success = true
 	resp.NextIndex = n.getLastLogIndex() + 1
 	n.sendAppendEntriesResponse(req.LeaderID, resp)
@@ -478,18 +474,18 @@ func (n *Node) handleAppendEntries(req *AppendEntriesRequest) {
 func (n *Node) propose(cmd Command) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	
+
 	if State(atomic.LoadInt32(&n.state)) != StateLeader {
 		return
 	}
-	
+
 	entry := LogEntry{
 		Term:    n.currentTerm,
 		Index:   uint64(len(n.log) + 1),
 		Command: cmd,
 	}
 	n.log = append(n.log, entry)
-	
+
 	n.matchIndex[n.nodeID] = entry.Index
 	n.updateCommitIndex()
 }
@@ -542,7 +538,7 @@ func (n *Node) getLastLogTerm() uint64 {
 func (n *Node) isLogUpToDate(term, index uint64) bool {
 	lastTerm := n.getLastLogTerm()
 	lastIndex := n.getLastLogIndex()
-	
+
 	if term != lastTerm {
 		return term > lastTerm
 	}
@@ -562,16 +558,16 @@ func (n *Node) resetElectionTimer() {
 }
 
 // 网络通信方法（需要实际实现）
-func (n *Node) sendVoteRequest(peerID string, req *VoteRequest)    {}
-func (n *Node) sendVoteResponse(peerID string, resp *VoteResponse) {}
-func (n *Node) sendAppendEntries(peerID string, req *AppendEntriesRequest) {}
+func (n *Node) sendVoteRequest(peerID string, req *VoteRequest)                      {}
+func (n *Node) sendVoteResponse(peerID string, resp *VoteResponse)                   {}
+func (n *Node) sendAppendEntries(peerID string, req *AppendEntriesRequest)           {}
 func (n *Node) sendAppendEntriesResponse(peerID string, resp *AppendEntriesResponse) {}
-func (n *Node) handleAppendEntriesResponse(resp *AppendEntriesResponse) {}
+func (n *Node) handleAppendEntriesResponse(resp *AppendEntriesResponse)              {}
 
 // 错误定义
 var (
-	ErrNotLeader      = errors.New("not the leader")
-	ErrTimeout        = errors.New("operation timeout")
-	ErrTermMismatch   = errors.New("term mismatch")
-	ErrLogMismatch    = errors.New("log mismatch")
+	ErrNotLeader    = errors.New("not the leader")
+	ErrTimeout      = errors.New("operation timeout")
+	ErrTermMismatch = errors.New("term mismatch")
+	ErrLogMismatch  = errors.New("log mismatch")
 )

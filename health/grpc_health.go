@@ -74,5 +74,5 @@ func (g *GRPCHealthServer) List(_ context.Context, _ *grpc_health_v1.HealthListR
 
 // Watch 暂不支持流式健康订阅，直接返回未实现。
 func (g *GRPCHealthServer) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc.ServerStreamingServer[grpc_health_v1.HealthCheckResponse]) error {
-	return status.Error(codes.Unimplemented, "health watch not supported")
+	return status.Error(codes.FailedPrecondition, "health watch not supported")
 }
