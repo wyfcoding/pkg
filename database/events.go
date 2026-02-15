@@ -3,7 +3,9 @@ package database
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/wyfcoding/pkg/messagequeue/outbox"
 	"gorm.io/gorm"
 )
 
@@ -39,21 +41,7 @@ func (e *BaseEntity) ClearEvents() {
 	e.events = nil
 }
 
-// OutboxRecord 必须与业务在同一事务中持久化的记录.
-type OutboxRecord struct {
-	gorm.Model
-	Topic   string `gorm:"type:varchar(255);not null;index"`
-	Key     string `gorm:"type:varchar(255);index"`
-	Payload []byte `gorm:"type:blob;not null"`
-	Status  int8   `gorm:"type:tinyint;default:0;index"` // 0: Pending, 1: Sent, 2: Failed.
-}
-
-// TableName 返回表名.
-func (OutboxRecord) TableName() string {
-	return "sys_outbox_messages"
-}
-
-// EventPlugin GORM 插件.
+// EventPlugin GORM 插件，自动将实体中的领域事件转换为 Outbox 消息。
 type EventPlugin struct{}
 
 // Name 插件名称.
@@ -63,8 +51,12 @@ func (p *EventPlugin) Name() string {
 
 // Initialize 初始化插件.
 func (p *EventPlugin) Initialize(db *gorm.DB) error {
+	// 注册在 Create/Update 之后的回调
 	if err := db.Callback().Create().After("gorm:create").Register("event_plugin:after_create", p.handleEvents); err != nil {
-		return fmt.Errorf("failed to register event plugin: %w", err)
+		return fmt.Errorf("failed to register event plugin on create: %w", err)
+	}
+	if err := db.Callback().Update().After("gorm:update").Register("event_plugin:after_update", p.handleEvents); err != nil {
+		return fmt.Errorf("failed to register event plugin on update: %w", err)
 	}
 
 	return nil
@@ -93,14 +85,17 @@ func (p *EventPlugin) handleEvents(db *gorm.DB) {
 			continue
 		}
 
-		record := &OutboxRecord{
-			Topic:   event.EventName(),
-			Key:     event.EventKey(),
-			Payload: payload,
-			Status:  0,
+		// 使用通用的 outbox.Message 模型
+		record := &outbox.Message{
+			Topic:     event.EventName(),
+			Key:       event.EventKey(),
+			Payload:   payload,
+			Status:    outbox.StatusPending,
+			NextRetry: time.Now(),
 		}
 
-		if err := db.Session(&gorm.Session{NewDB: true}).Create(record).Error; err != nil {
+		// 在同一事务中保存 Outbox 记录
+		if err := db.Session(&gorm.Session{NewDB: true}).Table(record.TableName()).Create(record).Error; err != nil {
 			_ = db.AddError(fmt.Errorf("failed to create outbox record: %w", err))
 		}
 	}
