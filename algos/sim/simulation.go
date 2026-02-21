@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wyfcoding/pkg/algorithm/finance"
+	"github.com/wyfcoding/pkg/algos/finance"
 	"github.com/wyfcoding/pkg/cast"
 	"github.com/wyfcoding/pkg/xerrors"
 

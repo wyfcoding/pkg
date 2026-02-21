@@ -11,7 +11,7 @@ import (
 	"slices"
 	"sync"
 
-	algomath "github.com/wyfcoding/pkg/algorithm/math"
+	algomath "github.com/wyfcoding/pkg/algos/math"
 )
 
 const (

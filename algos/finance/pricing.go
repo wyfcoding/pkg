@@ -5,7 +5,7 @@ import (
 	"math"
 
 	"github.com/shopspring/decimal"
-	"github.com/wyfcoding/pkg/algorithm/types"
+	"github.com/wyfcoding/pkg/algos/types"
 	"github.com/wyfcoding/pkg/xerrors"
 )
 

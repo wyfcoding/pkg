@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	algomath "github.com/wyfcoding/pkg/algorithm/math"
+	algomath "github.com/wyfcoding/pkg/algos/math"
 )
 
 // LSMPricer 实现了 Longstaff-Schwartz (LSM) 算法

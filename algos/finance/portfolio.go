@@ -4,7 +4,7 @@ import (
 	"math"
 
 	"github.com/shopspring/decimal"
-	algomath "github.com/wyfcoding/pkg/algorithm/math"
+	algomath "github.com/wyfcoding/pkg/algos/math"
 )
 
 // PortfolioOptimizer 组合优化器

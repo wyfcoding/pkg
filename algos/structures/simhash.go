@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	algomath "github.com/wyfcoding/pkg/algorithm/math"
+	algomath "github.com/wyfcoding/pkg/algos/math"
 )
 
 var defaultSimHashWordRegex = regexp.MustCompile(`\w+`)

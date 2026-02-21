@@ -22,20 +22,46 @@ const (
 	InstFuture InstrumentType = "FUTURE"    // 交割合约
 )
 
+// OrderType 订单类型
+type OrderType string
+
+const (
+	OrderTypeLimit        OrderType = "LIMIT"
+	OrderTypeMarket       OrderType = "MARKET"
+	OrderTypeStopBox      OrderType = "STOP_LOSS"
+	OrderTypeTakeProfit   OrderType = "TAKE_PROFIT"
+	OrderTypeLimitIceberg OrderType = "ICEBERG"
+)
+
+// OrderStatus 订单状态
+type OrderStatus string
+
+const (
+	OrderStatusNew             OrderStatus = "NEW"
+	OrderStatusPartiallyFilled OrderStatus = "PARTIALLY_FILLED"
+	OrderStatusFilled          OrderStatus = "FILLED"
+	OrderStatusCancelled       OrderStatus = "CANCELLED"
+	OrderStatusRejected        OrderStatus = "REJECTED"
+)
+
 // Order 订单结构，表示一个限价单或高级策略单。
 type Order struct {
 	ResultChan chan any
 	Price      decimal.Decimal
 	Quantity   decimal.Decimal
+	FilledQty  decimal.Decimal // 已成交数量
 	DisplayQty decimal.Decimal
 	HiddenQty  decimal.Decimal
 	PegOffset  decimal.Decimal // 偏移量
 	OrderID    string
+	ParentID   string // 父订单ID (用于冰山单切片或策略单)
 	Symbol     string
 	UserID     string
 	PegType    string // "MID", "BEST_BID", "BEST_ASK"
 	Side       Side
 	InstType   InstrumentType
+	OrderType  OrderType
+	Status     OrderStatus
 	Timestamp  int64
 	IsIceberg  bool
 	PostOnly   bool
@@ -95,3 +121,8 @@ const (
 	OptionTypeCall OptionType = "CALL"
 	OptionTypePut  OptionType = "PUT"
 )
+
+// NewDecimalFromFloat 创建 Decimal 对象
+func NewDecimalFromFloat(f float64) decimal.Decimal {
+	return decimal.NewFromFloat(f)
+}

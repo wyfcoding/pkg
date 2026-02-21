@@ -4,7 +4,7 @@ import (
 	"slices"
 	"time"
 
-	algomath "github.com/wyfcoding/pkg/algorithm/math"
+	algomath "github.com/wyfcoding/pkg/algos/math"
 )
 
 // MatchStrategy 定义了拼团匹配的策略类型.

@@ -6,7 +6,7 @@ import (
 	"math"
 	"sync/atomic"
 
-	algomath "github.com/wyfcoding/pkg/algorithm/math"
+	algomath "github.com/wyfcoding/pkg/algos/math"
 	"github.com/wyfcoding/pkg/cast"
 	"github.com/wyfcoding/pkg/xerrors"
 )
